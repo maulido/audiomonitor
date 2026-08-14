@@ -1,0 +1,13 @@
+{
+  "name": "multi-pc-audio-monitor",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "start:server": "npm run start --workspace=packages/server",
+    "start:dashboard": "npm run dev --workspace=packages/dashboard",
+    "start:agent": "npm run dev --workspace=packages/agent"
+  }
+}
