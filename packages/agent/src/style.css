@@ -3,12 +3,12 @@ body {
   background-color: #121212;
   color: #fff;
   margin: 0;
-  padding: 8px;
-  font-size: 0.75rem;
+  padding: 6px;
+  font-size: 0.7rem;
 }
 
 .container {
-  max-width: 480px;
+  max-width: 440px;
   margin: 0 auto;
 }
 
@@ -17,37 +17,37 @@ body {
   justify-content: space-between;
   align-items: center;
   border-bottom: 1px solid #333;
-  padding-bottom: 8px;
-  margin-bottom: 10px;
+  padding-bottom: 6px;
+  margin-bottom: 8px;
 }
 
 .header h1 {
   margin: 0;
-  font-size: 1rem;
+  font-size: 0.9rem;
 }
 
 .header-stats {
-  font-size: 0.7rem;
+  font-size: 0.65rem;
   color: #888;
   background: #1e1e1e;
   padding: 3px 8px;
-  border-radius: 16px;
+  border-radius: 12px;
   border: 1px solid #333;
 }
 
 .info-panel {
   background: #1e1e1e;
-  padding: 8px 12px;
-  border-radius: 6px;
+  padding: 6px 10px;
+  border-radius: 5px;
   margin-bottom: 10px;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
 }
 
 .pc-id {
-  font-size: 0.75rem;
+  font-size: 0.7rem;
   color: #888;
   margin: 0 0 2px 0;
 }
@@ -58,7 +58,7 @@ body {
 }
 
 .status-badge {
-  font-size: 0.8rem;
+  font-size: 0.75rem;
   font-weight: bold;
   padding: 4px 10px;
   border-radius: 4px;
@@ -77,11 +77,11 @@ body {
 .settings-grid {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 10px;
+  gap: 8px;
   margin-bottom: 10px;
 }
 
-@media (min-width: 400px) {
+@media (min-width: 375px) {
   .settings-grid {
     grid-template-columns: 1fr 1fr;
   }
@@ -92,32 +92,32 @@ body {
 
 .settings-card {
   background: #1e1e1e;
-  padding: 10px;
-  border-radius: 6px;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+  padding: 8px;
+  border-radius: 5px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
 }
 
 .settings-card h2 {
-  margin: 0 0 8px 0;
-  font-size: 0.85rem;
+  margin: 0 0 6px 0;
+  font-size: 0.8rem;
   border-bottom: 1px solid #333;
-  padding-bottom: 4px;
+  padding-bottom: 3px;
 }
 
 .form-group {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 5px;
 }
 
 input, select, button {
-  padding: 5px 8px;
+  padding: 4px 6px;
   border: 1px solid #444;
-  border-radius: 4px;
+  border-radius: 3px;
   background: #2d2d2d;
   color: white;
   outline: none;
-  font-size: 0.75rem;
+  font-size: 0.7rem;
   transition: border-color 0.2s ease;
   width: 100%;
   box-sizing: border-box;
@@ -133,7 +133,7 @@ input:focus, select:focus {
   cursor: pointer;
   border: none;
   transition: background 0.2s ease;
-  margin-top: 4px;
+  margin-top: 3px;
 }
 
 .primary-btn:hover:not(:disabled) {
@@ -150,8 +150,8 @@ input:focus, select:focus {
   margin-top: 2px;
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  font-size: 0.75em;
+  gap: 2px;
+  font-size: 0.7em;
   color: #bbb;
 }
 
@@ -163,30 +163,30 @@ input:focus, select:focus {
 .meters-section {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 10px;
+  gap: 8px;
 }
 
 .meter-box {
   background: #1e1e1e;
   padding: 8px;
-  border-radius: 6px;
+  border-radius: 5px;
   text-align: center;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
 }
 
 .meter-box h3 {
-  margin: 0 0 8px 0;
-  font-size: 0.8rem;
+  margin: 0 0 6px 0;
+  font-size: 0.75rem;
   color: #bbb;
 }
 
 .meter-bar {
-  height: 14px;
+  height: 12px;
   background: #121212;
-  border-radius: 7px;
+  border-radius: 6px;
   border: 1px solid #333;
   overflow: hidden;
-  margin-bottom: 6px;
+  margin-bottom: 5px;
 }
 
 .meter-fill {
@@ -200,7 +200,7 @@ input:focus, select:focus {
 
 .meter-val {
   font-family: monospace;
-  font-size: 0.85rem;
+  font-size: 0.8rem;
   font-weight: bold;
   margin: 0;
 }
