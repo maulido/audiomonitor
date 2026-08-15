@@ -59,6 +59,20 @@ class OBSClient {
     }
   }
 
+  async getAudioInputs() {
+    if (!this.isConnected) return [];
+    try {
+      // Fetch all inputs from OBS
+      const response = await this.obs.call('GetInputList');
+      // Return them. We will let the frontend filter if needed, 
+      // or just return all inputs since users might use arbitrary inputs as audio sources.
+      return response.inputs;
+    } catch (error) {
+      console.error("Failed to fetch OBS inputs:", error);
+      return [];
+    }
+  }
+
   disconnect() {
     this.intentionalDisconnect = true;
     if (this.reconnectInterval) {

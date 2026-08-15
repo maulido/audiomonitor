@@ -23,6 +23,8 @@ function App() {
   const [noiseGate, setNoiseGate] = useState(() => Number(localStorage.getItem('noiseGate')) || 15);
   const [silenceTimeoutSec, setSilenceTimeoutSec] = useState(() => Number(localStorage.getItem('silenceTimeoutSec')) || 10);
   const [audioDevices, setAudioDevices] = useState([]);
+  const [obsInputs, setObsInputs] = useState([]);
+  const [micDriverName, setMicDriverName] = useState('');
   const [hardwareUsage, setHardwareUsage] = useState({ cpuUsage: 0, ramUsage: 0 });
   
   const obsSourceNameRef = useRef(obsSourceName);
@@ -94,11 +96,19 @@ function App() {
         setSelectedMicId(micToUse);
       }
       
+      const selectedDevice = audioInputs.find(d => d.deviceId === micToUse);
+      if (selectedDevice) {
+        setMicDriverName(selectedDevice.label || 'Default Microphone');
+      }
+      
       audioProcessor.current.start(micToUse);
     });
 
     obsClient.current = new OBSClient(
-      () => setObsConnected(true),
+      () => {
+        setObsConnected(true);
+        obsClient.current.getAudioInputs().then(inputs => setObsInputs(inputs));
+      },
       () => setObsConnected(false),
       (inputs) => {
         // Find the specific source the user typed in
@@ -117,6 +127,11 @@ function App() {
         }
       }
     );
+
+    // Auto-connect to OBS if credentials exist
+    if (obsIp) {
+      obsClient.current.connect(obsIp, obsPassword).catch(() => console.log("Auto-connect OBS failed"));
+    }
 
     return () => {
       if (audioProcessor.current) audioProcessor.current.stop();
@@ -146,6 +161,12 @@ function App() {
   const handleMicChange = async (e) => {
     const newMicId = e.target.value;
     setSelectedMicId(newMicId);
+    
+    const selectedDevice = audioDevices.find(d => d.deviceId === newMicId);
+    if (selectedDevice) {
+      setMicDriverName(selectedDevice.label || 'Default Microphone');
+    }
+
     if (audioProcessor.current) {
       audioProcessor.current.stop();
       await audioProcessor.current.start(newMicId);
@@ -153,31 +174,45 @@ function App() {
   };
 
   const silenceTimeout = useRef(null);
+  const dangerScore = useRef(0);
 
   // Hybrid Monitoring Logic
   useEffect(() => {
-    let nextStatus = 'AMAN';
-    
-    if (micLevel > 10 && obsLevel < 2 && obsConnected) {
-      nextStatus = 'BAHAYA_OBS_MUTE';
-    }
+    let nextStatus = status;
+    const isTalking = micLevel > 10;
+    const isObsMuted = obsLevel < 0.5; // Lowered threshold to ensure we only catch true mutes or extremely low volumes
 
-    if (micLevel < 2 && obsLevel < 2) {
-      if (!silenceTimeout.current) {
-        silenceTimeout.current = setTimeout(() => {
-          setStatus('STANDBY_DIAM');
-        }, silenceTimeoutSec * 1000); // Using dynamic timeout
-      }
+    // Build up danger score if talking while OBS is muted. Drain it if not.
+    if (isTalking && isObsMuted && obsConnected) {
+      dangerScore.current += 50; // Approximates 50ms per tick
     } else {
-      if (silenceTimeout.current) {
-        clearTimeout(silenceTimeout.current);
-        silenceTimeout.current = null;
-      }
-      if (status !== nextStatus) {
-        setStatus(nextStatus);
+      dangerScore.current = Math.max(0, dangerScore.current - 100); // Drains twice as fast during pauses
+    }
+
+    if (dangerScore.current >= 3000) { // 3 seconds of "mostly" talking while muted
+      nextStatus = 'BAHAYA_OBS_MUTE';
+    } else if (dangerScore.current === 0) {
+      // Safe zone
+      if (micLevel < 2 && obsLevel < 2) {
+        if (!silenceTimeout.current && status !== 'STANDBY_DIAM') {
+          silenceTimeout.current = setTimeout(() => {
+            setStatus('STANDBY_DIAM');
+          }, silenceTimeoutSec * 1000);
+        }
+      } else {
+        if (silenceTimeout.current) {
+          clearTimeout(silenceTimeout.current);
+          silenceTimeout.current = null;
+        }
+        nextStatus = 'AMAN';
       }
     }
 
+    if (status !== nextStatus) {
+      setStatus(nextStatus);
+    }
+
+    // Telemetry/Desktop Notification Throttle
     if (nextStatus === 'BAHAYA_OBS_MUTE' && window.electronAPI) {
       const now = Date.now();
       if (now - lastNotificationTime.current > 10000) { // 10 seconds throttle
@@ -196,6 +231,8 @@ function App() {
     latestTelemetryData.current = {
       uuid,
       name: agentName,
+      micDriverName,
+      obsSourceName,
       micLevel,
       rawMicLevel,
       noiseGate,
@@ -204,7 +241,7 @@ function App() {
       cpuUsage: hardwareUsage.cpuUsage,
       ramUsage: hardwareUsage.ramUsage
     };
-  }, [micLevel, rawMicLevel, noiseGate, obsLevel, status, hardwareUsage, uuid, agentName]);
+  }, [micLevel, rawMicLevel, noiseGate, obsLevel, status, hardwareUsage, uuid, agentName, micDriverName, obsSourceName]);
 
   // Telemetry Sender (Throttled to 500ms)
   useEffect(() => {
@@ -321,12 +358,25 @@ function App() {
               onChange={e => setObsPassword(e.target.value)} 
               placeholder="OBS WebSocket Password" 
             />
-            <input 
-              type="text" 
-              value={obsSourceName} 
-              onChange={e => setObsSourceName(e.target.value)} 
-              placeholder="OBS Audio Source Name" 
-            />
+            {obsConnected && obsInputs.length > 0 ? (
+              <select value={obsSourceName} onChange={e => setObsSourceName(e.target.value)} title="Pilih input audio dari OBS">
+                {/* Fallback in case current selection isn't in the list */}
+                {!obsInputs.find(i => i.inputName === obsSourceName) && (
+                  <option value={obsSourceName}>{obsSourceName}</option>
+                )}
+                {obsInputs.map(input => (
+                  <option key={input.inputName} value={input.inputName}>{input.inputName}</option>
+                ))}
+              </select>
+            ) : (
+              <input 
+                type="text" 
+                value={obsSourceName} 
+                onChange={e => setObsSourceName(e.target.value)} 
+                placeholder="OBS Audio Source Name" 
+                title="Ketik nama sumber audio jika OBS belum terhubung"
+              />
+            )}
             <button className="primary-btn" onClick={connectOBS} disabled={obsConnected}>
               {obsConnected ? 'Connected' : 'Connect to OBS'}
             </button>

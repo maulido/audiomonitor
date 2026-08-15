@@ -112,7 +112,23 @@ header {
   text-overflow: ellipsis;
 }
 .uuid { font-size: 0.85rem; color: #888; margin: 0 0 15px 0; }
-.status-text { font-size: 1.2rem; font-weight: bold; margin: 15px 0 20px 0; letter-spacing: 1px; }
+
+.status-text { 
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 20px;
+  background: #333;
+  font-size: 0.85rem;
+  font-weight: bold;
+  letter-spacing: 1px;
+  margin: 5px 0 20px 0;
+  text-transform: uppercase;
+}
+
+.agent-card.AMAN .status-text { background: rgba(76, 175, 80, 0.15); color: #4caf50; border: 1px solid rgba(76, 175, 80, 0.3); }
+.agent-card.BAHAYA_OBS_MUTE .status-text { background: rgba(244, 67, 54, 0.15); color: #f44336; border: 1px solid rgba(244, 67, 54, 0.3); }
+.agent-card.STANDBY_DIAM .status-text { background: rgba(33, 150, 243, 0.15); color: #2196f3; border: 1px solid rgba(33, 150, 243, 0.3); }
+.agent-card.OFFLINE .status-text { background: rgba(136, 136, 136, 0.15); color: #888; border: 1px solid rgba(136, 136, 136, 0.3); }
 
 .controls-bar {
   display: flex;
@@ -139,21 +155,24 @@ header {
 .pc-meta {
   display: flex;
   justify-content: space-between;
-  font-size: 0.8rem;
-  color: #888;
-  margin-bottom: 10px;
+  align-items: center;
+  margin-bottom: 15px;
 }
 
 .hardware-stats {
-  background: #333;
-  padding: 2px 6px;
-  border-radius: 4px;
-  color: #ddd;
+  background: rgba(255, 255, 255, 0.05);
+  padding: 4px 8px;
+  border-radius: 6px;
+  color: #aaa;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.5px;
 }
 
 .hardware-stats.warning {
   color: #ff9800;
-  border: 1px solid #ff9800;
+  background: rgba(255, 152, 0, 0.1);
+  border: 1px solid rgba(255, 152, 0, 0.3);
   animation: pulse-orange 2s infinite;
 }
 
@@ -165,7 +184,7 @@ header {
 
 .sparkline {
   margin-left: 10px;
-  opacity: 0.7;
+  opacity: 0.85;
 }
 
 .meter-container {
@@ -199,7 +218,9 @@ header {
   font-size: 0.75rem;
   color: #666;
   text-align: right;
-  margin: 10px 0 0 0;
+  margin: 25px 0 0 0;
+  border-top: 1px dashed #333;
+  padding-top: 15px;
 }
 
 .empty-state {

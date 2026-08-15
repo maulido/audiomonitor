@@ -233,15 +233,45 @@ function App() {
                     ) : (
                       <>
                         <h2 style={{ margin: 0, flex: 1, minWidth: 0 }}>{agent.pcName}</h2>
-                        <button onClick={() => { setEditingId(agent.uuid); setEditingName(agent.pcName); }} style={{ background: 'transparent', border: 'none', color: '#888', cursor: 'pointer', flexShrink: 0 }}>✏️</button>
+                        <button 
+                          onClick={() => { setEditingId(agent.uuid); setEditingName(agent.pcName); }} 
+                          style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid transparent', color: '#888', cursor: 'pointer', flexShrink: 0, padding: '6px', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
+                          onMouseOver={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.1)'; e.currentTarget.style.color = '#fff'; }}
+                          onMouseOut={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; e.currentTarget.style.color = '#888'; }}
+                          title="Ubah Nama PC"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path>
+                          </svg>
+                        </button>
                       </>
                     )}
                   </div>
 
                   <div className="pc-meta">
-                    <span className="uuid">{agent.uuid.split('-')[0]}...</span>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', flex: 1, paddingRight: '15px' }}>
+                      <span className="uuid" style={{ fontFamily: 'monospace', fontSize: '0.75rem', opacity: 0.6 }}>{agent.uuid}</span>
+                      {agent.micDriverName && (
+                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '4px', color: '#888', fontSize: '0.75rem' }}>
+                          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginTop: '2px', flexShrink: 0 }}>
+                            <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path>
+                            <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                            <line x1="12" y1="19" x2="12" y2="22"></line>
+                          </svg>
+                          <span style={{ fontStyle: 'italic', wordBreak: 'break-word', lineHeight: '1.2' }}>{agent.micDriverName.replace('Default - ', '')}</span>
+                        </div>
+                      )}
+                      {agent.obsSourceName && (
+                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '4px', color: '#888', fontSize: '0.75rem', marginTop: '-2px' }}>
+                          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginTop: '2px', flexShrink: 0 }}>
+                            <polygon points="23 7 16 12 23 17 23 7"></polygon><rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect>
+                          </svg>
+                          <span style={{ fontStyle: 'italic', wordBreak: 'break-word', lineHeight: '1.2' }}>{agent.obsSourceName}</span>
+                        </div>
+                      )}
+                    </div>
                     {agent.cpuUsage !== undefined && (
-                      <span className={`hardware-stats ${isHardwareWarning ? 'warning' : ''}`}>
+                      <span className={`hardware-stats ${isHardwareWarning ? 'warning' : ''}`} style={{ alignSelf: 'flex-start', whiteSpace: 'nowrap', flexShrink: 0 }}>
                         CPU: {agent.cpuUsage}% | RAM: {agent.ramUsage}%
                       </span>
                     )}
@@ -251,7 +281,7 @@ function App() {
 
                   <div className="meter-container">
                     <div style={{ display: 'flex', justifyContent: 'space-between', position: 'relative', alignItems: 'flex-end', marginBottom: '8px' }}>
-                      <label style={{ fontSize: '1.1rem' }}>Mic {agent.micLevel === 0 && agent.rawMicLevel > 0 ? '(Gated)' : ''}</label>
+                      <label style={{ fontSize: '0.9rem', fontWeight: 'bold', color: '#aaa', textTransform: 'uppercase', letterSpacing: '1px' }}>Mic {agent.micLevel === 0 && agent.rawMicLevel > 0 ? '(Gated)' : ''}</label>
                       {agent.micHistory && (
                         <svg width="120" height="25" className="sparkline">
                           <polyline
@@ -277,9 +307,9 @@ function App() {
                     </div>
                   </div>
 
-                  <div className="meter-container" style={{ marginTop: '15px' }}>
+                  <div className="meter-container" style={{ marginTop: '20px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '8px' }}>
-                      <label style={{ fontSize: '1.1rem' }}>OBS</label>
+                      <label style={{ fontSize: '0.9rem', fontWeight: 'bold', color: '#aaa', textTransform: 'uppercase', letterSpacing: '1px' }}>OBS Output</label>
                       {agent.obsHistory && (
                         <svg width="120" height="25" className="sparkline">
                           <polyline
