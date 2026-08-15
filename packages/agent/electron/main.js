@@ -28,7 +28,7 @@ function createWindow() {
   const { x: workAreaX, y: workAreaY } = primaryDisplay.workArea;
 
   const windowWidth = 430;
-  const windowHeight = 420;
+  const windowHeight = 460;
 
   // Calculate bottom right corner with 15px padding
   const x = workAreaX + screenWidth - windowWidth - 15;
@@ -65,16 +65,15 @@ function createWindow() {
 }
 
 function createTray() {
-  // Use a proper PNG icon for Windows system tray
-  let iconPath = path.join(__dirname, '../public/icon.png');
+  // Use a robust .ico file for Windows system tray
+  let iconPath = path.join(__dirname, '../public/icon.ico');
   if (!isDev) {
-    iconPath = path.join(__dirname, '../dist/icon.png');
+    iconPath = path.join(__dirname, '../dist/icon.ico');
   }
   
   try {
     tray = new Tray(iconPath);
   } catch (e) {
-    // Ultimate fallback if something goes wrong
     console.error('Tray icon error:', e);
     tray = new Tray(nativeImage.createEmpty());
   }
