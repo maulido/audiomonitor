@@ -275,7 +275,7 @@ function App() {
               <label>Mic Noise Gate: {noiseGate}%</label>
               <input 
                 type="range" 
-                min="0" max="60" 
+                min="0" max="100" 
                 value={noiseGate} 
                 onChange={e => setNoiseGate(Number(e.target.value))} 
                 title="Abaikan suara berisik/statis di bawah batas ini"
