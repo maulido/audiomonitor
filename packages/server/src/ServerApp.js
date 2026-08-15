@@ -3,6 +3,7 @@ const http = require('http');
 const cors = require('cors');
 
 const ConfigManager = require('./ConfigManager');
+const DatabaseManager = require('./DatabaseManager');
 const AlertManager = require('./AlertManager');
 const TelemetryHub = require('./TelemetryHub');
 
@@ -14,7 +15,8 @@ class ServerApp {
     
     // Initialize Core Modules
     this.configManager = new ConfigManager();
-    this.alertManager = new AlertManager(this.configManager);
+    this.dbManager = new DatabaseManager();
+    this.alertManager = new AlertManager(this.configManager, this.dbManager);
     this.telemetryHub = new TelemetryHub(this.server, this.configManager, this.alertManager);
 
     this.setupMiddleware();
@@ -38,6 +40,13 @@ class ServerApp {
 
     this.app.get('/api/config', (req, res) => {
       res.send(this.configManager.config);
+    });
+
+    this.app.get('/api/incidents', (req, res) => {
+      const limit = parseInt(req.query.limit) || 100;
+      this.dbManager.getRecentIncidents(limit, (rows) => {
+        res.send(rows);
+      });
     });
   }
 

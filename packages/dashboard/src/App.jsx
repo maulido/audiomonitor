@@ -13,6 +13,28 @@ function App() {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('ALL');
 
+  // Logs View State
+  const [currentView, setCurrentView] = useState('live'); // 'live' or 'logs'
+  const [logs, setLogs] = useState([]);
+
+  const fetchLogs = async () => {
+    try {
+      const res = await fetch(`${SERVER_URL}/api/incidents`);
+      if (res.ok) {
+        const data = await res.json();
+        setLogs(data);
+      }
+    } catch (e) {
+      console.error('Failed to fetch logs', e);
+    }
+  };
+
+  useEffect(() => {
+    if (currentView === 'logs') {
+      fetchLogs();
+    }
+  }, [currentView]);
+
   const client = useRef(null);
 
   useEffect(() => {
@@ -145,135 +167,174 @@ function App() {
   return (
     <div className="dashboard">
       <header>
-        <h1>Central Audio Dashboard</h1>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+          <h1>Central Audio Dashboard</h1>
+          <div className="view-toggles">
+            <button className={`view-btn ${currentView === 'live' ? 'active' : ''}`} onClick={() => setCurrentView('live')}>Live Status</button>
+            <button className={`view-btn ${currentView === 'logs' ? 'active' : ''}`} onClick={() => setCurrentView('logs')}>Incident Logs</button>
+          </div>
+        </div>
         <div className={`status-badge ${isConnected ? 'connected' : 'disconnected'}`}>
           {isConnected ? 'Server Connected' : 'Disconnected'}
         </div>
       </header>
 
-      <div className="summary-container">
-        <div className="summary-card active">
-          <div className="summary-value">{totalConnected}</div>
-          <div className="summary-label">PC Terhubung</div>
-        </div>
-        <div className="summary-card danger">
-          <div className="summary-value">{totalBahaya}</div>
-          <div className="summary-label">Bahaya / Mute</div>
-        </div>
-        <div className="summary-card standby">
-          <div className="summary-value">{totalStandby}</div>
-          <div className="summary-label">Standby</div>
-        </div>
-      </div>
-
-      <div className="controls-bar">
-        <input
-          type="text"
-          placeholder="Cari PC..."
-          value={searchTerm}
-          onChange={e => setSearchTerm(e.target.value)}
-          className="search-input"
-        />
-        <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} className="filter-select">
-          <option value="ALL">Semua Status</option>
-          <option value="AMAN">Aman</option>
-          <option value="BAHAYA_OBS_MUTE">Bahaya (OBS Mute)</option>
-          <option value="STANDBY_DIAM">Standby (Diam)</option>
-          <option value="OFFLINE">Offline</option>
-        </select>
-      </div>
-
-      <div className="grid">
-        {sortedFilteredAgents.map(agent => {
-          const isHardwareWarning = agent.cpuUsage > 85 || agent.ramUsage > 85;
-          return (
-            <div key={agent.uuid} className={`agent-card ${agent.status}`}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '5px' }}>
-                {editingId === agent.uuid ? (
-                  <form onSubmit={(e) => submitInlineRename(e, agent.uuid)} style={{ display: 'flex', gap: '5px', width: '100%' }}>
-                    <input
-                      autoFocus
-                      value={editingName}
-                      onChange={e => setEditingName(e.target.value)}
-                      style={{ padding: '5px', borderRadius: '4px', border: 'none', width: '100%' }}
-                    />
-                    <button type="submit" style={{ padding: '5px', cursor: 'pointer', background: '#2196f3', color: 'white', border: 'none', borderRadius: '4px' }}>✓</button>
-                    <button type="button" onClick={() => setEditingId(null)} style={{ padding: '5px', cursor: 'pointer', background: '#555', color: 'white', border: 'none', borderRadius: '4px' }}>✕</button>
-                  </form>
-                ) : (
-                  <>
-                    <h2 style={{ margin: 0, flex: 1, minWidth: 0 }}>{agent.pcName}</h2>
-                    <button onClick={() => { setEditingId(agent.uuid); setEditingName(agent.pcName); }} style={{ background: 'transparent', border: 'none', color: '#888', cursor: 'pointer', flexShrink: 0 }}>✏️</button>
-                  </>
-                )}
-              </div>
-
-              <div className="pc-meta">
-                <span className="uuid">{agent.uuid.split('-')[0]}...</span>
-                {agent.cpuUsage !== undefined && (
-                  <span className={`hardware-stats ${isHardwareWarning ? 'warning' : ''}`}>
-                    CPU: {agent.cpuUsage}% | RAM: {agent.ramUsage}%
-                  </span>
-                )}
-              </div>
-
-              <h3 className="status-text">{agent.status.replace(/_/g, ' ')}</h3>
-
-              <div className="meter-container">
-                <div style={{ display: 'flex', justifyContent: 'space-between', position: 'relative', alignItems: 'flex-end', marginBottom: '8px' }}>
-                  <label style={{ fontSize: '1.1rem' }}>Mic {agent.micLevel === 0 && agent.rawMicLevel > 0 ? '(Gated)' : ''}</label>
-                  {agent.micHistory && (
-                    <svg width="120" height="25" className="sparkline">
-                      <polyline
-                        points={agent.micHistory.map((val, i) => `${i * 4},${25 - ((val || 0) / 100) * 25}`).join(' ')}
-                        fill="none" stroke="#4caf50" strokeWidth="2"
-                      />
-                    </svg>
-                  )}
-                </div>
-                <div className="meter-bg" style={{ position: 'relative' }}>
-                  {agent.noiseGate !== undefined && (
-                    <div style={{
-                      position: 'absolute', left: `${agent.noiseGate}%`, top: 0, bottom: 0, width: '3px', backgroundColor: '#ff9800', zIndex: 10
-                    }}></div>
-                  )}
-                  <div
-                    className="meter-fill mic"
-                    style={{ 
-                      width: `${Math.min(agent.rawMicLevel !== undefined ? agent.rawMicLevel : agent.micLevel, 100)}%`,
-                      filter: agent.micLevel === 0 && agent.rawMicLevel > 0 ? 'grayscale(100%) opacity(0.4)' : 'none'
-                    }}
-                  ></div>
-                </div>
-              </div>
-
-              <div className="meter-container" style={{ marginTop: '15px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '8px' }}>
-                  <label style={{ fontSize: '1.1rem' }}>OBS</label>
-                  {agent.obsHistory && (
-                    <svg width="120" height="25" className="sparkline">
-                      <polyline
-                        points={agent.obsHistory.map((val, i) => `${i * 4},${25 - ((val || 0) / 100) * 25}`).join(' ')}
-                        fill="none" stroke="#2196f3" strokeWidth="2"
-                      />
-                    </svg>
-                  )}
-                </div>
-                <div className="meter-bg">
-                  <div
-                    className="meter-fill obs"
-                    style={{ width: `${Math.min(agent.obsLevel, 100)}%` }}
-                  ></div>
-                </div>
-              </div>
-              <p className="timestamp">Last update: {new Date(agent.timestamp).toLocaleTimeString()}</p>
+      {currentView === 'live' ? (
+        <>
+          <div className="summary-container">
+            <div className="summary-card active">
+              <div className="summary-value">{totalConnected}</div>
+              <div className="summary-label">PC Terhubung</div>
             </div>
-          );
-        })}
-        {Object.keys(agents).length === 0 && (
-          <p className="empty-state">Waiting for PC Streaming connections...</p>
-        )}
-      </div>
+            <div className="summary-card danger">
+              <div className="summary-value">{totalBahaya}</div>
+              <div className="summary-label">Bahaya / Mute</div>
+            </div>
+            <div className="summary-card standby">
+              <div className="summary-value">{totalStandby}</div>
+              <div className="summary-label">Standby</div>
+            </div>
+          </div>
+
+          <div className="controls-bar">
+            <input
+              type="text"
+              placeholder="Cari PC..."
+              value={searchTerm}
+              onChange={e => setSearchTerm(e.target.value)}
+              className="search-input"
+            />
+            <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} className="filter-select">
+              <option value="ALL">Semua Status</option>
+              <option value="AMAN">Aman</option>
+              <option value="BAHAYA_OBS_MUTE">Bahaya (OBS Mute)</option>
+              <option value="STANDBY_DIAM">Standby (Diam)</option>
+              <option value="OFFLINE">Offline</option>
+            </select>
+          </div>
+
+          <div className="grid">
+            {sortedFilteredAgents.map(agent => {
+              const isHardwareWarning = agent.cpuUsage > 85 || agent.ramUsage > 85;
+              return (
+                <div key={agent.uuid} className={`agent-card ${agent.status}`}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '5px' }}>
+                    {editingId === agent.uuid ? (
+                      <form onSubmit={(e) => submitInlineRename(e, agent.uuid)} style={{ display: 'flex', gap: '5px', width: '100%' }}>
+                        <input
+                          autoFocus
+                          value={editingName}
+                          onChange={e => setEditingName(e.target.value)}
+                          style={{ padding: '5px', borderRadius: '4px', border: 'none', width: '100%' }}
+                        />
+                        <button type="submit" style={{ padding: '5px', cursor: 'pointer', background: '#2196f3', color: 'white', border: 'none', borderRadius: '4px' }}>✓</button>
+                        <button type="button" onClick={() => setEditingId(null)} style={{ padding: '5px', cursor: 'pointer', background: '#555', color: 'white', border: 'none', borderRadius: '4px' }}>✕</button>
+                      </form>
+                    ) : (
+                      <>
+                        <h2 style={{ margin: 0, flex: 1, minWidth: 0 }}>{agent.pcName}</h2>
+                        <button onClick={() => { setEditingId(agent.uuid); setEditingName(agent.pcName); }} style={{ background: 'transparent', border: 'none', color: '#888', cursor: 'pointer', flexShrink: 0 }}>✏️</button>
+                      </>
+                    )}
+                  </div>
+
+                  <div className="pc-meta">
+                    <span className="uuid">{agent.uuid.split('-')[0]}...</span>
+                    {agent.cpuUsage !== undefined && (
+                      <span className={`hardware-stats ${isHardwareWarning ? 'warning' : ''}`}>
+                        CPU: {agent.cpuUsage}% | RAM: {agent.ramUsage}%
+                      </span>
+                    )}
+                  </div>
+
+                  <h3 className="status-text">{agent.status.replace(/_/g, ' ')}</h3>
+
+                  <div className="meter-container">
+                    <div style={{ display: 'flex', justifyContent: 'space-between', position: 'relative', alignItems: 'flex-end', marginBottom: '8px' }}>
+                      <label style={{ fontSize: '1.1rem' }}>Mic {agent.micLevel === 0 && agent.rawMicLevel > 0 ? '(Gated)' : ''}</label>
+                      {agent.micHistory && (
+                        <svg width="120" height="25" className="sparkline">
+                          <polyline
+                            points={agent.micHistory.map((val, i) => `${i * 4},${25 - ((val || 0) / 100) * 25}`).join(' ')}
+                            fill="none" stroke="#4caf50" strokeWidth="2"
+                          />
+                        </svg>
+                      )}
+                    </div>
+                    <div className="meter-bg" style={{ position: 'relative' }}>
+                      {agent.noiseGate !== undefined && (
+                        <div style={{
+                          position: 'absolute', left: `${agent.noiseGate}%`, top: 0, bottom: 0, width: '3px', backgroundColor: '#ff9800', zIndex: 10
+                        }}></div>
+                      )}
+                      <div
+                        className="meter-fill mic"
+                        style={{ 
+                          width: `${Math.min(agent.rawMicLevel !== undefined ? agent.rawMicLevel : agent.micLevel, 100)}%`,
+                          filter: agent.micLevel === 0 && agent.rawMicLevel > 0 ? 'grayscale(100%) opacity(0.4)' : 'none'
+                        }}
+                      ></div>
+                    </div>
+                  </div>
+
+                  <div className="meter-container" style={{ marginTop: '15px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '8px' }}>
+                      <label style={{ fontSize: '1.1rem' }}>OBS</label>
+                      {agent.obsHistory && (
+                        <svg width="120" height="25" className="sparkline">
+                          <polyline
+                            points={agent.obsHistory.map((val, i) => `${i * 4},${25 - ((val || 0) / 100) * 25}`).join(' ')}
+                            fill="none" stroke="#2196f3" strokeWidth="2"
+                          />
+                        </svg>
+                      )}
+                    </div>
+                    <div className="meter-bg">
+                      <div
+                        className="meter-fill obs"
+                        style={{ width: `${Math.min(agent.obsLevel, 100)}%` }}
+                      ></div>
+                    </div>
+                  </div>
+                  <p className="timestamp">Last update: {new Date(agent.timestamp).toLocaleTimeString()}</p>
+                </div>
+              );
+            })}
+            {Object.keys(agents).length === 0 && (
+              <p className="empty-state">Waiting for PC Streaming connections...</p>
+            )}
+          </div>
+        </>
+      ) : (
+        <div className="logs-container">
+          <h2>Recent Incidents</h2>
+          <button className="primary-btn" onClick={fetchLogs} style={{ marginBottom: '15px' }}>Refresh Logs</button>
+          <table className="logs-table">
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>PC Name</th>
+                <th>Type</th>
+                <th>Details</th>
+              </tr>
+            </thead>
+            <tbody>
+              {logs.length === 0 ? (
+                <tr><td colSpan="4" style={{ textAlign: 'center', padding: '20px' }}>No incidents recorded yet.</td></tr>
+              ) : (
+                logs.map(log => (
+                  <tr key={log.id} className={log.incidentType.includes('RECOVERY') ? 'recovery-row' : log.incidentType.includes('BAHAYA') ? 'danger-row' : ''}>
+                    <td>{new Date(log.timestamp).toLocaleString()}</td>
+                    <td>{log.pcName}</td>
+                    <td>{log.incidentType.replace(/_/g, ' ')}</td>
+                    <td>{log.details}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

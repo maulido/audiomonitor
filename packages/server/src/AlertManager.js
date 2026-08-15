@@ -1,8 +1,9 @@
 const TelegramBot = require('node-telegram-bot-api');
 
 class AlertManager {
-  constructor(configManager) {
+  constructor(configManager, dbManager) {
     this.configManager = configManager;
+    this.dbManager = dbManager;
     this.bot = null;
     this.lastAlertState = {}; // To prevent spamming
     this.THROTTLE_MS = 60000; // 60 seconds
@@ -43,11 +44,13 @@ class AlertManager {
       if (now - lastAlertTime > this.THROTTLE_MS) {
         let msg = `*${pcName}* mengalami masalah: *${data.status.replace(/_/g, ' ')}*`;
         this.sendTelegramAlert(msg);
+        if (this.dbManager) this.dbManager.logIncident(data.uuid, pcName, data.status, 'Audio/OBS Issue Detected');
         this.lastAlertState[data.uuid] = now;
       }
     } else if (data.status === 'AMAN' && this.lastAlertState[data.uuid]) {
       // It recovered
       this.sendTelegramAlert(`✅ *${pcName}* audio sudah kembali AMAN.`);
+      if (this.dbManager) this.dbManager.logIncident(data.uuid, pcName, 'RECOVERY', 'Audio kembali AMAN');
       delete this.lastAlertState[data.uuid];
     }
 
@@ -62,13 +65,16 @@ class AlertManager {
         if (data.cpuUsage > 85) issues.push(`CPU (${data.cpuUsage}%)`);
         if (data.ramUsage > 85) issues.push(`RAM (${data.ramUsage}%)`);
         
-        this.sendTelegramAlert(`🔥 *HARDWARE WARNING*\n*${pcName}* mengalami beban tinggi pada ${issues.join(' & ')}.`);
+        let details = `Beban tinggi pada ${issues.join(' & ')}`;
+        this.sendTelegramAlert(`🔥 *HARDWARE WARNING*\n*${pcName}* mengalami ${details}.`);
+        if (this.dbManager) this.dbManager.logIncident(data.uuid, pcName, 'HARDWARE_WARNING', details);
         this.lastAlertState[hwKey] = now;
       }
     } else {
       const hwKey = `${data.uuid}_hw`;
       if (this.lastAlertState[hwKey]) {
         this.sendTelegramAlert(`✅ *${pcName}* hardware sudah kembali stabil.`);
+        if (this.dbManager) this.dbManager.logIncident(data.uuid, pcName, 'RECOVERY', 'Hardware kembali stabil');
         delete this.lastAlertState[hwKey];
       }
     }
@@ -76,6 +82,7 @@ class AlertManager {
 
   processOffline(uuid, pcName) {
     this.sendTelegramAlert(`🔌 *${pcName}* terputus dari jaringan (OFFLINE).`);
+    if (this.dbManager) this.dbManager.logIncident(uuid, pcName, 'OFFLINE', 'Koneksi terputus');
     // Reset alert state so it can alert again when it reconnects and fails
     delete this.lastAlertState[uuid];
     delete this.lastAlertState[`${uuid}_hw`];
