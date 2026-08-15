@@ -52,16 +52,17 @@ function createWindow() {
     }
   });
 
+  // Hide window instead of closing
+  mainWindow.on('close', (e) => {
+    if (!isQuitting) {
+      e.preventDefault();
+      mainWindow.hide();
+    }
+  });
+
   if (isDev) {
     mainWindow.loadURL('http://localhost:5173');
   } else {
-    // Hide window instead of closing
-    mainWindow.on('close', (e) => {
-      if (!isQuitting) {
-        e.preventDefault();
-        mainWindow.hide();
-      }
-    });
 
     // Enable auto-start on login silently
     app.setLoginItemSettings({
