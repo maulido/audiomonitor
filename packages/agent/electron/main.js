@@ -65,18 +65,18 @@ function createWindow() {
 }
 
 function createTray() {
-  // Use a fallback empty icon if favicon.svg fails
-  let iconPath = path.join(__dirname, '../public/favicon.svg');
+  // Use a proper PNG icon for Windows system tray
+  let iconPath = path.join(__dirname, '../public/icon.png');
   if (!isDev) {
-    iconPath = path.join(__dirname, '../dist/favicon.svg');
+    iconPath = path.join(__dirname, '../dist/icon.png');
   }
   
   try {
     tray = new Tray(iconPath);
   } catch (e) {
-    // Fallback to a 16x16 blue square if SVG isn't supported on OS
-    const blueSquare = nativeImage.createFromDataURL("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAAXNSR0IArs4c6QAAACtJREFUOE9jZKAQMELV/2fACRhHNYwMA4phNIMhGjA0MowGA2MwGBhmGhkAAIMtBxMh159eAAAAAElFTkSuQmCC");
-    tray = new Tray(blueSquare);
+    // Ultimate fallback if something goes wrong
+    console.error('Tray icon error:', e);
+    tray = new Tray(nativeImage.createEmpty());
   }
 
   const contextMenu = Menu.buildFromTemplate([
