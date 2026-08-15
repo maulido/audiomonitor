@@ -60,6 +60,7 @@ function App() {
   useEffect(() => {
     if (uuid !== 'Loading...') {
       telemetryClient.current = new TelemetryClient(serverIp, uuid);
+      telemetryClient.current.connect();
       
       const socket = telemetryClient.current.socket;
       if (socket) {
@@ -67,8 +68,6 @@ function App() {
         socket.on('disconnect', () => setServerConnected(false));
         socket.on('connect_error', () => setServerConnected(false));
       }
-
-      telemetryClient.current.connect();
 
       return () => {
         telemetryClient.current.disconnect();
