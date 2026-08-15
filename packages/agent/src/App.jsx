@@ -187,22 +187,34 @@ function App() {
     }
   }, [micLevel, obsLevel, obsConnected, status]);
 
-  // Telemetry Sender
+  // Refs to hold latest values for telemetry throttling
+  const latestTelemetryData = useRef({});
   useEffect(() => {
-    if (telemetryClient.current && uuid !== 'Loading...') {
-      telemetryClient.current.sendTelemetry({
-        uuid,
-        micLevel,
-        rawMicLevel,
-        noiseGate,
-        obsLevel,
-        status,
-        cpuUsage: hardwareUsage.cpuUsage,
-        ramUsage: hardwareUsage.ramUsage,
-        timestamp: Date.now()
-      });
-    }
+    latestTelemetryData.current = {
+      uuid,
+      micLevel,
+      rawMicLevel,
+      noiseGate,
+      obsLevel,
+      status,
+      cpuUsage: hardwareUsage.cpuUsage,
+      ramUsage: hardwareUsage.ramUsage
+    };
   }, [micLevel, rawMicLevel, noiseGate, obsLevel, status, hardwareUsage, uuid]);
+
+  // Telemetry Sender (Throttled to 500ms)
+  useEffect(() => {
+    const telemetryInterval = setInterval(() => {
+      if (telemetryClient.current && latestTelemetryData.current.uuid && latestTelemetryData.current.uuid !== 'Loading...') {
+        telemetryClient.current.sendTelemetry({
+          ...latestTelemetryData.current,
+          timestamp: Date.now()
+        });
+      }
+    }, 500);
+
+    return () => clearInterval(telemetryInterval);
+  }, []);
 
   const connectOBS = async () => {
     if (obsClient.current) {

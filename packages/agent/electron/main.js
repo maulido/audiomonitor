@@ -51,17 +51,22 @@ function createWindow() {
   if (isDev) {
     mainWindow.loadURL('http://localhost:5173');
   } else {
+    // Hide window instead of closing
+    mainWindow.on('close', (e) => {
+      if (!isQuitting) {
+        e.preventDefault();
+        mainWindow.hide();
+      }
+    });
+
+    // Enable auto-start on login
+    app.setLoginItemSettings({
+      openAtLogin: true,
+      path: app.getPath('exe')
+    });
+
     mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
   }
-
-  // Prevent window from closing, minimize to tray instead
-  mainWindow.on('close', function (event) {
-    if (!isQuitting) {
-      event.preventDefault();
-      mainWindow.hide();
-      return false;
-    }
-  });
 }
 
 function createTray() {
