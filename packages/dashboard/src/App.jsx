@@ -99,6 +99,49 @@ function App() {
       return (a.pcName || '').localeCompare(b.pcName || '');
     });
 
+  // Audio Alarm Logic
+  const alarmIntervalRef = useRef(null);
+  useEffect(() => {
+    if (totalBahaya > 0) {
+      if (!alarmIntervalRef.current) {
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        
+        const playBeep = () => {
+          if (audioCtx.state === 'suspended') audioCtx.resume();
+          const oscillator = audioCtx.createOscillator();
+          const gainNode = audioCtx.createGain();
+          
+          oscillator.type = 'square';
+          oscillator.frequency.setValueAtTime(880, audioCtx.currentTime); // A5 note
+          
+          gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+          gainNode.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.5);
+          
+          oscillator.connect(gainNode);
+          gainNode.connect(audioCtx.destination);
+          
+          oscillator.start();
+          oscillator.stop(audioCtx.currentTime + 0.5);
+        };
+        
+        playBeep(); // play immediately
+        alarmIntervalRef.current = setInterval(playBeep, 1000); // loop every 1s
+      }
+    } else {
+      if (alarmIntervalRef.current) {
+        clearInterval(alarmIntervalRef.current);
+        alarmIntervalRef.current = null;
+      }
+    }
+    
+    return () => {
+      if (alarmIntervalRef.current) {
+        clearInterval(alarmIntervalRef.current);
+        alarmIntervalRef.current = null;
+      }
+    };
+  }, [totalBahaya]);
+
   return (
     <div className="dashboard">
       <header>
@@ -177,13 +220,13 @@ function App() {
               <h3 className="status-text">{agent.status.replace(/_/g, ' ')}</h3>
 
               <div className="meter-container">
-                <div style={{ display: 'flex', justifyContent: 'space-between', position: 'relative' }}>
-                  <label>Mic {agent.micLevel === 0 && agent.rawMicLevel > 0 ? '(Gated)' : ''}</label>
+                <div style={{ display: 'flex', justifyContent: 'space-between', position: 'relative', alignItems: 'flex-end', marginBottom: '8px' }}>
+                  <label style={{ fontSize: '1.1rem' }}>Mic {agent.micLevel === 0 && agent.rawMicLevel > 0 ? '(Gated)' : ''}</label>
                   {agent.micHistory && (
-                    <svg width="60" height="15" className="sparkline">
+                    <svg width="120" height="25" className="sparkline">
                       <polyline
-                        points={agent.micHistory.map((val, i) => `${i * 2},${15 - ((val || 0) / 100) * 15}`).join(' ')}
-                        fill="none" stroke="#4caf50" strokeWidth="1"
+                        points={agent.micHistory.map((val, i) => `${i * 4},${25 - ((val || 0) / 100) * 25}`).join(' ')}
+                        fill="none" stroke="#4caf50" strokeWidth="2"
                       />
                     </svg>
                   )}
@@ -191,7 +234,7 @@ function App() {
                 <div className="meter-bg" style={{ position: 'relative' }}>
                   {agent.noiseGate !== undefined && (
                     <div style={{
-                      position: 'absolute', left: `${agent.noiseGate}%`, top: 0, bottom: 0, width: '2px', backgroundColor: '#ff9800', zIndex: 10
+                      position: 'absolute', left: `${agent.noiseGate}%`, top: 0, bottom: 0, width: '3px', backgroundColor: '#ff9800', zIndex: 10
                     }}></div>
                   )}
                   <div
@@ -204,14 +247,14 @@ function App() {
                 </div>
               </div>
 
-              <div className="meter-container">
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <label>OBS</label>
+              <div className="meter-container" style={{ marginTop: '15px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '8px' }}>
+                  <label style={{ fontSize: '1.1rem' }}>OBS</label>
                   {agent.obsHistory && (
-                    <svg width="60" height="15" className="sparkline">
+                    <svg width="120" height="25" className="sparkline">
                       <polyline
-                        points={agent.obsHistory.map((val, i) => `${i * 2},${15 - (val / 100) * 15}`).join(' ')}
-                        fill="none" stroke="#2196f3" strokeWidth="1"
+                        points={agent.obsHistory.map((val, i) => `${i * 4},${25 - ((val || 0) / 100) * 25}`).join(' ')}
+                        fill="none" stroke="#2196f3" strokeWidth="2"
                       />
                     </svg>
                   )}

@@ -24,6 +24,7 @@ class TelemetryHub {
         // Map socket id to uuid so we know who disconnects later
         if (data.uuid) {
           socket.agentUuid = data.uuid;
+          socket.agentName = data.name;
         }
         this.handleTelemetry(data);
       });
@@ -31,7 +32,7 @@ class TelemetryHub {
       socket.on('disconnect', () => {
         console.log('Client disconnected:', socket.id);
         if (socket.agentUuid) {
-          const pcName = this.configManager.getPcName(socket.agentUuid);
+          const pcName = this.configManager.config.pcMapping[socket.agentUuid] || socket.agentName || socket.agentUuid;
           this.io.emit('agent-disconnect', {
             uuid: socket.agentUuid,
             pcName,
@@ -47,7 +48,8 @@ class TelemetryHub {
 
   handleTelemetry(data) {
     // Determine the readable PC Name
-    const pcName = this.configManager.getPcName(data.uuid);
+    // Fallback order: Configured Name > Agent self-reported name > UUID
+    const pcName = this.configManager.config.pcMapping[data.uuid] || data.name || data.uuid;
     const enrichedData = { ...data, pcName };
 
     // Broadcast to dashboard
