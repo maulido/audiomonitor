@@ -16,6 +16,10 @@ class TelemetryHub {
     this.io.on('connection', (socket) => {
       console.log('A client connected:', socket.id);
 
+      socket.on('register', (data) => {
+        socket.join('dashboards');
+      });
+
       socket.on('telemetry', (data) => {
         // Map socket id to uuid so we know who disconnects later
         if (data.uuid) {

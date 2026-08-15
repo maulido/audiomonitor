@@ -24,10 +24,29 @@ class TelemetryClient {
   sendTelemetry(data) {
     if (this.socket && this.socket.connected) {
       const now = Date.now();
-      if (now - this.lastSendTime > this.THROTTLE_MS) {
-        this.socket.emit('telemetry', data);
-        this.lastSendTime = now;
+      
+      if (now - this.lastSendTime < this.THROTTLE_MS) {
+        this.pendingData = data;
+        if (!this.throttleTimer) {
+          this.throttleTimer = setTimeout(() => {
+            if (this.pendingData && this.socket && this.socket.connected) {
+              this.socket.emit('telemetry', this.pendingData);
+              this.lastSendTime = Date.now();
+              this.pendingData = null;
+            }
+            this.throttleTimer = null;
+          }, this.THROTTLE_MS - (now - this.lastSendTime));
+        }
+        return;
       }
+
+      if (this.throttleTimer) {
+        clearTimeout(this.throttleTimer);
+        this.throttleTimer = null;
+      }
+      this.socket.emit('telemetry', data);
+      this.lastSendTime = now;
+      this.pendingData = null;
     }
   }
 }

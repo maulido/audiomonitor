@@ -7,9 +7,13 @@ class AudioProcessor {
     this.onLevelChange = onLevelChange; // Callback for UI
   }
 
-  async start() {
+  async start(deviceId = null) {
     try {
-      this.stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      const constraints = {
+        audio: deviceId ? { deviceId: { exact: deviceId } } : true,
+        video: false
+      };
+      this.stream = await navigator.mediaDevices.getUserMedia(constraints);
       this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
       this.analyser = this.audioContext.createAnalyser();
       this.microphone = this.audioContext.createMediaStreamSource(this.stream);

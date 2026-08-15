@@ -2,6 +2,8 @@
   "name": "agent",
   "private": true,
   "version": "0.0.0",
+  "description": "Multi-PC Audio Monitor Agent",
+  "author": "Audio Monitor Team",
   "type": "commonjs",
   "main": "electron/main.js",
   "scripts": {
@@ -17,7 +19,7 @@
     "@vitejs/plugin-react": "^4.7.0",
     "concurrently": "^8.2.2",
     "cross-env": "^7.0.3",
-    "electron": "^31.3.1",
+    "electron": "31.3.1",
     "electron-builder": "^24.13.3",
     "typescript": "~6.0.2",
     "vite": "^5.0.0",
