@@ -233,7 +233,7 @@ function App() {
       </div>
 
       <div className="settings-grid">
-        <div className="settings-card">
+        <div className="settings-card full-width">
           <h2>Server Settings</h2>
           <div className="form-group">
             <input 
