@@ -74,9 +74,9 @@ function createTray() {
   try {
     tray = new Tray(iconPath);
   } catch (e) {
-    // Fallback to empty image if SVG isn't supported on OS
-    const emptyImage = nativeImage.createEmpty();
-    tray = new Tray(emptyImage);
+    // Fallback to a 16x16 blue square if SVG isn't supported on OS
+    const blueSquare = nativeImage.createFromDataURL("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAAXNSR0IArs4c6QAAACtJREFUOE9jZKAQMELV/2fACRhHNYwMA4phNIMhGjA0MowGA2MwGBhmGhkAAIMtBxMh159eAAAAAElFTkSuQmCC");
+    tray = new Tray(blueSquare);
   }
 
   const contextMenu = Menu.buildFromTemplate([
