@@ -34,6 +34,8 @@ function createWindow() {
   const x = workAreaX + screenWidth - windowWidth - 15;
   const y = workAreaY + screenHeight - windowHeight - 15;
 
+  const isHiddenBoot = process.argv.includes('--hidden');
+
   mainWindow = new BrowserWindow({
     width: windowWidth,
     height: windowHeight,
@@ -41,6 +43,7 @@ function createWindow() {
     y: y,
     resizable: false,
     autoHideMenuBar: true,
+    show: !isHiddenBoot,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
@@ -60,10 +63,11 @@ function createWindow() {
       }
     });
 
-    // Enable auto-start on login
+    // Enable auto-start on login silently
     app.setLoginItemSettings({
       openAtLogin: true,
-      path: app.getPath('exe')
+      path: app.getPath('exe'),
+      args: ['--hidden']
     });
 
     mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));

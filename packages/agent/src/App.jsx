@@ -14,6 +14,7 @@ function App() {
   const [serverConnected, setServerConnected] = useState(false);
 
   // Settings state (Persisted to localStorage)
+  const [agentName, setAgentName] = useState(() => localStorage.getItem('agentName') || 'PC-Studio-1');
   const [serverIp, setServerIp] = useState(() => localStorage.getItem('serverIp') || 'http://localhost:4000');
   const [obsIp, setObsIp] = useState(() => localStorage.getItem('obsIp') || 'localhost:4455');
   const [obsPassword, setObsPassword] = useState(() => localStorage.getItem('obsPassword') || '');
@@ -30,6 +31,7 @@ function App() {
   useEffect(() => {
     obsSourceNameRef.current = obsSourceName;
     noiseGateRef.current = noiseGate;
+    localStorage.setItem('agentName', agentName);
     localStorage.setItem('serverIp', serverIp);
     localStorage.setItem('obsIp', obsIp);
     localStorage.setItem('obsPassword', obsPassword);
@@ -37,7 +39,7 @@ function App() {
     localStorage.setItem('selectedMicId', selectedMicId);
     localStorage.setItem('noiseGate', noiseGate.toString());
     localStorage.setItem('silenceTimeoutSec', silenceTimeoutSec.toString());
-  }, [serverIp, obsIp, obsPassword, obsSourceName, selectedMicId, noiseGate, silenceTimeoutSec]);
+  }, [agentName, serverIp, obsIp, obsPassword, obsSourceName, selectedMicId, noiseGate, silenceTimeoutSec]);
 
   // Core Instances (useRef to persist across renders without triggering re-renders)
   const audioProcessor = useRef(null);
@@ -194,6 +196,7 @@ function App() {
   useEffect(() => {
     latestTelemetryData.current = {
       uuid,
+      name: agentName,
       micLevel,
       rawMicLevel,
       noiseGate,
@@ -202,7 +205,7 @@ function App() {
       cpuUsage: hardwareUsage.cpuUsage,
       ramUsage: hardwareUsage.ramUsage
     };
-  }, [micLevel, rawMicLevel, noiseGate, obsLevel, status, hardwareUsage, uuid]);
+  }, [micLevel, rawMicLevel, noiseGate, obsLevel, status, hardwareUsage, uuid, agentName]);
 
   // Telemetry Sender (Throttled to 500ms)
   useEffect(() => {
@@ -239,6 +242,7 @@ function App() {
 
       <div className="info-panel">
         <div>
+          <h2 style={{margin: '0 0 5px 0', fontSize: '1.2em'}}>{agentName}</h2>
           <p className="pc-id" title={uuid}>ID: <span>{uuid.length > 15 ? uuid.substring(0, 8) + '...' + uuid.slice(-4) : uuid}</span></p>
         </div>
         <div className={`status-badge ${status}`}>
@@ -250,6 +254,12 @@ function App() {
         <div className="settings-card full-width">
           <h2>Server Settings</h2>
           <div className="form-group">
+            <input 
+              type="text" 
+              value={agentName} 
+              onChange={e => setAgentName(e.target.value)} 
+              placeholder="Nama PC (misal: PC Studio 1)" 
+            />
             <input 
               type="text" 
               value={serverIp} 
