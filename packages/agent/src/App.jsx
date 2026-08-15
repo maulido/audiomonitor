@@ -20,6 +20,7 @@ function App() {
   const [obsSourceName, setObsSourceName] = useState(() => localStorage.getItem('obsSourceName') || 'Mic/Aux');
   const [selectedMicId, setSelectedMicId] = useState(() => localStorage.getItem('selectedMicId') || '');
   const [noiseGate, setNoiseGate] = useState(() => Number(localStorage.getItem('noiseGate')) || 15);
+  const [silenceTimeoutSec, setSilenceTimeoutSec] = useState(() => Number(localStorage.getItem('silenceTimeoutSec')) || 10);
   const [audioDevices, setAudioDevices] = useState([]);
   const [hardwareUsage, setHardwareUsage] = useState({ cpuUsage: 0, ramUsage: 0 });
   
@@ -35,7 +36,8 @@ function App() {
     localStorage.setItem('obsSourceName', obsSourceName);
     localStorage.setItem('selectedMicId', selectedMicId);
     localStorage.setItem('noiseGate', noiseGate.toString());
-  }, [serverIp, obsIp, obsPassword, obsSourceName, selectedMicId, noiseGate]);
+    localStorage.setItem('silenceTimeoutSec', silenceTimeoutSec.toString());
+  }, [serverIp, obsIp, obsPassword, obsSourceName, selectedMicId, noiseGate, silenceTimeoutSec]);
 
   // Core Instances (useRef to persist across renders without triggering re-renders)
   const audioProcessor = useRef(null);
@@ -163,7 +165,7 @@ function App() {
       if (!silenceTimeout.current) {
         silenceTimeout.current = setTimeout(() => {
           setStatus('STANDBY_DIAM');
-        }, 10000); // 10 seconds of continuous silence required
+        }, silenceTimeoutSec * 1000); // Using dynamic timeout
       }
     } else {
       if (silenceTimeout.current) {
@@ -185,7 +187,7 @@ function App() {
         lastNotificationTime.current = now;
       }
     }
-  }, [micLevel, obsLevel, obsConnected, status]);
+  }, [micLevel, obsLevel, obsConnected, status, silenceTimeoutSec]);
 
   // Refs to hold latest values for telemetry throttling
   const latestTelemetryData = useRef({});
@@ -279,6 +281,17 @@ function App() {
                 value={noiseGate} 
                 onChange={e => setNoiseGate(Number(e.target.value))} 
                 title="Abaikan suara berisik/statis di bawah batas ini"
+              />
+            </div>
+            
+            <div className="slider-group" style={{ marginTop: '10px' }}>
+              <label>Silence Timeout: {silenceTimeoutSec}s</label>
+              <input 
+                type="range" 
+                min="5" max="120" step="5"
+                value={silenceTimeoutSec} 
+                onChange={e => setSilenceTimeoutSec(Number(e.target.value))} 
+                title="Durasi hening (detik) sebelum PC dianggap STANDBY"
               />
             </div>
           </div>
