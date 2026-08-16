@@ -108,7 +108,7 @@ class ServerApp {
     });
 
     this.app.post('/api/telegram/test', (req, res) => {
-      this.alertManager.sendTelegramAlert('🔔 <b>Ping!</b> Ini adalah pesan percobaan dari AudioMonitor Server.');
+      this.alertManager.sendTelegramAlert('[TEST] <b>Ping!</b> Ini adalah pesan percobaan dari AudioMonitor Server.');
       res.json({ success: true, message: 'Test message sent' });
     });
   }
