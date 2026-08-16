@@ -31,5 +31,22 @@
     "react-dom": "^19.2.8",
     "socket.io-client": "^4.8.3",
     "uuid": "^14.0.1"
+  },
+  "build": {
+    "appId": "com.audiomonitor.agent",
+    "productName": "Audio Monitor Agent",
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "public/icon.ico"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "artifactName": "AudioMonitor_Agent_Installer_v1.0.exe",
+      "uninstallDisplayName": "Audio Monitor Agent"
+    }
   }
 }

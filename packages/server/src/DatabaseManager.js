@@ -32,7 +32,23 @@ class DatabaseManager {
       )
     `;
     this.db.run(createTableQuery, (err) => {
-      if (err) console.error('Error creating table:', err.message);
+      if (err) {
+        console.error('Error creating table:', err.message);
+      } else {
+        this.autoCleanup();
+      }
+    });
+  }
+
+  autoCleanup() {
+    // Delete logs older than 30 days
+    const query = `DELETE FROM incidents WHERE timestamp < datetime('now', '-30 days')`;
+    this.db.run(query, function(err) {
+      if (err) {
+        console.error('Failed to auto-cleanup old incidents:', err.message);
+      } else if (this.changes > 0) {
+        console.log(`Auto-cleanup: Removed ${this.changes} old incidents from database.`);
+      }
     });
   }
 
