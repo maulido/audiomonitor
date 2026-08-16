@@ -11,10 +11,31 @@ class TelemetryClient {
   connect() {
     if (!this.socket) {
       this.socket = io(this.serverUrl);
+      this.socket.on('set-monitoring', (active) => {
+        if (this.onSetMonitoring) this.onSetMonitoring(active);
+      });
+      // Register this socket to a specific agent room so server can address it
+      this.socket.on('connect', () => {
+        if (this.agentUuid) {
+          this.socket.emit('register', { type: 'agent', uuid: this.agentUuid });
+        }
+      });
+    }
+  }
+
+  setMonitoringListener(uuid, callback) {
+    this.agentUuid = uuid;
+    this.onSetMonitoring = callback;
+    if (this.socket && this.socket.connected) {
+      this.socket.emit('register', { type: 'agent', uuid: this.agentUuid });
     }
   }
 
   disconnect() {
+    if (this.throttleTimer) {
+      clearTimeout(this.throttleTimer);
+      this.throttleTimer = null;
+    }
     if (this.socket) {
       this.socket.close();
       this.socket = null;

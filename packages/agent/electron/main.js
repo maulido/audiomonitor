@@ -12,13 +12,21 @@ let isQuitting = false;
 
 // Ensure unique ID exists
 function getOrCreateUUID() {
-  if (fs.existsSync(configPath)) {
-    const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-    if (config.uuid) return config.uuid;
+  try {
+    if (fs.existsSync(configPath)) {
+      const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+      if (config.uuid) return config.uuid;
+    }
+  } catch (err) {
+    console.error('Error reading config, generating new UUID:', err.message);
   }
   
   const newUuid = crypto.randomUUID();
-  fs.writeFileSync(configPath, JSON.stringify({ uuid: newUuid }, null, 2));
+  try {
+    fs.writeFileSync(configPath, JSON.stringify({ uuid: newUuid }, null, 2));
+  } catch (err) {
+    console.error('Error writing config:', err.message);
+  }
   return newUuid;
 }
 

@@ -88,6 +88,12 @@ header {
   animation: pulse-red 1s infinite;
 }
 
+.agent-card.BAHAYA_MIC_MATI {
+  border-left-color: #ff9800;
+  background: #2b1f10;
+  animation: pulse-orange-card 1s infinite;
+}
+
 .agent-card.STANDBY_DIAM {
   border-left-color: #2196f3;
 }
@@ -102,6 +108,17 @@ header {
   0% { box-shadow: 0 0 0 0 rgba(244, 67, 54, 0.7); }
   70% { box-shadow: 0 0 0 10px rgba(244, 67, 54, 0); }
   100% { box-shadow: 0 0 0 0 rgba(244, 67, 54, 0); }
+}
+
+@keyframes pulse-orange-card {
+  0% { box-shadow: 0 0 0 0 rgba(255, 152, 0, 0.7); }
+  70% { box-shadow: 0 0 0 10px rgba(255, 152, 0, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(255, 152, 0, 0); }
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
 }
 
 .agent-card h2 { 
@@ -125,9 +142,10 @@ header {
   text-transform: uppercase;
 }
 
-.agent-card.AMAN .status-text { background: rgba(76, 175, 80, 0.15); color: #4caf50; border: 1px solid rgba(76, 175, 80, 0.3); }
-.agent-card.BAHAYA_OBS_MUTE .status-text { background: rgba(244, 67, 54, 0.15); color: #f44336; border: 1px solid rgba(244, 67, 54, 0.3); }
-.agent-card.STANDBY_DIAM .status-text { background: rgba(33, 150, 243, 0.15); color: #2196f3; border: 1px solid rgba(33, 150, 243, 0.3); }
+.agent-card.AMAN .status-badge.AMAN { background: rgba(76, 175, 80, 0.15); color: #4caf50; border: 1px solid rgba(76, 175, 80, 0.3); }
+.status-badge.BAHAYA_OBS_MUTE { background: rgba(244, 67, 54, 0.15); color: #f44336; border: 1px solid rgba(244, 67, 54, 0.3); animation: blink 1s infinite; }
+.status-badge.BAHAYA_MIC_MATI { background: rgba(255, 152, 0, 0.15); color: #ff9800; border: 1px solid rgba(255, 152, 0, 0.3); animation: blink 1s infinite; }
+.status-badge.STANDBY_DIAM { background: rgba(33, 150, 243, 0.15); color: #2196f3; border: 1px solid rgba(33, 150, 243, 0.3); }
 .agent-card.OFFLINE .status-text { background: rgba(136, 136, 136, 0.15); color: #888; border: 1px solid rgba(136, 136, 136, 0.3); }
 
 .controls-bar {

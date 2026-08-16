@@ -48,6 +48,46 @@ class ServerApp {
         res.send(rows);
       });
     });
+
+    this.app.delete('/api/incidents', (req, res) => {
+      this.dbManager.clearIncidents((err) => {
+        if (err) return res.status(500).send({ success: false, error: err.message });
+        res.send({ success: true });
+      });
+    });
+
+    this.app.post('/api/config/telegram', (req, res) => {
+      const { token, chatId } = req.body;
+      if (token !== undefined) this.configManager.config.telegram.token = token;
+      if (chatId !== undefined) this.configManager.config.telegram.chatId = chatId;
+      this.configManager.saveConfig();
+      this.alertManager.initBot(); // Re-initialize the bot
+      res.send({ success: true, telegram: this.configManager.config.telegram });
+    });
+
+    this.app.post('/api/config/monitoring', (req, res) => {
+      const { active } = req.body;
+      this.configManager.config.monitoringActive = active;
+      this.configManager.saveConfig();
+      // Broadcast to all dashboards
+      this.telemetryHub.io.emit('monitoring-status', active);
+      res.send({ success: true, monitoringActive: active });
+    });
+
+    this.app.post('/api/pc/:uuid/monitoring', (req, res) => {
+      const { uuid } = req.params;
+      const { active } = req.body;
+      
+      // Server is source of truth — update state, notify agent AND dashboards
+      this.telemetryHub.setPcMonitoring(uuid, active);
+      
+      res.send({ success: true, active });
+    });
+
+    this.app.post('/api/telegram/test', (req, res) => {
+      this.alertManager.sendTelegramAlert('🔔 <b>Ping!</b> Ini adalah pesan percobaan dari AudioMonitor Server.');
+      res.json({ success: true, message: 'Test message sent' });
+    });
   }
 
   start() {

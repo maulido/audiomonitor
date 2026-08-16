@@ -15,6 +15,9 @@ class AudioProcessor {
       };
       this.stream = await navigator.mediaDevices.getUserMedia(constraints);
       this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      if (this.audioContext.state === 'suspended') {
+        await this.audioContext.resume();
+      }
       this.analyser = this.audioContext.createAnalyser();
       this.microphone = this.audioContext.createMediaStreamSource(this.stream);
       

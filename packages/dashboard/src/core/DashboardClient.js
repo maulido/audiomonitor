@@ -1,11 +1,14 @@
 import { io } from 'socket.io-client';
 
 class DashboardClient {
-  constructor(serverUrl, onConnectChange, onDataUpdate) {
+  constructor(serverUrl, onConnectChange, onDataUpdate, onMonitoringStatus, onPcMonitoringUpdate, onPcMonitoringStates) {
     this.serverUrl = serverUrl;
     this.socket = null;
     this.onConnectChange = onConnectChange;
     this.onDataUpdate = onDataUpdate;
+    this.onMonitoringStatus = onMonitoringStatus;
+    this.onPcMonitoringUpdate = onPcMonitoringUpdate;
+    this.onPcMonitoringStates = onPcMonitoringStates;
   }
 
   connect() {
@@ -14,6 +17,7 @@ class DashboardClient {
 
       this.socket.on('connect', () => {
         if (this.onConnectChange) this.onConnectChange(true);
+        this.socket.emit('register', { type: 'dashboard' });
       });
 
       this.socket.on('disconnect', () => {
@@ -26,6 +30,18 @@ class DashboardClient {
 
       this.socket.on('agent-disconnect', (data) => {
         if (this.onDataUpdate) this.onDataUpdate(data);
+      });
+
+      this.socket.on('monitoring-status', (status) => {
+        if (this.onMonitoringStatus) this.onMonitoringStatus(status);
+      });
+
+      this.socket.on('pc-monitoring-update', (data) => {
+        if (this.onPcMonitoringUpdate) this.onPcMonitoringUpdate(data);
+      });
+
+      this.socket.on('pc-monitoring-states', (states) => {
+        if (this.onPcMonitoringStates) this.onPcMonitoringStates(states);
       });
     }
   }

@@ -12,16 +12,28 @@ function App() {
   const [status, setStatus] = useState('AMAN');
   const [obsConnected, setObsConnected] = useState(false);
   const [serverConnected, setServerConnected] = useState(false);
+  const [isMonitoringActive, setIsMonitoringActive] = useState(true);
 
   // Settings state (Persisted to localStorage)
   const [agentName, setAgentName] = useState(() => localStorage.getItem('agentName') || 'PC-Studio-1');
   const [serverIp, setServerIp] = useState(() => localStorage.getItem('serverIp') || 'http://localhost:4000');
+  const [committedServerIp, setCommittedServerIp] = useState(serverIp);
   const [obsIp, setObsIp] = useState(() => localStorage.getItem('obsIp') || 'localhost:4455');
   const [obsPassword, setObsPassword] = useState(() => localStorage.getItem('obsPassword') || '');
   const [obsSourceName, setObsSourceName] = useState(() => localStorage.getItem('obsSourceName') || 'Mic/Aux');
   const [selectedMicId, setSelectedMicId] = useState(() => localStorage.getItem('selectedMicId') || '');
-  const [noiseGate, setNoiseGate] = useState(() => Number(localStorage.getItem('noiseGate')) || 15);
-  const [silenceTimeoutSec, setSilenceTimeoutSec] = useState(() => Number(localStorage.getItem('silenceTimeoutSec')) || 10);
+  const [noiseGate, setNoiseGate] = useState(() => {
+    const saved = localStorage.getItem('noiseGate');
+    return saved !== null ? Number(saved) : 15;
+  });
+  const [silenceTimeoutSec, setSilenceTimeoutSec] = useState(() => {
+    const saved = localStorage.getItem('silenceTimeoutSec');
+    return saved !== null ? Number(saved) : 10;
+  });
+  const [deadMicTimeoutSec, setDeadMicTimeoutSec] = useState(() => {
+    const saved = localStorage.getItem('deadMicTimeoutSec');
+    return saved !== null ? Number(saved) : 60;
+  });
   const [audioDevices, setAudioDevices] = useState([]);
   const [obsInputs, setObsInputs] = useState([]);
   const [micDriverName, setMicDriverName] = useState('');
@@ -41,7 +53,8 @@ function App() {
     localStorage.setItem('selectedMicId', selectedMicId);
     localStorage.setItem('noiseGate', noiseGate.toString());
     localStorage.setItem('silenceTimeoutSec', silenceTimeoutSec.toString());
-  }, [agentName, serverIp, obsIp, obsPassword, obsSourceName, selectedMicId, noiseGate, silenceTimeoutSec]);
+    localStorage.setItem('deadMicTimeoutSec', deadMicTimeoutSec.toString());
+  }, [agentName, serverIp, obsIp, obsPassword, obsSourceName, selectedMicId, noiseGate, silenceTimeoutSec, deadMicTimeoutSec]);
 
   // Core Instances (useRef to persist across renders without triggering re-renders)
   const audioProcessor = useRef(null);
@@ -52,7 +65,7 @@ function App() {
   // Initial Hardware UUID Fetch
   useEffect(() => {
     if (window.electronAPI) {
-      window.electronAPI.getUUID().then(id => setUuid(id));
+      window.electronAPI.getUUID().then(id => setUuid(id)).catch(console.error);
     } else {
       setUuid('browser-dev-id'); // fallback for browser
     }
@@ -61,7 +74,7 @@ function App() {
   // Initialize Telemetry Client when UUID is ready
   useEffect(() => {
     if (uuid !== 'Loading...') {
-      telemetryClient.current = new TelemetryClient(serverIp, uuid);
+      telemetryClient.current = new TelemetryClient(committedServerIp);
       telemetryClient.current.connect();
       
       const socket = telemetryClient.current.socket;
@@ -71,11 +84,15 @@ function App() {
         socket.on('connect_error', () => setServerConnected(false));
       }
 
+      telemetryClient.current.setMonitoringListener(uuid, (active) => {
+        setIsMonitoringActive(active);
+      });
+
       return () => {
         telemetryClient.current.disconnect();
       };
     }
-  }, [uuid, serverIp]);
+  }, [uuid, committedServerIp]);
 
   // Initialize Audio & OBS Clients
   useEffect(() => {
@@ -101,22 +118,22 @@ function App() {
         setMicDriverName(selectedDevice.label || 'Default Microphone');
       }
       
-      audioProcessor.current.start(micToUse);
-    });
+      audioProcessor.current.start(micToUse).catch(console.error);
+    }).catch(console.error);
 
     obsClient.current = new OBSClient(
       () => {
         setObsConnected(true);
-        obsClient.current.getAudioInputs().then(inputs => setObsInputs(inputs));
+        obsClient.current.getAudioInputs().then(inputs => setObsInputs(inputs)).catch(console.error);
       },
       () => setObsConnected(false),
       (inputs) => {
         // Find the specific source the user typed in
         const source = inputs.find(i => i.inputName === obsSourceNameRef.current);
-        if (source && source.inputLevelsMul) {
+        if (source && source.inputLevelsMul && source.inputLevelsMul[0] && source.inputLevelsMul[0].length > 0) {
           // inputLevelsMul returns an array of channels [left, right, etc] containing multipliers (0.0 to 1.0)
           // index 1 is usually the peak multiplier for the channel
-          const levelMul = source.inputLevelsMul[0][1] || source.inputLevelsMul[0][0]; 
+          const levelMul = source.inputLevelsMul[0][1] || source.inputLevelsMul[0][0] || 0; 
           
           // Convert multiplier to decibels
           const db = levelMul > 0 ? 20 * Math.log10(levelMul) : -100;
@@ -174,10 +191,21 @@ function App() {
   };
 
   const silenceTimeout = useRef(null);
+  const deadMicTimeout = useRef(null);
   const dangerScore = useRef(0);
 
   // Hybrid Monitoring Logic
   useEffect(() => {
+    if (!isMonitoringActive) {
+      if (status !== 'AMAN') setStatus('AMAN');
+      dangerScore.current = 0;
+      if (silenceTimeout.current) clearTimeout(silenceTimeout.current);
+      if (deadMicTimeout.current) clearTimeout(deadMicTimeout.current);
+      silenceTimeout.current = null;
+      deadMicTimeout.current = null;
+      return;
+    }
+
     let nextStatus = status;
     const isTalking = micLevel > 10;
     const isObsMuted = obsLevel < 0.5; // Lowered threshold to ensure we only catch true mutes or extremely low volumes
@@ -191,19 +219,36 @@ function App() {
 
     if (dangerScore.current >= 3000) { // 3 seconds of "mostly" talking while muted
       nextStatus = 'BAHAYA_OBS_MUTE';
-    } else if (dangerScore.current === 0) {
-      // Safe zone
-      if (micLevel < 2 && obsLevel < 2) {
-        if (!silenceTimeout.current && status !== 'STANDBY_DIAM') {
-          silenceTimeout.current = setTimeout(() => {
-            setStatus('STANDBY_DIAM');
-          }, silenceTimeoutSec * 1000);
-        }
-      } else {
-        if (silenceTimeout.current) {
-          clearTimeout(silenceTimeout.current);
+    } else if (dangerScore.current === 0 && status === 'BAHAYA_OBS_MUTE') {
+      nextStatus = 'AMAN';
+    }
+
+    if (micLevel < 2 && obsLevel < 2) {
+      // Start standby timer if quiet
+      if (!silenceTimeout.current && status !== 'STANDBY_DIAM' && status !== 'BAHAYA_MIC_MATI' && nextStatus !== 'BAHAYA_OBS_MUTE') {
+        silenceTimeout.current = setTimeout(() => {
           silenceTimeout.current = null;
-        }
+          setStatus('STANDBY_DIAM');
+        }, silenceTimeoutSec * 1000);
+      }
+      // Start dead mic timer
+      if (!deadMicTimeout.current && status !== 'BAHAYA_MIC_MATI' && nextStatus !== 'BAHAYA_OBS_MUTE') {
+        deadMicTimeout.current = setTimeout(() => {
+          deadMicTimeout.current = null;
+          setStatus('BAHAYA_MIC_MATI');
+        }, deadMicTimeoutSec * 1000);
+      }
+    } else {
+      // Clear standby and dead mic timers if there is sound
+      if (silenceTimeout.current) {
+        clearTimeout(silenceTimeout.current);
+        silenceTimeout.current = null;
+      }
+      if (deadMicTimeout.current) {
+        clearTimeout(deadMicTimeout.current);
+        deadMicTimeout.current = null;
+      }
+      if (nextStatus === 'STANDBY_DIAM' || nextStatus === 'BAHAYA_MIC_MATI') {
         nextStatus = 'AMAN';
       }
     }
@@ -222,8 +267,17 @@ function App() {
         );
         lastNotificationTime.current = now;
       }
+    } else if (nextStatus === 'BAHAYA_MIC_MATI' && window.electronAPI) {
+      const now = Date.now();
+      if (now - lastNotificationTime.current > 10000) {
+        window.electronAPI.showNotification(
+          'Hardware Mic Mati!',
+          'Tidak ada suara fisik yang masuk ke mikrofon selama beberapa waktu. Cek mute fisik atau kabel!'
+        );
+        lastNotificationTime.current = now;
+      }
     }
-  }, [micLevel, obsLevel, obsConnected, status, silenceTimeoutSec]);
+  }, [micLevel, obsLevel, obsConnected, status, silenceTimeoutSec, deadMicTimeoutSec, isMonitoringActive]);
 
   // Refs to hold latest values for telemetry throttling
   const latestTelemetryData = useRef({});
@@ -239,9 +293,10 @@ function App() {
       obsLevel,
       status,
       cpuUsage: hardwareUsage.cpuUsage,
-      ramUsage: hardwareUsage.ramUsage
+      ramUsage: hardwareUsage.ramUsage,
+      isMonitoringActive
     };
-  }, [micLevel, rawMicLevel, noiseGate, obsLevel, status, hardwareUsage, uuid, agentName, micDriverName, obsSourceName]);
+  }, [micLevel, rawMicLevel, noiseGate, obsLevel, status, hardwareUsage, uuid, agentName, micDriverName, obsSourceName, isMonitoringActive]);
 
   // Telemetry Sender (Throttled to 500ms)
   useEffect(() => {
@@ -277,12 +332,27 @@ function App() {
       </div>
 
       <div className="info-panel">
-        <div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
           <h2 style={{margin: '0 0 5px 0', fontSize: '1.2em'}}>{agentName}</h2>
           <p className="pc-id" title={uuid}>ID: <span>{uuid.length > 15 ? uuid.substring(0, 8) + '...' + uuid.slice(-4) : uuid}</span></p>
+          <button 
+            onClick={() => setIsMonitoringActive(!isMonitoringActive)}
+            style={{
+              padding: '4px 10px',
+              borderRadius: '12px',
+              border: `1px solid ${isMonitoringActive ? '#4caf50' : '#f44336'}`,
+              background: isMonitoringActive ? '#1e3a24' : '#3a1e1e',
+              color: isMonitoringActive ? '#4caf50' : '#f44336',
+              cursor: 'pointer',
+              fontWeight: 'bold',
+              width: 'fit-content'
+            }}
+          >
+            {isMonitoringActive ? '🟢 MONITORING ON' : '🔴 MONITORING OFF'}
+          </button>
         </div>
-        <div className={`status-badge ${status}`}>
-          {status.replace(/_/g, ' ')}
+        <div className={`status-badge ${status}`} style={{ opacity: isMonitoringActive ? 1 : 0.5 }}>
+          {isMonitoringActive ? status.replace(/_/g, ' ') : 'MONITORING DISABLED'}
         </div>
       </div>
 
@@ -300,6 +370,8 @@ function App() {
               type="text" 
               value={serverIp} 
               onChange={e => setServerIp(e.target.value)} 
+              onBlur={e => setCommittedServerIp(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') setCommittedServerIp(e.target.value); }}
               placeholder="http://192.168.1.100:4000" 
             />
             <p style={{ margin: 0, fontSize: '0.85em', color: serverConnected ? '#4caf50' : '#ff5252' }}>
@@ -330,15 +402,25 @@ function App() {
               />
             </div>
             
-            <div className="slider-group" style={{ marginTop: '10px' }}>
-              <label>Silence Timeout: {silenceTimeoutSec}s</label>
-              <input 
-                type="range" 
-                min="5" max="120" step="5"
-                value={silenceTimeoutSec} 
-                onChange={e => setSilenceTimeoutSec(Number(e.target.value))} 
-                title="Durasi hening (detik) sebelum PC dianggap STANDBY"
-              />
+            <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
+              <div style={{ flex: 1 }}>
+                <label style={{ fontSize: '0.75em', color: '#aaa', display: 'block', marginBottom: '4px' }} title="Durasi hening (detik) sebelum PC dianggap STANDBY">Silence (s)</label>
+                <input 
+                  type="number" 
+                  min="5" max="3600"
+                  value={silenceTimeoutSec} 
+                  onChange={e => setSilenceTimeoutSec(Number(e.target.value))} 
+                />
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={{ fontSize: '0.75em', color: '#aaa', display: 'block', marginBottom: '4px' }} title="Durasi hening mutlak (detik) sebelum menembakkan alarm BAHAYA MIC MATI">Dead Mic (s)</label>
+                <input 
+                  type="number" 
+                  min="15" max="7200"
+                  value={deadMicTimeoutSec} 
+                  onChange={e => setDeadMicTimeoutSec(Number(e.target.value))} 
+                />
+              </div>
             </div>
           </div>
         </div>
@@ -408,7 +490,7 @@ function App() {
             ></div>
           </div>
           <p className="meter-val" style={{ color: micLevel === 0 ? '#888' : '#fff' }}>
-            {rawMicLevel.toFixed(1).padStart(4, '0')} dB {micLevel === 0 ? '(Tertahan Gate)' : ''}
+            {rawMicLevel.toFixed(1).padStart(4, '0')} dB
           </p>
         </div>
         <div className="meter-box">

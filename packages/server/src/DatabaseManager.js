@@ -56,6 +56,18 @@ class DatabaseManager {
       }
     });
   }
+
+  clearIncidents(callback) {
+    const query = `DELETE FROM incidents`;
+    this.db.run(query, (err) => {
+      if (err) {
+        console.error('Error clearing incidents:', err.message);
+        if (callback) callback(err);
+      } else {
+        if (callback) callback(null);
+      }
+    });
+  }
 }
 
 module.exports = DatabaseManager;

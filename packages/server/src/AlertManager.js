@@ -5,8 +5,8 @@ class AlertManager {
     this.configManager = configManager;
     this.dbManager = dbManager;
     this.bot = null;
-    this.lastAlertState = {}; // To prevent spamming
-    this.THROTTLE_MS = 60000; // 60 seconds
+    this.lastAlertState = {};
+    this.THROTTLE_MS = 60000;
 
     this.initBot();
   }
@@ -19,38 +19,57 @@ class AlertManager {
         console.log('Telegram Bot initialized.');
       } catch (err) {
         console.error('Failed to initialize Telegram Bot:', err);
+        this.bot = null;
       }
     } else {
+      // Fix 9: Explicitly null the bot when no token
+      this.bot = null;
       console.log('No Telegram token found in config. Bot alerts disabled.');
     }
   }
 
+  // Fix 8: Use HTML parse mode to avoid Markdown crashes on underscores
+  // Fix 21: No hardcoded prefix — caller provides full message
   sendTelegramAlert(message) {
     const telegramConfig = this.configManager.getTelegramConfig();
     if (this.bot && telegramConfig.chatId) {
-      this.bot.sendMessage(telegramConfig.chatId, `🚨 *AUDIO ALERT* 🚨\n${message}`, { parse_mode: 'Markdown' })
-        .catch(err => console.error("Telegram error:", err));
+      this.bot.sendMessage(telegramConfig.chatId, message, { parse_mode: 'HTML' })
+        .catch(err => console.error('Telegram error:', err.message));
     }
   }
 
+  // Helper to escape HTML special characters in dynamic text
+  escapeHtml(text) {
+    return String(text)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+  }
+
   processTelemetry(data, pcName) {
+    if (!data || typeof data.status !== 'string') return; // Defensive check
+
     const isDanger = data.status.startsWith('BAHAYA');
+    const safePcName = this.escapeHtml(pcName);
+    const safeStatus = this.escapeHtml(data.status.replace(/_/g, ' '));
     
     if (isDanger) {
       const lastAlertTime = this.lastAlertState[data.uuid] || 0;
       const now = Date.now();
       
-      // Send alert if it's the first time or enough time has passed
       if (now - lastAlertTime > this.THROTTLE_MS) {
-        let msg = `*${pcName}* mengalami masalah: *${data.status.replace(/_/g, ' ')}*`;
-        this.sendTelegramAlert(msg);
+        this.sendTelegramAlert(
+          `🚨 <b>AUDIO ALERT</b>\n<b>${safePcName}</b> mengalami masalah: <b>${safeStatus}</b>`
+        );
         if (this.dbManager) this.dbManager.logIncident(data.uuid, pcName, data.status, 'Audio/OBS Issue Detected');
         this.lastAlertState[data.uuid] = now;
       }
     } else if (data.status === 'AMAN' && this.lastAlertState[data.uuid]) {
-      // It recovered
-      this.sendTelegramAlert(`✅ *${pcName}* audio sudah kembali AMAN.`);
+      this.sendTelegramAlert(`✅ <b>${safePcName}</b> audio sudah kembali AMAN.`);
       if (this.dbManager) this.dbManager.logIncident(data.uuid, pcName, 'RECOVERY', 'Audio kembali AMAN');
+      delete this.lastAlertState[data.uuid];
+    } else if (!isDanger && data.status !== 'AMAN' && this.lastAlertState[data.uuid]) {
+      // Fix 10: Clear alert state on transitions like BAHAYA -> STANDBY_DIAM
       delete this.lastAlertState[data.uuid];
     }
 
@@ -66,14 +85,14 @@ class AlertManager {
         if (data.ramUsage > 85) issues.push(`RAM (${data.ramUsage}%)`);
         
         let details = `Beban tinggi pada ${issues.join(' & ')}`;
-        this.sendTelegramAlert(`🔥 *HARDWARE WARNING*\n*${pcName}* mengalami ${details}.`);
+        this.sendTelegramAlert(`🔥 <b>HARDWARE WARNING</b>\n<b>${safePcName}</b> mengalami ${this.escapeHtml(details)}.`);
         if (this.dbManager) this.dbManager.logIncident(data.uuid, pcName, 'HARDWARE_WARNING', details);
         this.lastAlertState[hwKey] = now;
       }
     } else {
       const hwKey = `${data.uuid}_hw`;
       if (this.lastAlertState[hwKey]) {
-        this.sendTelegramAlert(`✅ *${pcName}* hardware sudah kembali stabil.`);
+        this.sendTelegramAlert(`✅ <b>${safePcName}</b> hardware sudah kembali stabil.`);
         if (this.dbManager) this.dbManager.logIncident(data.uuid, pcName, 'RECOVERY', 'Hardware kembali stabil');
         delete this.lastAlertState[hwKey];
       }
@@ -81,9 +100,9 @@ class AlertManager {
   }
 
   processOffline(uuid, pcName) {
-    this.sendTelegramAlert(`🔌 *${pcName}* terputus dari jaringan (OFFLINE).`);
+    const safePcName = this.escapeHtml(pcName);
+    this.sendTelegramAlert(`🔌 <b>${safePcName}</b> terputus dari jaringan (OFFLINE).`);
     if (this.dbManager) this.dbManager.logIncident(uuid, pcName, 'OFFLINE', 'Koneksi terputus');
-    // Reset alert state so it can alert again when it reconnects and fails
     delete this.lastAlertState[uuid];
     delete this.lastAlertState[`${uuid}_hw`];
   }
