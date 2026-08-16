@@ -372,7 +372,7 @@ function App() {
           <div className="view-toggles">
             <button className={`view-btn ${currentView === 'live' ? 'active' : ''}`} onClick={() => setCurrentView('live')}>Live Status</button>
             <button className={`view-btn ${currentView === 'logs' ? 'active' : ''}`} onClick={() => setCurrentView('logs')}>Incident Logs</button>
-            <button className={`view-btn ${currentView === 'settings' ? 'active' : ''}`} onClick={() => setCurrentView('settings')}>⚙️ Settings</button>
+            <button className={iew-btn } onClick={() => setCurrentView('settings')}>⚙️ Settings</button>
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
@@ -595,7 +595,7 @@ function App() {
         </div>
       ) : currentView === 'settings' ? (
         <div className="logs-container">
-          <h2>Dashboard Settings</h2>
+          <h2>⚙️ Dashboard Settings</h2>
           
           <div style={{ background: '#222', padding: '20px', borderRadius: '8px', marginBottom: '20px', borderLeft: '4px solid #2196f3' }}>
             <h3 style={{ marginTop: 0 }}>💬 Telegram Alerts</h3>
