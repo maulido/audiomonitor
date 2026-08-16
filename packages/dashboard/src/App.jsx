@@ -348,7 +348,7 @@ function App() {
     return (
       <div className="login-screen">
         <form onSubmit={handleLogin} className="login-box">
-          <h2>🔒 AudioMonitor Server</h2>
+          <h2><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{marginRight: "8px", verticalAlign: "text-bottom"}}><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>AudioMonitor Server</h2>
           <p>Masukkan PIN untuk masuk ke Dashboard</p>
           <input 
             type="password" 
@@ -372,7 +372,7 @@ function App() {
           <div className="view-toggles">
             <button className={`view-btn ${currentView === 'live' ? 'active' : ''}`} onClick={() => setCurrentView('live')}>Live Status</button>
             <button className={`view-btn ${currentView === 'logs' ? 'active' : ''}`} onClick={() => setCurrentView('logs')}>Incident Logs</button>
-            <button className={iew-btn } onClick={() => setCurrentView('settings')}>⚙️ Settings</button>
+            <button className={`view-btn ${currentView === 'settings' ? 'active' : ''}`} onClick={() => setCurrentView('settings')}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{marginRight: "6px", verticalAlign: "text-bottom"}}><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>Settings</button>
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
@@ -595,10 +595,10 @@ function App() {
         </div>
       ) : currentView === 'settings' ? (
         <div className="logs-container">
-          <h2>⚙️ Dashboard Settings</h2>
+          <h2><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{marginRight: "6px", verticalAlign: "text-bottom"}}><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>Dashboard Settings</h2>
           
           <div style={{ background: '#222', padding: '20px', borderRadius: '8px', marginBottom: '20px', borderLeft: '4px solid #2196f3' }}>
-            <h3 style={{ marginTop: 0 }}>💬 Telegram Alerts</h3>
+            <h3 style={{ marginTop: 0 }}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{marginRight: "8px", verticalAlign: "text-bottom"}}><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg>Telegram Alerts</h3>
             <p style={{ color: '#aaa', fontSize: '0.9rem' }}>Konfigurasi bot Telegram untuk menerima peringatan jika ada audio yang bermasalah.</p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '15px', maxWidth: '500px' }}>
               <div>
@@ -624,14 +624,14 @@ function App() {
                 />
               </div>
               <div style={{ display: 'flex', gap: '10px' }}>
-                <button className="primary-btn" onClick={saveTelegramConfig}>💾 Save Configuration</button>
-                <button className="view-btn" onClick={testTelegram} style={{ background: '#4caf50', color: 'white' }}>🔔 Test Alert</button>
+                <button className="primary-btn" onClick={saveTelegramConfig}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{marginRight: "6px", verticalAlign: "text-bottom"}}><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>Save Configuration</button>
+                <button className="view-btn" onClick={testTelegram} style={{ background: '#4caf50', color: 'white' }}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{marginRight: "6px", verticalAlign: "text-bottom"}}><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>Test Alert</button>
               </div>
             </div>
           </div>
 
           <div style={{ background: '#222', padding: '20px', borderRadius: '8px', marginBottom: '20px', borderLeft: '4px solid #9c27b0' }}>
-            <h3 style={{ marginTop: 0 }}>🔒 Keamanan Akses (PIN)</h3>
+            <h3 style={{ marginTop: 0 }}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{marginRight: "8px", verticalAlign: "text-bottom"}}><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>Keamanan Akses (PIN)</h3>
             <p style={{ color: '#aaa', fontSize: '0.9rem' }}>Ubah PIN untuk mengakses Dashboard ini.</p>
             <div style={{ display: 'flex', gap: '10px', maxWidth: '300px' }}>
               <input 
@@ -642,12 +642,12 @@ function App() {
                 style={{ width: '100%' }}
                 placeholder="PIN Baru..."
               />
-              <button className="primary-btn" onClick={savePinConfig}>💾 Ubah</button>
+              <button className="primary-btn" onClick={savePinConfig}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{marginRight: "6px", verticalAlign: "text-bottom"}}><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>Ubah</button>
             </div>
           </div>
 
           <div style={{ background: '#222', padding: '20px', borderRadius: '8px', marginBottom: '20px', borderLeft: '4px solid #ff9800' }}>
-            <h3 style={{ marginTop: 0 }}>🔊 Local Dashboard Audio</h3>
+            <h3 style={{ marginTop: 0 }}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{marginRight: "8px", verticalAlign: "text-bottom"}}><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>Local Dashboard Audio</h3>
             <p style={{ color: '#aaa', fontSize: '0.9rem' }}>Pengaturan suara peringatan yang berbunyi langsung di browser ini.</p>
             <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
               <input 
@@ -661,14 +661,14 @@ function App() {
           </div>
 
           <div style={{ background: '#3a1515', padding: '20px', borderRadius: '8px', borderLeft: '4px solid #f44336' }}>
-            <h3 style={{ marginTop: 0, color: '#f44336' }}>⚠️ Danger Zone</h3>
+            <h3 style={{ marginTop: 0, color: '#f44336' }}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{marginRight: "8px", verticalAlign: "text-bottom"}}><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>Danger Zone</h3>
             <p style={{ color: '#aaa', fontSize: '0.9rem' }}>Tindakan destruktif yang tidak dapat dibatalkan.</p>
             <button 
               className="primary-btn" 
               onClick={clearDatabase}
               style={{ background: '#f44336' }}
             >
-              🗑️ Clear All Incident Logs
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{marginRight: "6px", verticalAlign: "text-bottom"}}><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>Clear All Incident Logs
             </button>
           </div>
 
