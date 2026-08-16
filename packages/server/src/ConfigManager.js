@@ -7,7 +7,8 @@ class ConfigManager {
     this.defaultConfig = {
       pcMapping: {},
       telegram: { token: '', chatId: '' },
-      monitoringActive: true
+      monitoringActive: true,
+      dashboardPin: '1234'
     };
     this.config = { ...this.defaultConfig };
     this.loadConfig();
@@ -26,7 +27,8 @@ class ConfigManager {
             chatId: '',
             ...(parsed.telegram || {})
           },
-          monitoringActive: parsed.monitoringActive !== undefined ? parsed.monitoringActive : true
+          monitoringActive: parsed.monitoringActive !== undefined ? parsed.monitoringActive : true,
+          dashboardPin: parsed.dashboardPin || '1234'
         };
       } catch (err) {
         console.error('Error reading config file, using defaults:', err.message);

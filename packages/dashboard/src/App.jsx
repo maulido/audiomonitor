@@ -20,21 +20,59 @@ function App() {
   // Settings State
   const [telegramToken, setTelegramToken] = useState('');
   const [telegramChatId, setTelegramChatId] = useState('');
+  const [newPinInput, setNewPinInput] = useState('');
   const [isMonitoringActive, setIsMonitoringActive] = useState(true);
   const [enableBeep, setEnableBeep] = useState(() => {
     const saved = localStorage.getItem('enableBeep');
     return saved !== null ? saved === 'true' : true; // Default true
   });
 
+  // Auth State
+  const [pin, setPin] = useState(sessionStorage.getItem('dashboardPin') || '');
+  const [isAuthenticated, setIsAuthenticated] = useState(null); // null = checking
+  const [loginError, setLoginError] = useState('');
+
+  const apiFetch = async (endpoint, options = {}) => {
+    const headers = {
+      'Content-Type': 'application/json',
+      'x-pin': pin,
+      ...(options.headers || {})
+    };
+    const res = await fetch(`${SERVER_URL}${endpoint}`, { ...options, headers });
+    if (res.status === 401) {
+      setIsAuthenticated(false);
+      sessionStorage.removeItem('dashboardPin');
+    }
+    return res;
+  };
+
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    const res = await fetch(`${SERVER_URL}/api/config`, { headers: { 'x-pin': pin } });
+    if (res.ok) {
+      setIsAuthenticated(true);
+      sessionStorage.setItem('dashboardPin', pin);
+      setLoginError('');
+      fetchConfigData(await res.json());
+    } else {
+      setLoginError('PIN Salah');
+    }
+  };
+
+  const fetchConfigData = (data) => {
+    if (data.telegram) {
+      setTelegramToken(data.telegram.token || '');
+      setTelegramChatId(data.telegram.chatId || '');
+    }
+  };
+
   const fetchConfig = async () => {
     try {
-      const res = await fetch(`${SERVER_URL}/api/config`);
+      const res = await apiFetch('/api/config');
       if (res.ok) {
         const data = await res.json();
-        if (data.telegram) {
-          setTelegramToken(data.telegram.token || '');
-          setTelegramChatId(data.telegram.chatId || '');
-        }
+        setIsAuthenticated(true);
+        fetchConfigData(data);
       }
     } catch (e) {
       console.error('Failed to fetch config', e);
@@ -43,10 +81,9 @@ function App() {
 
   const fetchLogs = async () => {
     try {
-      const res = await fetch(`${SERVER_URL}/api/incidents`);
+      const res = await apiFetch('/api/incidents');
       if (res.ok) {
-        const data = await res.json();
-        setLogs(data);
+        setLogs(await res.json());
       }
     } catch (e) {
       console.error('Failed to fetch logs', e);
@@ -54,12 +91,16 @@ function App() {
   };
 
   useEffect(() => {
-    if (currentView === 'logs') {
+    fetchConfig();
+  }, []);
+
+  useEffect(() => {
+    if (isAuthenticated && currentView === 'logs') {
       fetchLogs();
-    } else if (currentView === 'settings') {
+    } else if (isAuthenticated && currentView === 'settings') {
       fetchConfig();
     }
-  }, [currentView]);
+  }, [currentView, isAuthenticated]);
 
   useEffect(() => {
     localStorage.setItem('enableBeep', enableBeep);
@@ -126,7 +167,7 @@ function App() {
     e.preventDefault();
     if (client.current && editingName.trim() !== '') {
       try {
-        await client.current.renamePC(uuid, editingName.trim());
+        await client.current.renamePC(uuid, editingName.trim(), pin);
 
         // Optimistically update the UI immediately
         setAgents((prev) => {
@@ -152,9 +193,8 @@ function App() {
 
   const saveTelegramConfig = async () => {
     try {
-      const res = await fetch(`${SERVER_URL}/api/config/telegram`, {
+      const res = await apiFetch(`/api/config/telegram`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token: telegramToken, chatId: telegramChatId })
       });
       if (res.ok) alert('Telegram Configuration Saved & Bot Reloaded!');
@@ -163,9 +203,30 @@ function App() {
     }
   };
 
+  const savePinConfig = async () => {
+    if (newPinInput.length < 4) {
+      alert('PIN minimal 4 karakter');
+      return;
+    }
+    try {
+      const res = await apiFetch(`/api/config/pin`, {
+        method: 'POST',
+        body: JSON.stringify({ newPin: newPinInput })
+      });
+      if (res.ok) {
+        alert('PIN Berhasil Diubah!');
+        setPin(newPinInput);
+        sessionStorage.setItem('dashboardPin', newPinInput);
+        setNewPinInput('');
+      }
+    } catch (e) {
+      alert('Gagal mengubah PIN');
+    }
+  };
+
   const testTelegram = async () => {
     try {
-      const res = await fetch(`${SERVER_URL}/api/telegram/test`, { method: 'POST' });
+      const res = await apiFetch(`/api/telegram/test`, { method: 'POST' });
       if (res.ok) alert('Test signal sent! Check your Telegram.');
     } catch (e) {
       alert('Failed to send test signal');
@@ -175,7 +236,7 @@ function App() {
   const clearDatabase = async () => {
     if (window.confirm("ARE YOU SURE? This will permanently delete all incident logs from the server database.")) {
       try {
-        const res = await fetch(`${SERVER_URL}/api/incidents`, { method: 'DELETE' });
+        const res = await apiFetch(`/api/incidents`, { method: 'DELETE' });
         if (res.ok) {
           alert('Database cleared!');
           if (currentView === 'logs') fetchLogs();
@@ -195,9 +256,8 @@ function App() {
     }));
 
     try {
-      await fetch(`${SERVER_URL}/api/pc/${uuid}/monitoring`, {
+      await apiFetch(`/api/pc/${uuid}/monitoring`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ active })
       });
     } catch (e) {
@@ -280,10 +340,34 @@ function App() {
     };
   }, [totalBahaya, enableBeep, isMonitoringActive]);
 
+  if (isAuthenticated === null) {
+    return <div style={{ display: 'flex', height: '100vh', alignItems: 'center', justifyContent: 'center', color: '#fff' }}>Connecting to Server...</div>;
+  }
+
+  if (isAuthenticated === false) {
+    return (
+      <div className="login-screen">
+        <form onSubmit={handleLogin} className="login-box">
+          <h2>🔒 AudioMonitor Server</h2>
+          <p>Masukkan PIN untuk masuk ke Dashboard</p>
+          <input 
+            type="password" 
+            placeholder="Masukkan PIN..." 
+            value={pin}
+            onChange={(e) => setPin(e.target.value)}
+            autoFocus
+          />
+          {loginError && <div className="login-error">{loginError}</div>}
+          <button type="submit">Masuk</button>
+        </form>
+      </div>
+    );
+  }
+
   return (
     <div className="dashboard">
-      <header>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+      <header className="header">
+        <div style={{ display: 'flex', alignItems: 'center', gap: '20px', flexWrap: 'wrap' }}>
           <h1>Central Audio Dashboard</h1>
           <div className="view-toggles">
             <button className={`view-btn ${currentView === 'live' ? 'active' : ''}`} onClick={() => setCurrentView('live')}>Live Status</button>
@@ -543,6 +627,22 @@ function App() {
                 <button className="primary-btn" onClick={saveTelegramConfig}>💾 Save Configuration</button>
                 <button className="view-btn" onClick={testTelegram} style={{ background: '#4caf50', color: 'white' }}>🔔 Test Alert</button>
               </div>
+            </div>
+          </div>
+
+          <div style={{ background: '#222', padding: '20px', borderRadius: '8px', marginBottom: '20px', borderLeft: '4px solid #9c27b0' }}>
+            <h3 style={{ marginTop: 0 }}>🔒 Keamanan Akses (PIN)</h3>
+            <p style={{ color: '#aaa', fontSize: '0.9rem' }}>Ubah PIN untuk mengakses Dashboard ini.</p>
+            <div style={{ display: 'flex', gap: '10px', maxWidth: '300px' }}>
+              <input 
+                type="password" 
+                value={newPinInput}
+                onChange={(e) => setNewPinInput(e.target.value)}
+                className="search-input" 
+                style={{ width: '100%' }}
+                placeholder="PIN Baru..."
+              />
+              <button className="primary-btn" onClick={savePinConfig}>💾 Ubah</button>
             </div>
           </div>
 

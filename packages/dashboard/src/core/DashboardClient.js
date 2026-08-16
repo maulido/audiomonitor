@@ -53,10 +53,13 @@ class DashboardClient {
     }
   }
 
-  async renamePC(uuid, newName) {
+  async renamePC(uuid, newName, pin) {
     const res = await fetch(`${this.serverUrl}/api/rename`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'x-pin': pin
+      },
       body: JSON.stringify({ uuid, newName })
     });
     

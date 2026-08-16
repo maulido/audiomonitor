@@ -27,6 +27,16 @@ class ServerApp {
     this.app.use(cors());
     this.app.use(express.json());
     
+    // Security PIN Middleware for API
+    this.app.use('/api', (req, res, next) => {
+      const pin = req.headers['x-pin'];
+      const correctPin = this.configManager.config.dashboardPin || '1234';
+      if (pin !== correctPin) {
+        return res.status(401).json({ success: false, error: 'Unauthorized', message: 'PIN Salah' });
+      }
+      next();
+    });
+    
     // Serve dashboard static files
     const path = require('path');
     const dashboardPath = path.resolve(__dirname, '../../dashboard/dist');
@@ -77,6 +87,14 @@ class ServerApp {
       // Broadcast to all dashboards
       this.telemetryHub.io.emit('monitoring-status', active);
       res.send({ success: true, monitoringActive: active });
+    });
+
+    this.app.post('/api/config/pin', (req, res) => {
+      const { newPin } = req.body;
+      if (!newPin || newPin.length < 4) return res.status(400).json({ error: 'PIN minimal 4 karakter' });
+      this.configManager.config.dashboardPin = newPin;
+      this.configManager.saveConfig();
+      res.send({ success: true });
     });
 
     this.app.post('/api/pc/:uuid/monitoring', (req, res) => {
