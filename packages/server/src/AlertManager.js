@@ -85,7 +85,7 @@ class AlertManager {
         if (data.ramUsage > 85) issues.push(`RAM (${data.ramUsage}%)`);
         
         let details = `Beban tinggi pada ${issues.join(' & ')}`;
-        this.sendTelegramAlert(`🔥 <b>HARDWARE WARNING</b>\n<b>${safePcName}</b> mengalami ${this.escapeHtml(details)}.`);
+        this.sendTelegramAlert(`⚠️ <b>HARDWARE WARNING</b>\n<b>${safePcName}</b> mengalami ${this.escapeHtml(details)}.`);
         if (this.dbManager) this.dbManager.logIncident(data.uuid, pcName, 'HARDWARE_WARNING', details);
         this.lastAlertState[hwKey] = now;
       }
