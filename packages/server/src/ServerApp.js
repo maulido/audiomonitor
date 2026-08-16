@@ -26,6 +26,11 @@ class ServerApp {
   setupMiddleware() {
     this.app.use(cors());
     this.app.use(express.json());
+    
+    // Serve dashboard static files
+    const path = require('path');
+    const dashboardPath = path.resolve(__dirname, '../../dashboard/dist');
+    this.app.use(express.static(dashboardPath));
   }
 
   setupRoutes() {

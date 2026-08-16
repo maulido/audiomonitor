@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import './style.css';
 import DashboardClient from './core/DashboardClient';
 
-const SERVER_URL = `http://${window.location.hostname || 'localhost'}:4000`;
+const SERVER_URL = window.location.port.startsWith('517') ? `http://${window.location.hostname}:4000` : window.location.origin;
 
 function App() {
   const [agents, setAgents] = useState({});
