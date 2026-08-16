@@ -348,7 +348,7 @@ function App() {
               width: 'fit-content'
             }}
           >
-            {isMonitoringActive ? '🟢 MONITORING ON' : '🔴 MONITORING OFF'}
+            {isMonitoringActive ? '● MONITORING ON' : '● MONITORING OFF'}
           </button>
         </div>
         <div className={`status-badge ${status}`} style={{ opacity: isMonitoringActive ? 1 : 0.5 }}>
@@ -375,7 +375,7 @@ function App() {
               placeholder="http://192.168.1.100:4000" 
             />
             <p style={{ margin: 0, fontSize: '0.85em', color: serverConnected ? '#4caf50' : '#ff5252' }}>
-              {serverConnected ? '✅ Terhubung ke Server' : '❌ Terputus dari Server'}
+              {serverConnected ? '✓ Terhubung ke Server' : '✕ Terputus dari Server'}
             </p>
           </div>
         </div>

@@ -431,8 +431,8 @@ function App() {
                           onChange={e => setEditingName(e.target.value)}
                           style={{ padding: '5px', borderRadius: '4px', border: 'none', width: '100%' }}
                         />
-                        <button type="submit" style={{ padding: '5px', cursor: 'pointer', background: '#2196f3', color: 'white', border: 'none', borderRadius: '4px' }}>✓</button>
-                        <button type="button" onClick={() => setEditingId(null)} style={{ padding: '5px', cursor: 'pointer', background: '#555', color: 'white', border: 'none', borderRadius: '4px' }}>✕</button>
+                        <button type="submit" style={{ padding: '5px', cursor: 'pointer', background: '#2196f3', color: 'white', border: 'none', borderRadius: '4px' }}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg></button>
+                        <button type="button" onClick={() => setEditingId(null)} style={{ padding: '5px', cursor: 'pointer', background: '#555', color: 'white', border: 'none', borderRadius: '4px' }}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
                       </form>
                     ) : (
                       <>
@@ -452,7 +452,7 @@ function App() {
                               fontSize: '0.7rem'
                             }}
                           >
-                            {agent.isMonitoringActive !== false ? '🟢 ON' : '🔴 OFF'}
+                            {agent.isMonitoringActive !== false ? '● ON' : '● OFF'}
                           </button>
                           
                           <button 
