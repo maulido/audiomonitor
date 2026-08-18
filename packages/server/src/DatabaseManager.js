@@ -1,88 +1,85 @@
-const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const fs = require('fs');
 
 class DatabaseManager {
-  constructor(dbName = 'incidents.sqlite') {
-    const dbDir = process.pkg ? path.join(path.dirname(process.execPath), 'data') : path.resolve(__dirname, '../data');
+  constructor(dbName = 'incidents.json') {
+    let basePath = path.resolve(__dirname, '../');
+    if (process.versions && process.versions.electron) {
+      basePath = path.dirname(process.execPath);
+    } else if (process.pkg) {
+      basePath = path.dirname(process.execPath);
+    }
+    const dbDir = path.join(basePath, 'data');
     if (!fs.existsSync(dbDir)) {
       fs.mkdirSync(dbDir, { recursive: true });
     }
     
     this.dbPath = path.join(dbDir, dbName);
-    this.db = new sqlite3.Database(this.dbPath, (err) => {
-      if (err) {
-        console.error('Error opening database:', err.message);
-      } else {
-        console.log('Connected to SQLite database.');
-        this.initTables();
-      }
-    });
+    this.incidents = [];
+    this.nextId = 1;
+    this.loadDb();
+    console.log('Connected to JSON database.');
   }
 
-  initTables() {
-    const createTableQuery = `
-      CREATE TABLE IF NOT EXISTS incidents (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        uuid TEXT NOT NULL,
-        pcName TEXT NOT NULL,
-        incidentType TEXT NOT NULL,
-        details TEXT,
-        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-      )
-    `;
-    this.db.run(createTableQuery, (err) => {
-      if (err) {
-        console.error('Error creating table:', err.message);
-      } else {
-        this.autoCleanup();
+  loadDb() {
+    if (fs.existsSync(this.dbPath)) {
+      try {
+        const data = fs.readFileSync(this.dbPath, 'utf8');
+        this.incidents = JSON.parse(data);
+        if (this.incidents.length > 0) {
+          this.nextId = Math.max(...this.incidents.map(i => i.id)) + 1;
+        }
+      } catch (err) {
+        console.error('Error reading JSON DB:', err.message);
+        this.incidents = [];
       }
-    });
+    }
+    this.autoCleanup();
+  }
+
+  saveDb() {
+    try {
+      fs.writeFileSync(this.dbPath, JSON.stringify(this.incidents, null, 2));
+    } catch (err) {
+      console.error('Error saving JSON DB:', err.message);
+    }
   }
 
   autoCleanup() {
-    // Delete logs older than 30 days
-    const query = `DELETE FROM incidents WHERE timestamp < datetime('now', '-30 days')`;
-    this.db.run(query, function(err) {
-      if (err) {
-        console.error('Failed to auto-cleanup old incidents:', err.message);
-      } else if (this.changes > 0) {
-        console.log(`Auto-cleanup: Removed ${this.changes} old incidents from database.`);
-      }
-    });
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    
+    const initialLength = this.incidents.length;
+    this.incidents = this.incidents.filter(i => new Date(i.timestamp) >= thirtyDaysAgo);
+    
+    if (this.incidents.length !== initialLength) {
+      console.log('Auto-cleanup: Removed old incidents.');
+      this.saveDb();
+    }
   }
 
   logIncident(uuid, pcName, incidentType, details) {
-    const query = `INSERT INTO incidents (uuid, pcName, incidentType, details) VALUES (?, ?, ?, ?)`;
-    this.db.run(query, [uuid, pcName, incidentType, details], function(err) {
-      if (err) {
-        console.error('Error logging incident:', err.message);
-      }
-    });
+    const incident = {
+      id: this.nextId++,
+      uuid,
+      pcName,
+      incidentType,
+      details,
+      timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19)
+    };
+    this.incidents.push(incident);
+    this.saveDb();
   }
 
   getRecentIncidents(limit = 100, callback) {
-    const query = `SELECT * FROM incidents ORDER BY timestamp DESC LIMIT ?`;
-    this.db.all(query, [limit], (err, rows) => {
-      if (err) {
-        console.error('Error fetching incidents:', err.message);
-        callback([]);
-      } else {
-        callback(rows);
-      }
-    });
+    const sorted = [...this.incidents].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+    callback(sorted.slice(0, limit));
   }
 
   clearIncidents(callback) {
-    const query = `DELETE FROM incidents`;
-    this.db.run(query, (err) => {
-      if (err) {
-        console.error('Error clearing incidents:', err.message);
-        if (callback) callback(err);
-      } else {
-        if (callback) callback(null);
-      }
-    });
+    this.incidents = [];
+    this.saveDb();
+    if (callback) callback(null);
   }
 }
 

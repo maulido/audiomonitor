@@ -3,7 +3,13 @@ const path = require('path');
 
 class ConfigManager {
   constructor(configFilePath = 'config.json') {
-    this.configPath = process.pkg ? path.join(path.dirname(process.execPath), configFilePath) : path.resolve(__dirname, '../', configFilePath);
+    let basePath = path.resolve(__dirname, '../');
+    if (process.versions && process.versions.electron) {
+      basePath = path.dirname(process.execPath);
+    } else if (process.pkg) {
+      basePath = path.dirname(process.execPath);
+    }
+    this.configPath = path.join(basePath, configFilePath);
     this.defaultConfig = {
       pcMapping: {},
       telegram: { token: '', chatId: '' },

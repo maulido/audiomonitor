@@ -113,7 +113,11 @@ class ServerApp {
     });
   }
 
-  start() {
+  start(onError) {
+    this.server.on('error', (e) => {
+      if (onError) onError(e);
+      else console.error('Server error:', e);
+    });
     this.server.listen(this.port, () => {
       console.log(`Central Server running on port ${this.port}`);
     });

@@ -1,31 +1,55 @@
 {
   "name": "server",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Audio Monitor Server",
+  "main": "electron/main.js",
   "bin": "index.js",
   "scripts": {
-    "start": "node index.js",
-    "build": "pkg . --targets node18-win-x64 --output out/AudioMonitor_Server_v1.0.0.exe"
+    "start": "electron .",
+    "build": "electron-builder"
   },
-  "pkg": {
-    "assets": [
-      "dashboard-dist/**/*"
-    ]
+  "build": {
+    "npmRebuild": false,
+    "asar": false,
+    "appId": "com.audiomonitor.server",
+    "productName": "Audio Monitor Server",
+    "directories": {
+      "output": "out"
+    },
+    "files": [
+      "electron/**/*",
+      "src/**/*",
+      "dashboard-dist/**/*",
+      "public/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "public/icon.ico",
+      "publisherName": "syhn foss"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "artifactName": "AudioMonitor_Server_Installer_v1.0.0.exe",
+      "uninstallDisplayName": "Audio Monitor Server"
+    }
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "auto-launch": "^5.0.6",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "node-telegram-bot-api": "^1.2.0",
-    "socket.io": "^4.8.3",
-    "sqlite3": "^6.0.1"
+    "socket.io": "^4.8.3"
   },
   "devDependencies": {
+    "electron": "31.3.1",
+    "electron-builder": "^24.13.3",
     "pkg": "^5.8.1"
   }
 }
