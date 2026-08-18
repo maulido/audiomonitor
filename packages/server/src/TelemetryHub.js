@@ -4,8 +4,13 @@ class TelemetryHub {
   constructor(httpServer, configManager, alertManager) {
     this.configManager = configManager;
     this.alertManager = alertManager;
-    // Server is the single source of truth for per-PC monitoring state
     this.pcMonitoringState = {};
+    this.agentSockets = new Map();
+    this.lastKnownState = new Map();
+    // Pre-populate with known PCs
+    for (const [uuid, pcName] of Object.entries(this.configManager.config.pcMapping || {})) {
+      this.lastKnownState.set(uuid, { uuid, pcName, status: 'OFFLINE', lastSeen: null });
+    }
     
     this.io = new Server(httpServer, {
       cors: { origin: '*' }
@@ -24,6 +29,7 @@ class TelemetryHub {
           socket.emit('monitoring-status', this.configManager.config.monitoringActive !== false);
           // Fix 17: Send initial per-PC monitoring states
           socket.emit('pc-monitoring-states', this.pcMonitoringState);
+            socket.emit('all-agents-state', Array.from(this.lastKnownState.values()));
         } else if (data && data.type === 'agent' && data.uuid) {
           socket.join(`agent-${data.uuid}`);
           // Fix 18: Set agentUuid on register too
@@ -42,22 +48,42 @@ class TelemetryHub {
         if (data.uuid) {
           socket.agentUuid = data.uuid;
           socket.agentName = data.name;
+          this.agentSockets.set(data.uuid, socket.id);
         }
         // Fix 1: REMOVED — do NOT overwrite pcMonitoringState from agent telemetry.
         // Server is the sole authority for per-PC monitoring state.
         this.handleTelemetry(data);
       });
 
+      socket.on('agent-rename', (data) => {
+          if (data.uuid && data.newName) {
+            this.configManager.setPcName(data.uuid, data.newName);
+            this.notifyAgentNameChange(data.uuid, data.newName);
+            const existing = this.lastKnownState.get(data.uuid) || {};
+            existing.pcName = data.newName;
+            this.lastKnownState.set(data.uuid, existing);
+            this.io.to('dashboards').emit('dashboard-update', existing);
+          }
+      });
+
+      socket.on('agent-monitoring', (data) => {
+        if (data.uuid && data.active !== undefined) {
+          this.setPcMonitoring(data.uuid, data.active);
+        }
+      });
+
       socket.on('disconnect', () => {
         console.log('Client disconnected:', socket.id);
         if (socket.agentUuid) {
+          this.agentSockets.delete(socket.agentUuid);
           const pcName = this.configManager.config.pcMapping[socket.agentUuid] || socket.agentName || socket.agentUuid;
+          
+          const existing = this.lastKnownState.get(socket.agentUuid) || {};
+          const offlineData = { ...existing, uuid: socket.agentUuid, pcName, status: 'OFFLINE', lastSeen: Date.now() };
+          this.lastKnownState.set(socket.agentUuid, offlineData);
+
           // Fix 3: Scope to dashboards only
-          this.io.to('dashboards').emit('agent-disconnect', {
-            uuid: socket.agentUuid,
-            pcName,
-            status: 'OFFLINE'
-          });
+          this.io.to('dashboards').emit('agent-disconnect', offlineData);
           
           // Fix 2: Check BOTH global AND per-PC monitoring before offline alert
           const globalActive = this.configManager.config.monitoringActive !== false;
@@ -71,6 +97,16 @@ class TelemetryHub {
   }
 
   // Called by ServerApp when dashboard toggles a specific PC
+  deleteAgent(uuid) {
+    this.lastKnownState.delete(uuid);
+    delete this.pcMonitoringState[uuid];
+    this.io.to('dashboards').emit('agent-deleted', uuid);
+  }
+
+  notifyAgentNameChange(uuid, newName) {
+    this.io.to(`agent-${uuid}`).emit('command-rename', newName);
+  }
+
   setPcMonitoring(uuid, active) {
     this.pcMonitoringState[uuid] = active;
     // Tell the agent
@@ -87,7 +123,9 @@ class TelemetryHub {
       ? this.pcMonitoringState[data.uuid] 
       : true;
     
-    const enrichedData = { ...data, pcName, isMonitoringActive };
+    const enrichedData = { ...data, pcName, isMonitoringActive, lastSeen: Date.now() };
+
+    this.lastKnownState.set(data.uuid, enrichedData);
 
     // Fix 3: Scope to dashboards only
     this.io.to('dashboards').emit('dashboard-update', enrichedData);

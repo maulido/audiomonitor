@@ -35,6 +35,12 @@ function App() {
     return saved !== null ? Number(saved) : 60;
   });
   const [audioDevices, setAudioDevices] = useState([]);
+
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    const interval = setInterval(() => setTick(t => t + 1), 100);
+    return () => clearInterval(interval);
+  }, []);
   const [obsInputs, setObsInputs] = useState([]);
   const [micDriverName, setMicDriverName] = useState('');
   const [hardwareUsage, setHardwareUsage] = useState({ cpuUsage: 0, ramUsage: 0 });
@@ -86,6 +92,10 @@ function App() {
 
       telemetryClient.current.setMonitoringListener(uuid, (active) => {
         setIsMonitoringActive(active);
+      });
+
+      telemetryClient.current.setRenameListener((newName) => {
+        setAgentName(newName);
       });
 
       return () => {
@@ -277,7 +287,7 @@ function App() {
         lastNotificationTime.current = now;
       }
     }
-  }, [micLevel, obsLevel, obsConnected, status, silenceTimeoutSec, deadMicTimeoutSec, isMonitoringActive]);
+  }, [micLevel, obsLevel, obsConnected, status, silenceTimeoutSec, deadMicTimeoutSec, isMonitoringActive, tick]);
 
   // Refs to hold latest values for telemetry throttling
   const latestTelemetryData = useRef({});
@@ -336,7 +346,13 @@ function App() {
           <h2 style={{margin: '0 0 5px 0', fontSize: '1.2em'}}>{agentName}</h2>
           <p className="pc-id" title={uuid}>ID: <span>{uuid.length > 15 ? uuid.substring(0, 8) + '...' + uuid.slice(-4) : uuid}</span></p>
           <button 
-            onClick={() => setIsMonitoringActive(!isMonitoringActive)}
+            onClick={() => {
+              const newState = !isMonitoringActive;
+              setIsMonitoringActive(newState);
+              if (telemetryClient.current && telemetryClient.current.socket) {
+                telemetryClient.current.socket.emit('agent-monitoring', { uuid, active: newState });
+              }
+            }}
             style={{
               padding: '4px 10px',
               borderRadius: '12px',
@@ -364,6 +380,19 @@ function App() {
               type="text" 
               value={agentName} 
               onChange={e => setAgentName(e.target.value)} 
+              onBlur={() => {
+                if (telemetryClient.current && telemetryClient.current.socket) {
+                  telemetryClient.current.socket.emit('agent-rename', { uuid, newName: agentName });
+                }
+              }}
+              onKeyDown={e => {
+                if (e.key === 'Enter') {
+                  if (telemetryClient.current && telemetryClient.current.socket) {
+                    telemetryClient.current.socket.emit('agent-rename', { uuid, newName: agentName });
+                  }
+                  e.target.blur();
+                }
+              }}
               placeholder="Nama PC (misal: PC Studio 1)" 
             />
             <input 

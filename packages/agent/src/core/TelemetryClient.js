@@ -23,6 +23,11 @@ class TelemetryClient {
     }
   }
 
+  setRenameListener(callback) {
+    if (!this.socket) return;
+    this.socket.on('command-rename', callback);
+  }
+
   setMonitoringListener(uuid, callback) {
     this.agentUuid = uuid;
     this.onSetMonitoring = callback;

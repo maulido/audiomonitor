@@ -4,7 +4,7 @@ const fs = require('fs');
 
 class DatabaseManager {
   constructor(dbName = 'incidents.sqlite') {
-    const dbDir = path.resolve(__dirname, '../data');
+    const dbDir = process.pkg ? path.join(path.dirname(process.execPath), 'data') : path.resolve(__dirname, '../data');
     if (!fs.existsSync(dbDir)) {
       fs.mkdirSync(dbDir, { recursive: true });
     }

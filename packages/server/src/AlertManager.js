@@ -1,4 +1,5 @@
-const TelegramBot = require('node-telegram-bot-api');
+let TelegramBot = require('node-telegram-bot-api');
+if (TelegramBot.default) TelegramBot = TelegramBot.default;
 
 class AlertManager {
   constructor(configManager, dbManager) {

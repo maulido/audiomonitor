@@ -248,6 +248,16 @@ function App() {
   };
 
 
+  const handleDeletePC = async (uuid) => {
+    if (window.confirm('Apakah Anda yakin ingin menghapus PC ini dari Dashboard?')) {
+      try {
+        await client.current.deletePC(uuid, pin);
+      } catch (e) {
+        alert('Gagal menghapus PC');
+      }
+    }
+  };
+
   const togglePcMonitoring = async (uuid, active) => {
     // Optimistically update local state so button responds immediately
     setAgents(prev => ({
@@ -484,6 +494,14 @@ function App() {
 
                   <h3 className="status-text">{agent.status.replace(/_/g, ' ')}</h3>
 
+                  {agent.status === 'OFFLINE' ? (
+                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.2)', borderRadius: '8px', padding: '15px', marginTop: '10px' }}>
+                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#666" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{marginBottom: '5px'}}><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"></path><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"></path><line x1="2" y1="2" x2="22" y2="22"></line></svg>
+                      <span style={{ fontSize: '1em', fontWeight: 'bold', color: '#888' }}>OFFLINE</span>
+                      <span style={{ fontSize: '0.8em', color: '#666', marginTop: '5px' }}>Terakhir: {agent.lastSeen ? new Date(agent.lastSeen).toLocaleString('id-ID', { hour:'2-digit', minute:'2-digit', day:'2-digit', month:'short' }) : 'Tidak diketahui'}</span>
+                    </div>
+                  ) : (
+                  <>
                   <div className="meter-container">
                       <div style={{ display: 'flex', justifyContent: 'space-between', position: 'relative', alignItems: 'flex-start', marginBottom: '8px' }}>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1, paddingRight: '10px' }}>
@@ -555,6 +573,8 @@ function App() {
                       ></div>
                     </div>
                   </div>
+                  </>
+                  )}
                   <p className="timestamp">Last update: {new Date(agent.timestamp).toLocaleTimeString()}</p>
                 </div>
               );

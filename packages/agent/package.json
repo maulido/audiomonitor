@@ -1,9 +1,9 @@
 {
   "name": "agent",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "description": "Multi-PC Audio Monitor Agent",
-  "author": "Audio Monitor Team",
+  "author": "syhn foss",
   "type": "commonjs",
   "main": "electron/main.js",
   "scripts": {
@@ -36,11 +36,17 @@
     "appId": "com.audiomonitor.agent",
     "productName": "Audio Monitor Agent",
     "directories": {
-      "output": "dist"
+      "output": "out"
     },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
     "win": {
       "target": "nsis",
-      "icon": "public/icon.ico"
+      "icon": "public/icon.ico",
+      "publisherName": "syhn foss"
     },
     "nsis": {
       "oneClick": true,

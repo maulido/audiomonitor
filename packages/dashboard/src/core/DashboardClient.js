@@ -24,7 +24,15 @@ class DashboardClient {
         if (this.onConnectChange) this.onConnectChange(false);
       });
 
-      this.socket.on('dashboard-update', (data) => {
+      this.socket.on('all-agents-state', (data) => {
+          if (this.onAllAgents) this.onAllAgents(data);
+        });
+
+        this.socket.on('agent-deleted', (uuid) => {
+          if (this.onAgentDeleted) this.onAgentDeleted(uuid);
+        });
+
+        this.socket.on('dashboard-update', (data) => {
         if (this.onDataUpdate) this.onDataUpdate(data);
       });
 
@@ -51,6 +59,14 @@ class DashboardClient {
       this.socket.close();
       this.socket = null;
     }
+  }
+
+  async deletePC(uuid, pin) {
+    const res = await fetch(`${this.serverUrl}/api/pc/${uuid}`, {
+      method: 'DELETE',
+      headers: { 'x-pin': pin }
+    });
+    if (!res.ok) throw new Error('Failed to delete PC');
   }
 
   async renamePC(uuid, newName, pin) {

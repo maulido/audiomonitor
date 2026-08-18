@@ -3,7 +3,7 @@ const path = require('path');
 
 class ConfigManager {
   constructor(configFilePath = 'config.json') {
-    this.configPath = path.resolve(__dirname, '../', configFilePath);
+    this.configPath = process.pkg ? path.join(path.dirname(process.execPath), configFilePath) : path.resolve(__dirname, '../', configFilePath);
     this.defaultConfig = {
       pcMapping: {},
       telegram: { token: '', chatId: '' },
@@ -56,6 +56,13 @@ class ConfigManager {
     if (!this.config.pcMapping) this.config.pcMapping = {};
     this.config.pcMapping[uuid] = name;
     this.saveConfig();
+  }
+
+  deletePcMapping(uuid) {
+    if (this.config.pcMapping && this.config.pcMapping[uuid]) {
+      delete this.config.pcMapping[uuid];
+      this.saveConfig();
+    }
   }
 
   getAllPcMappings() {
