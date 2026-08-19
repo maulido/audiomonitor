@@ -72,11 +72,15 @@ class ServerApp {
     });
 
     this.app.post('/api/config/telegram', (req, res) => {
-      const { token, chatId } = req.body;
+      const { token, chatId } = req.body || {};
       if (token !== undefined) this.configManager.config.telegram.token = token;
       if (chatId !== undefined) this.configManager.config.telegram.chatId = chatId;
       this.configManager.saveConfig();
       this.alertManager.initBot(); // Re-initialize the bot
+      
+      // Broadcast new config to all agents for offline fallback
+      this.telemetryHub.io.to('agents').emit('telegram-config', this.configManager.getTelegramConfig());
+      
       res.send({ success: true, telegram: this.configManager.config.telegram });
     });
 

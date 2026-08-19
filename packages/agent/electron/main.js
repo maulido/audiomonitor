@@ -71,14 +71,6 @@ function createWindow() {
   if (isDev) {
     mainWindow.loadURL('http://localhost:5173');
   } else {
-
-    // Enable auto-start on login silently
-    app.setLoginItemSettings({
-      openAtLogin: true,
-      path: app.getPath('exe'),
-      args: ['--hidden']
-    });
-
     mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
   }
 }
@@ -148,6 +140,18 @@ app.on('before-quit', () => {
 // IPC Handlers
 ipcMain.handle('get-uuid', () => {
   return getOrCreateUUID();
+});
+
+ipcMain.handle('get-autostart', () => {
+  return app.getLoginItemSettings().openAtLogin;
+});
+
+ipcMain.on('set-autostart', (event, enable) => {
+  app.setLoginItemSettings({
+    openAtLogin: enable,
+    path: app.getPath('exe'),
+    args: ['--hidden']
+  });
 });
 
 let previousCpus = require('os').cpus();

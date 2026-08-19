@@ -32,6 +32,7 @@ class TelemetryHub {
             socket.emit('all-agents-state', Array.from(this.lastKnownState.values()));
         } else if (data && data.type === 'agent' && data.uuid) {
           socket.join(`agent-${data.uuid}`);
+          socket.join('agents'); // Group all agents
           // Fix 18: Set agentUuid on register too
           socket.agentUuid = data.uuid;
           socket.agentName = data.name || data.uuid;
@@ -40,6 +41,9 @@ class TelemetryHub {
           if (stored !== undefined) {
             socket.emit('set-monitoring', stored);
           }
+          
+          // Sync telegram config to the agent for offline fallback
+          socket.emit('telegram-config', this.configManager.getTelegramConfig());
         }
       });
 

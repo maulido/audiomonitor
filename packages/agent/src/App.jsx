@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import './style.css';
+
 import AudioProcessor from './core/AudioProcessor';
 import OBSClient from './core/OBSClient';
 import TelemetryClient from './core/TelemetryClient';
@@ -53,6 +54,19 @@ function App() {
   const [micDriverName, setMicDriverName] = useState('');
   const [hardwareUsage, setHardwareUsage] = useState({ cpuUsage: 0, ramUsage: 0 });
   const [activeTab, setActiveTab] = useState('monitoring');
+  const [autoStart, setAutoStart] = useState(false);
+  const [obsSyncStreaming, setObsSyncStreaming] = useState(() => localStorage.getItem('obsSyncStreaming') === 'true');
+  const obsSyncStreamingRef = useRef(obsSyncStreaming);
+  useEffect(() => { obsSyncStreamingRef.current = obsSyncStreaming; localStorage.setItem('obsSyncStreaming', obsSyncStreaming); }, [obsSyncStreaming]);
+
+  const [telegramConfig, setTelegramConfig] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('telegramConfig')) || null; } catch(e){ return null; }
+  });
+
+  useEffect(() => {
+    window.electronAPI.getAutostart().then(val => setAutoStart(val)).catch(console.error);
+  }, []);
+
   
   const obsSourceNameRef = useRef(obsSourceName);
   const noiseGateRef = useRef(noiseGate);
@@ -146,29 +160,36 @@ function App() {
       () => {
         setObsConnected(true);
         obsClient.current.getAudioInputs().then(inputs => setObsInputs(inputs)).catch(console.error);
+        obsClient.current.getStreamStatus().then(isActive => {
+           if (obsSyncStreamingRef.current) {
+             setIsMonitoringActive(isActive);
+           }
+        }).catch(console.error);
       },
       () => setObsConnected(false),
       (inputs) => {
-        // Find the specific source the user typed in
         const source = inputs.find(i => i.inputName === obsSourceNameRef.current);
         if (source && source.inputLevelsMul && source.inputLevelsMul[0] && source.inputLevelsMul[0].length > 0) {
-          // inputLevelsMul returns an array of channels [left, right, etc] containing multipliers (0.0 to 1.0)
-          // index 1 is usually the peak multiplier for the channel
           const levelMul = source.inputLevelsMul[0][1] || source.inputLevelsMul[0][0] || 0; 
-          
-          // Convert multiplier to decibels
           const db = levelMul > 0 ? 20 * Math.log10(levelMul) : -100;
-          
-          // Map -60dB (0%) to 0dB (100%)
           const mappedLevel = Math.max(0, Math.min(100, (db + 60) * (100 / 60)));
           setObsLevel(mappedLevel);
+        } else {
+          setObsLevel(0);
+        }
+      },
+      (isActive) => {
+        if (obsSyncStreamingRef.current) {
+          setIsMonitoringActive(isActive);
         }
       }
     );
 
-    // Auto-connect to OBS if credentials exist
-    if (obsIp) {
-      obsClient.current.connect(obsIp, obsPassword).catch(() => console.log("Auto-connect OBS failed"));
+    // Initial connection attempt
+    if (obsIp && obsPassword) {
+      obsClient.current.connect(obsIp, obsPassword).catch(() => {
+        // Silent catch for initial fail
+      });
     }
 
     return () => {
@@ -321,6 +342,24 @@ function App() {
   }, [micLevel, obsLevel, obsConnected, status, silenceTimeoutSec, deadMicTimeoutSec, isMonitoringActive, tick]);
 
   // Refs to hold latest values for telemetry throttling
+  
+  const lastAlertStatus = useRef('');
+  useEffect(() => {
+    if (status.startsWith('BAHAYA') && !serverConnected && telegramConfig && telegramConfig.token && telegramConfig.chatId) {
+      if (lastAlertStatus.current !== status) {
+        lastAlertStatus.current = status;
+        const msg = `⚠️ <b>[OFFLINE ALERT]</b> AUDIO ISSUE\nPC <b>${agentName}</b> mengalami masalah: <b>${status}</b>\n<i>(Pesan ini dikirim otomatis oleh Agent karena Server Induk sedang terputus/mati)</i>`;
+        fetch(`https://api.telegram.org/bot${telegramConfig.token}/sendMessage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ chat_id: telegramConfig.chatId, text: msg, parse_mode: 'HTML' })
+        }).catch(err => console.error('Offline Telegram Error:', err));
+      }
+    } else if (status === 'AMAN') {
+      lastAlertStatus.current = '';
+    }
+  }, [status, serverConnected, telegramConfig, agentName]);
+
   const latestTelemetryData = useRef({});
   useEffect(() => {
     latestTelemetryData.current = {
@@ -471,6 +510,23 @@ function App() {
                 onKeyDown={e => { if (e.key === 'Enter') setCommittedServerIp(e.target.value); }}
                 placeholder="http://192.168.1.100:4000" 
               />
+            </div>
+
+            
+            <div className="setting-group full" style={{ marginTop: '5px', paddingTop: '10px', borderTop: '1px dashed #333' }}>
+              <label>System Settings</label>
+              <div style={{ display: 'flex', gap: '15px', marginTop: '5px', color: '#ccc', fontSize: '12px' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer', color: '#fff', fontSize: '12px' }}>
+                  <input type="checkbox" style={{ width: 'auto', margin: 0 }} checked={autoStart} onChange={e => {
+                    const val = e.target.checked;
+                    setAutoStart(val);
+                    window.electronAPI.setAutostart(val);
+                  }} /> Auto Start with Windows
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer', color: '#fff', fontSize: '12px' }}>
+                  <input type="checkbox" style={{ width: 'auto', margin: 0 }} checked={obsSyncStreaming} onChange={e => setObsSyncStreaming(e.target.checked)} /> Auto-Monitor on OBS Live
+                </label>
+              </div>
             </div>
 
             <div className="setting-group full" style={{ marginTop: '5px', paddingTop: '10px', borderTop: '1px dashed #333' }}>
