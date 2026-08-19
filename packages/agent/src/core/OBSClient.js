@@ -79,13 +79,13 @@ class OBSClient {
   }
 
   async getStreamStatus() {
-    if (!this.isConnected) return false;
+    if (!this.isConnected) return { outputActive: false };
     try {
       const response = await this.obs.call('GetStreamStatus');
-      return response.outputActive;
+      return response;
     } catch (error) {
       console.error("Failed to fetch OBS stream status:", error);
-      return false;
+      return { outputActive: false };
     }
   }
 

@@ -54,6 +54,28 @@ function App() {
   const [micDriverName, setMicDriverName] = useState('');
   const [hardwareUsage, setHardwareUsage] = useState({ cpuUsage: 0, ramUsage: 0 });
   const [activeTab, setActiveTab] = useState('monitoring');
+  
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [streamTimecode, setStreamTimecode] = useState('00:00:00');
+
+  useEffect(() => {
+    const streamTimer = setInterval(() => {
+      if (obsClient.current && obsConnected) {
+        obsClient.current.getStreamStatus().then(status => {
+          setIsStreaming(status.outputActive);
+          if (status.outputActive && status.outputTimecode) {
+             setStreamTimecode(status.outputTimecode.split('.')[0]); // remove milliseconds
+          } else {
+             setStreamTimecode('00:00:00');
+          }
+        }).catch(() => {});
+      } else {
+        setIsStreaming(false);
+        setStreamTimecode('00:00:00');
+      }
+    }, 1000);
+    return () => clearInterval(streamTimer);
+  }, [obsConnected]);
   const [autoStart, setAutoStart] = useState(false);
   const [obsSyncStreaming, setObsSyncStreaming] = useState(() => localStorage.getItem('obsSyncStreaming') === 'true');
   const obsSyncStreamingRef = useRef(obsSyncStreaming);
@@ -160,9 +182,9 @@ function App() {
       () => {
         setObsConnected(true);
         obsClient.current.getAudioInputs().then(inputs => setObsInputs(inputs)).catch(console.error);
-        obsClient.current.getStreamStatus().then(isActive => {
+        obsClient.current.getStreamStatus().then(status => {
            if (obsSyncStreamingRef.current) {
-             setIsMonitoringActive(isActive);
+             setIsMonitoringActive(status.outputActive);
            }
         }).catch(console.error);
       },
@@ -374,9 +396,11 @@ function App() {
       status,
       cpuUsage: hardwareUsage.cpuUsage,
       ramUsage: hardwareUsage.ramUsage,
-      isMonitoringActive
+      isMonitoringActive,
+      isStreaming,
+      streamTimecode
     };
-  }, [micLevel, rawMicLevel, noiseGate, obsLevel, status, hardwareUsage, uuid, agentName, micDriverName, obsSourceName, isMonitoringActive]);
+  }, [micLevel, rawMicLevel, noiseGate, obsLevel, status, hardwareUsage, uuid, agentName, micDriverName, obsSourceName, isMonitoringActive, isStreaming, streamTimecode]);
 
   // Telemetry Sender (Throttled to 500ms)
   useEffect(() => {
@@ -440,6 +464,9 @@ function App() {
         <div style={{ textAlign: 'right' }}>
           <div className={`status-badge ${status}`} style={{ opacity: isMonitoringActive ? 1 : 0.5 }}>
             {isMonitoringActive ? status.replace(/_/g, ' ') : 'PAUSED'}
+          </div>
+          <div style={{ fontSize: '11px', color: isStreaming ? '#f44336' : '#666', marginTop: '6px', fontWeight: 'bold' }}>
+            {isStreaming ? `🔴 LIVE - ${streamTimecode}` : '⚫ OFFLINE'}
           </div>
         </div>
       </div>

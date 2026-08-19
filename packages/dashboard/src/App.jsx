@@ -448,7 +448,14 @@ function App() {
                       </form>
                     ) : (
                       <>
-                        <h2 style={{ margin: 0, flex: 1, minWidth: 0 }}>{agent.pcName}</h2>
+                        <h2 style={{ margin: 0, flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                            {agent.pcName}
+                            {agent.isStreaming && (
+                              <span style={{ fontSize: '0.65rem', background: 'rgba(244, 67, 84, 0.2)', border: '1px solid #f44336', color: '#f44336', padding: '2px 6px', borderRadius: '4px', whiteSpace: 'nowrap' }}>
+                                🔴 LIVE {agent.streamTimecode}
+                              </span>
+                            )}
+                          </h2>
                         
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                           <button 
