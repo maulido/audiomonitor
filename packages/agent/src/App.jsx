@@ -34,6 +34,14 @@ function App() {
     const saved = localStorage.getItem('deadMicTimeoutSec');
     return saved !== null ? Number(saved) : 60;
   });
+  const [clippingThreshold, setClippingThreshold] = useState(() => {
+    const saved = localStorage.getItem('clippingThreshold');
+    return saved !== null ? Number(saved) : 95;
+  });
+  const [clippingDurationSec, setClippingDurationSec] = useState(() => {
+    const saved = localStorage.getItem('clippingDurationSec');
+    return saved !== null ? Number(saved) : 3;
+  });
   const [audioDevices, setAudioDevices] = useState([]);
 
   const [tick, setTick] = useState(0);
@@ -60,7 +68,9 @@ function App() {
     localStorage.setItem('noiseGate', noiseGate.toString());
     localStorage.setItem('silenceTimeoutSec', silenceTimeoutSec.toString());
     localStorage.setItem('deadMicTimeoutSec', deadMicTimeoutSec.toString());
-  }, [agentName, serverIp, obsIp, obsPassword, obsSourceName, selectedMicId, noiseGate, silenceTimeoutSec, deadMicTimeoutSec]);
+    localStorage.setItem('clippingThreshold', clippingThreshold.toString());
+    localStorage.setItem('clippingDurationSec', clippingDurationSec.toString());
+  }, [agentName, serverIp, obsIp, obsPassword, obsSourceName, selectedMicId, noiseGate, silenceTimeoutSec, deadMicTimeoutSec, clippingThreshold, clippingDurationSec]);
 
   // Core Instances (useRef to persist across renders without triggering re-renders)
   const audioProcessor = useRef(null);
@@ -203,12 +213,14 @@ function App() {
   const silenceTimeout = useRef(null);
   const deadMicTimeout = useRef(null);
   const dangerScore = useRef(0);
+  const clippingScore = useRef(0);
 
   // Hybrid Monitoring Logic
   useEffect(() => {
     if (!isMonitoringActive) {
       if (status !== 'AMAN') setStatus('AMAN');
       dangerScore.current = 0;
+      clippingScore.current = 0;
       if (silenceTimeout.current) clearTimeout(silenceTimeout.current);
       if (deadMicTimeout.current) clearTimeout(deadMicTimeout.current);
       silenceTimeout.current = null;
@@ -220,29 +232,38 @@ function App() {
     const isTalking = micLevel > 10;
     const isObsMuted = obsLevel < 0.5; // Lowered threshold to ensure we only catch true mutes or extremely low volumes
 
+    // Clipping Logic (build score if rawMicLevel exceeds threshold)
+    if (rawMicLevel >= clippingThreshold) {
+      clippingScore.current += 100;
+    } else {
+      clippingScore.current = Math.max(0, clippingScore.current - 100);
+    }
+
     // Build up danger score if talking while OBS is muted. Drain it if not.
     if (isTalking && isObsMuted && obsConnected) {
-      dangerScore.current += 50; // Approximates 50ms per tick
+      dangerScore.current += 100;
     } else {
       dangerScore.current = Math.max(0, dangerScore.current - 100); // Drains twice as fast during pauses
     }
 
     if (dangerScore.current >= 3000) { // 3 seconds of "mostly" talking while muted
       nextStatus = 'BAHAYA_OBS_MUTE';
-    } else if (dangerScore.current === 0 && status === 'BAHAYA_OBS_MUTE') {
+    } else if (clippingScore.current >= clippingDurationSec * 1000) {
+      nextStatus = 'BAHAYA_AUDIO_PECAH';
+    } else if (dangerScore.current === 0 && clippingScore.current === 0 && (status === 'BAHAYA_OBS_MUTE' || status === 'BAHAYA_AUDIO_PECAH')) {
       nextStatus = 'AMAN';
     }
 
     if (micLevel < 2 && obsLevel < 2) {
       // Start standby timer if quiet
-      if (!silenceTimeout.current && status !== 'STANDBY_DIAM' && status !== 'BAHAYA_MIC_MATI' && nextStatus !== 'BAHAYA_OBS_MUTE') {
+      if (!silenceTimeout.current && status !== 'STANDBY_DIAM' && status !== 'BAHAYA_MIC_MATI' && nextStatus !== 'BAHAYA_OBS_MUTE' && nextStatus !== 'BAHAYA_AUDIO_PECAH') {
         silenceTimeout.current = setTimeout(() => {
           silenceTimeout.current = null;
           setStatus('STANDBY_DIAM');
         }, silenceTimeoutSec * 1000);
       }
       // Start dead mic timer
-      if (!deadMicTimeout.current && status !== 'BAHAYA_MIC_MATI' && nextStatus !== 'BAHAYA_OBS_MUTE') {
+      if (!deadMicTimeout.current && status !== 'BAHAYA_MIC_MATI' && nextStatus !== 'BAHAYA_OBS_MUTE' && nextStatus !== 'BAHAYA_AUDIO_PECAH') {
         deadMicTimeout.current = setTimeout(() => {
           deadMicTimeout.current = null;
           setStatus('BAHAYA_MIC_MATI');
@@ -274,6 +295,15 @@ function App() {
         window.electronAPI.showNotification(
           'Bahaya Audio!',
           'Suara masuk ke Mic, tapi tidak masuk ke OBS. Periksa mute di OBS!'
+        );
+        lastNotificationTime.current = now;
+      }
+    } else if (nextStatus === 'BAHAYA_AUDIO_PECAH' && window.electronAPI) {
+      const now = Date.now();
+      if (now - lastNotificationTime.current > 10000) {
+        window.electronAPI.showNotification(
+          'Suara Pecah / Clipping!',
+          'Volume mikrofon terlalu keras dan berisiko pecah di siaran!'
         );
         lastNotificationTime.current = now;
       }
@@ -448,6 +478,27 @@ function App() {
                   min="15" max="7200"
                   value={deadMicTimeoutSec} 
                   onChange={e => setDeadMicTimeoutSec(Number(e.target.value))} 
+                />
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
+              <div style={{ flex: 1 }}>
+                <label style={{ fontSize: '0.75em', color: '#aaa', display: 'block', marginBottom: '4px' }} title="Batas level suara (persen) dianggap pecah/clipping">Batas Pecah (%)</label>
+                <input 
+                  type="number" 
+                  min="50" max="100"
+                  value={clippingThreshold} 
+                  onChange={e => setClippingThreshold(Number(e.target.value))} 
+                />
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={{ fontSize: '0.75em', color: '#aaa', display: 'block', marginBottom: '4px' }} title="Durasi (detik) suara pecah sebelum alarm berbunyi">Durasi Pecah (s)</label>
+                <input 
+                  type="number" 
+                  min="1" max="10"
+                  value={clippingDurationSec} 
+                  onChange={e => setClippingDurationSec(Number(e.target.value))} 
                 />
               </div>
             </div>

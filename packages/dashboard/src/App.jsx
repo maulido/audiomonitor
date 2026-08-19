@@ -287,10 +287,11 @@ function App() {
 
   const statusPriority = {
     'BAHAYA_OBS_MUTE': 1,
-    'BAHAYA_MIC_MATI': 1,
-    'AMAN': 2,
-    'STANDBY_DIAM': 3,
-    'OFFLINE': 4
+    'BAHAYA_AUDIO_PECAH': 2,
+    'BAHAYA_MIC_MATI': 3,
+    'STANDBY_DIAM': 4,
+    'AMAN': 5,
+    'OFFLINE': 99
   };
 
   const sortedFilteredAgents = agentsArray
@@ -421,6 +422,7 @@ function App() {
               <option value="ALL">Semua Status</option>
               <option value="AMAN">Aman</option>
               <option value="BAHAYA_OBS_MUTE">Bahaya (OBS Mute)</option>
+              <option value="BAHAYA_AUDIO_PECAH">Bahaya (Suara Pecah)</option>
               <option value="BAHAYA_MIC_MATI">Bahaya (Mic Mati)</option>
               <option value="STANDBY_DIAM">Standby (Diam)</option>
               <option value="OFFLINE">Offline</option>

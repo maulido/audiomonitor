@@ -36,7 +36,7 @@ function createWindow() {
   const { x: workAreaX, y: workAreaY } = primaryDisplay.workArea;
 
   const windowWidth = 450;
-  const windowHeight = 660;
+  const windowHeight = 740;
 
   // Calculate bottom right corner with 15px padding
   const x = workAreaX + screenWidth - windowWidth - 15;
