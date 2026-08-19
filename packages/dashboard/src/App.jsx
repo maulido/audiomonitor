@@ -121,6 +121,7 @@ function App() {
           const isOffline = data.status === 'OFFLINE';
           const mic = isOffline ? 0 : (data.micLevel !== undefined ? data.micLevel : prevData.micLevel || 0);
           const obs = isOffline ? 0 : (data.obsLevel !== undefined ? data.obsLevel : prevData.obsLevel || 0);
+            const updatedObsSources = isOffline ? [] : (data.obsSources || prevData.obsSources);
 
           return {
             ...prev,
@@ -197,7 +198,7 @@ function App() {
     try {
       const res = await apiFetch(`/api/config/telegram`, {
         method: 'POST',
-        body: JSON.stringify({ token: telegramToken, chatId: telegramChatId, interval: parseInt(telegramInterval, 10) })
+        body: JSON.stringify({ token: telegramToken, chatId: telegramChatId, interval: parseInt(telegramInterval, 10) || 60 })
       });
       if (res.ok) alert('Telegram Configuration Saved & Bot Reloaded!');
     } catch (e) {
@@ -233,6 +234,15 @@ function App() {
     } catch (e) {
       alert('Failed to send test signal');
     }
+  };
+
+  const getLogClass = (type) => {
+    if (!type) return 'log-info';
+    const t = type.toUpperCase();
+    if (t.includes('RECOVERY') || t === 'AMAN') return 'log-success';
+    if (t.includes('WARNING') || t.includes('STANDBY')) return 'log-warning';
+    if (t.includes('OFFLINE') || t.includes('BAHAYA')) return 'log-danger';
+    return 'log-info';
   };
 
   const clearDatabase = async () => {
@@ -361,17 +371,20 @@ function App() {
     return (
       <div className="login-screen">
         <form onSubmit={handleLogin} className="login-box">
-          <h2><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{marginRight: "8px", verticalAlign: "text-bottom"}}><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>AudioMonitor Server</h2>
-          <p>Masukkan PIN untuk masuk ke Dashboard</p>
+          <h2>
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12h4l3-9 5 18 3-9h5"/></svg>
+            Audio Monitor
+          </h2>
+          <p>Masukkan PIN Keamanan untuk mengakses Dashboard</p>
           <input 
             type="password" 
-            placeholder="Masukkan PIN..." 
+            placeholder="PIN Master..." 
             value={pin}
             onChange={(e) => setPin(e.target.value)}
             autoFocus
           />
           {loginError && <div className="login-error">{loginError}</div>}
-          <button type="submit">Masuk</button>
+          <button type="submit">Masuk Dashboard</button>
         </form>
       </div>
     );
@@ -379,345 +392,346 @@ function App() {
 
   return (
     <div className="dashboard">
-      <header className="header">
-        <div style={{ display: 'flex', alignItems: 'center', gap: '20px', flexWrap: 'wrap' }}>
-          <h1>Central Audio Dashboard</h1>
-          <div className="view-toggles">
-            <button className={`view-btn ${currentView === 'live' ? 'active' : ''}`} onClick={() => setCurrentView('live')}>Live Status</button>
-            <button className={`view-btn ${currentView === 'logs' ? 'active' : ''}`} onClick={() => setCurrentView('logs')}>Incident Logs</button>
-            <button className={`view-btn ${currentView === 'settings' ? 'active' : ''}`} onClick={() => setCurrentView('settings')}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{marginRight: "6px", verticalAlign: "text-bottom"}}><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>Settings</button>
-          </div>
+      <nav className="navbar">
+        <div className="brand">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12h4l3-9 5 18 3-9h5"/></svg>
+          Audio Monitor
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-          <div className={`status-badge ${isConnected ? 'connected' : 'disconnected'}`}>
-            {isConnected ? 'Server Connected' : 'Disconnected'}
-          </div>
+        <div className="nav-links">
+          <button className={`nav-btn ${currentView === 'live' ? 'active' : ''}`} onClick={() => setCurrentView('live')}>Live Status</button>
+          <button className={`nav-btn ${currentView === 'logs' ? 'active' : ''}`} onClick={() => setCurrentView('logs')}>Incident Logs</button>
+          <button className={`nav-btn ${currentView === 'settings' ? 'active' : ''}`} onClick={() => setCurrentView('settings')}>Settings</button>
         </div>
-      </header>
+        <div className={`server-status ${isConnected ? 'connected' : 'disconnected'}`}>
+          <div className="dot"></div> {isConnected ? 'Server Connected' : 'Disconnected'}
+        </div>
+      </nav>
 
-      {currentView === 'live' ? (
-        <>
-          <div className="summary-container">
-            <div className="summary-card active">
-              <div className="summary-value">{totalConnected}</div>
-              <div className="summary-label">PC Terhubung</div>
+      <div className="container">
+        {currentView === 'live' && (
+          <>
+            <div className="summary-grid">
+              <div className="summary-card total">
+                <div className="summary-value">{Object.keys(agents).length}</div>
+                <div className="summary-label">PC Terhubung</div>
+              </div>
+              <div className="summary-card danger">
+                <div className="summary-value" style={{color: 'var(--danger)'}}>{Object.values(agents).filter(a => a.status && a.status.startsWith('BAHAYA')).length}</div>
+                <div className="summary-label">Bahaya / Mute</div>
+              </div>
+              <div className="summary-card standby">
+                <div className="summary-value" style={{color: 'var(--warning)'}}>{Object.values(agents).filter(a => !a.status || !a.status.startsWith('BAHAYA')).length}</div>
+                <div className="summary-label">Aman / Standby</div>
+              </div>
             </div>
-            <div className="summary-card danger">
-              <div className="summary-value">{totalBahaya}</div>
-              <div className="summary-label">Bahaya / Mute</div>
+
+            <div className="toolbar">
+              <input 
+                type="text" 
+                className="search-input" 
+                placeholder="Cari nama PC atau ID..." 
+                value={searchTerm}
+                onChange={e => setSearchTerm(e.target.value)}
+              />
+              <select className="filter-select" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
+                <option value="ALL">Semua Status</option>
+                <option value="BAHAYA">Hanya Bahaya</option>
+                <option value="AMAN">Hanya Aman</option>
+              </select>
             </div>
-            <div className="summary-card standby">
-              <div className="summary-value">{totalStandby}</div>
-              <div className="summary-label">Standby</div>
-            </div>
-          </div>
 
-          <div className="controls-bar">
-            <input
-              type="text"
-              placeholder="Cari PC..."
-              value={searchTerm}
-              onChange={e => setSearchTerm(e.target.value)}
-              className="search-input"
-            />
-            <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} className="filter-select">
-              <option value="ALL">Semua Status</option>
-              <option value="AMAN">Aman</option>
-              <option value="BAHAYA_OBS_MUTE">Bahaya (OBS Mute)</option>
-              <option value="BAHAYA_AUDIO_PECAH">Bahaya (Suara Pecah)</option>
-              <option value="BAHAYA_MIC_MATI">Bahaya (Mic Mati)</option>
-              <option value="STANDBY_DIAM">Standby (Diam)</option>
-              <option value="OFFLINE">Offline</option>
-            </select>
-          </div>
+            <div className="agent-grid">
+              {sortedFilteredAgents.map(agent => {
+                const isOffline = agent.status === 'OFFLINE';
+                const isDanger = agent.status && agent.status.startsWith('BAHAYA');
+                const isStandby = agent.status && agent.status.startsWith('STANDBY');
+                
+                let cardClass = 'agent-card';
+                if (isOffline) cardClass += ' offline';
+                else if (isDanger) cardClass += ' danger';
+                else if (isStandby) cardClass += ' standby';
 
-          <div className="grid">
-            {sortedFilteredAgents.map(agent => {
-              const isHardwareWarning = agent.cpuUsage > 85 || agent.ramUsage > 85;
-              return (
-                <div key={agent.uuid} className={`agent-card ${agent.status}`}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '5px' }}>
-                    {editingId === agent.uuid ? (
-                      <form onSubmit={(e) => submitInlineRename(e, agent.uuid)} style={{ display: 'flex', gap: '5px', width: '100%' }}>
-                        <input
-                          autoFocus
-                          value={editingName}
-                          onChange={e => setEditingName(e.target.value)}
-                          style={{ padding: '5px', borderRadius: '4px', border: 'none', width: '100%' }}
-                        />
-                        <button type="submit" style={{ padding: '5px', cursor: 'pointer', background: '#2196f3', color: 'white', border: 'none', borderRadius: '4px' }}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg></button>
-                        <button type="button" onClick={() => setEditingId(null)} style={{ padding: '5px', cursor: 'pointer', background: '#555', color: 'white', border: 'none', borderRadius: '4px' }}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
-                      </form>
-                    ) : (
-                      <>
-                        <h2 style={{ margin: 0, flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                            {agent.pcName}
-                            {agent.isStreaming && (
-                              <span style={{ fontSize: '0.65rem', background: 'rgba(244, 67, 84, 0.2)', border: '1px solid #f44336', color: '#f44336', padding: '2px 6px', borderRadius: '4px', whiteSpace: 'nowrap' }}>
-                                🔴 LIVE {agent.streamTimecode}
-                              </span>
-                            )}
-                          </h2>
-                        
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <button 
-                            onClick={() => togglePcMonitoring(agent.uuid, agent.isMonitoringActive === false ? true : false)}
-                            style={{
-                              padding: '4px 10px',
-                              borderRadius: '12px',
-                              border: `1px solid ${agent.isMonitoringActive !== false ? '#4caf50' : '#f44336'}`,
-                              background: agent.isMonitoringActive !== false ? '#1e3a24' : '#3a1e1e',
-                              color: agent.isMonitoringActive !== false ? '#4caf50' : '#f44336',
-                              cursor: 'pointer',
-                              fontWeight: 'bold',
-                              fontSize: '0.7rem'
-                            }}
-                          >
-                            {agent.isMonitoringActive !== false ? '● ON' : '● OFF'}
-                          </button>
-                          
-                          <button 
-                            onClick={() => { setEditingId(agent.uuid); setEditingName(agent.pcName); }} 
-                            style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid transparent', color: '#888', cursor: 'pointer', flexShrink: 0, padding: '6px', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
-                            onMouseOver={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.1)'; e.currentTarget.style.color = '#fff'; }}
-                            onMouseOut={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; e.currentTarget.style.color = '#888'; }}
-                            title="Ubah Nama PC"
-                          >
-                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                              <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path>
-                            </svg>
-                          </button>
-                        </div>
-                      </>
-                    )}
-                  </div>
+                let statusAreaClass = 'status-area';
+                if (isOffline) statusAreaClass += ' offline';
+                else if (isDanger) statusAreaClass += ' danger';
 
-                  <div className="pc-meta" style={{ marginBottom: '15px' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', flex: 1, paddingRight: '15px' }}>
-                      <span className="uuid" style={{ fontFamily: 'monospace', fontSize: '0.75rem', opacity: 0.6 }}>{agent.uuid}</span>
-                    </div>
-                    {agent.cpuUsage !== undefined && (
-                      <span className={`hardware-stats ${isHardwareWarning ? 'warning' : ''}`} style={{ alignSelf: 'flex-start', whiteSpace: 'nowrap', flexShrink: 0 }}>
-                        CPU: {agent.cpuUsage}% | RAM: {agent.ramUsage}%
-                      </span>
-                    )}
-                  </div>
-
-                  <h3 className="status-text">{agent.status.replace(/_/g, ' ')}</h3>
-
-                  {agent.status === 'OFFLINE' ? (
-                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.2)', borderRadius: '8px', padding: '15px', marginTop: '10px' }}>
-                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#666" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{marginBottom: '5px'}}><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"></path><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"></path><line x1="2" y1="2" x2="22" y2="22"></line></svg>
-                      <span style={{ fontSize: '1em', fontWeight: 'bold', color: '#888' }}>OFFLINE</span>
-                      <span style={{ fontSize: '0.8em', color: '#666', marginTop: '5px' }}>Terakhir: {agent.lastSeen ? new Date(agent.lastSeen).toLocaleString('id-ID', { hour:'2-digit', minute:'2-digit', day:'2-digit', month:'short' }) : 'Tidak diketahui'}</span>
-                    </div>
-                  ) : (
-                  <>
-                  <div className="meter-container">
-                      <div style={{ display: 'flex', justifyContent: 'space-between', position: 'relative', alignItems: 'flex-start', marginBottom: '8px' }}>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1, paddingRight: '10px' }}>
-                          <label style={{ fontSize: '0.9rem', fontWeight: 'bold', color: '#aaa', textTransform: 'uppercase', letterSpacing: '1px' }}>Mic {agent.micLevel === 0 && agent.rawMicLevel > 0 ? '(Gated)' : ''}</label>
-                          {agent.micDriverName && (
-                            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '4px', color: '#888', fontSize: '0.75rem' }}>
-                              <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginTop: '2px', flexShrink: 0 }}>
-                                <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path>
-                                <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
-                                <line x1="12" y1="19" x2="12" y2="22"></line>
-                              </svg>
-                              <span style={{ fontStyle: 'italic', wordBreak: 'break-word', lineHeight: '1.2' }}>{agent.micDriverName.replace('Default - ', '')}</span>
-                            </div>
+                return (
+                  <div key={agent.uuid} className={cardClass}>
+                    <div className="card-header">
+                      <div className="pc-info">
+                        <div className="pc-name-row">
+                          {editingId === agent.uuid ? (
+                            <form onSubmit={(e) => submitInlineRename(e, agent.uuid)} style={{display: 'flex', gap: '5px', width: '100%'}}>
+                              <input autoFocus value={editingName} onChange={e => setEditingName(e.target.value)} className="form-input" style={{padding: '4px 8px'}} />
+                              <button type="submit" className="icon-btn" style={{background: 'var(--accent)', color: '#fff'}}>✓</button>
+                              <button type="button" onClick={() => setEditingId(null)} className="icon-btn">✕</button>
+                            </form>
+                          ) : (
+                            <>
+                              <h2 className="pc-name">
+                                {agent.pcName}
+                                {agent.isStreaming && (
+                                  <div className="live-badge">LIVE {agent.streamTimecode || ''}</div>
+                                )}
+                              </h2>
+                              <div className="card-actions">
+                                <button 
+                                  className={`toggle-btn ${agent.isMonitoringActive ? '' : 'off'}`}
+                                  onClick={() => togglePcMonitoring(agent.uuid, !agent.isMonitoringActive)}
+                                >
+                                  ● {agent.isMonitoringActive ? 'ON' : 'OFF'}
+                                </button>
+                                <button className="icon-btn" onClick={() => { setEditingId(agent.uuid); setEditingName(agent.pcName); }}>✎</button>
+                                <button className="icon-btn" onClick={() => handleDeletePC(agent.uuid)}>🗑</button>
+                              </div>
+                            </>
                           )}
                         </div>
-                        {agent.micHistory && (
-                          <svg width="120" height="25" className="sparkline" style={{ marginTop: '2px', flexShrink: 0 }}>
-                          <polyline
-                            points={agent.micHistory.map((val, i) => `${i * 4},${25 - ((val || 0) / 100) * 25}`).join(' ')}
-                            fill="none" stroke="#4caf50" strokeWidth="2"
-                          />
-                        </svg>
-                      )}
+                        <div className="pc-id">ID: {agent.uuid}</div>
+                      </div>
                     </div>
-                    <div className="meter-bg" style={{ position: 'relative' }}>
-                      {agent.noiseGate !== undefined && (
-                        <div style={{
-                          position: 'absolute', left: `${agent.noiseGate}%`, top: 0, bottom: 0, width: '3px', backgroundColor: '#ff9800', zIndex: 10
-                        }}></div>
-                      )}
-                      <div
-                        className="meter-fill mic"
-                        style={{ 
-                          width: `${Math.min(agent.rawMicLevel !== undefined ? agent.rawMicLevel : agent.micLevel, 100)}%`,
-                          filter: agent.micLevel === 0 && agent.rawMicLevel > 0 ? 'grayscale(100%) opacity(0.4)' : 'none'
-                        }}
-                      ></div>
-                    </div>
-                  </div>
 
-                  <div className="meter-container" style={{ marginTop: '20px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1, paddingRight: '10px' }}>
-                        <label style={{ fontSize: '0.9rem', fontWeight: 'bold', color: '#aaa', textTransform: 'uppercase', letterSpacing: '1px' }}>OBS Output</label>
-                        {agent.obsSourceName && (
-                          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '4px', color: '#888', fontSize: '0.75rem', marginTop: '2px' }}>
-                            <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginTop: '2px', flexShrink: 0 }}>
-                              <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path>
-                              <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
-                              <line x1="12" y1="19" x2="12" y2="22"></line>
+                    <div className={statusAreaClass}>
+                      <h3 className="status-text">{(agent.status || '').replace(/_/g, ' ')}</h3>
+                      {!isOffline && (
+                        <div className="hw-stats">
+                          <span style={{ color: agent.cpuUsage > 85 ? 'var(--warning)' : 'inherit' }}>CPU: {agent.cpuUsage || 0}%</span>
+                          <span style={{ color: agent.ramUsage > 85 ? 'var(--warning)' : 'inherit' }}>RAM: {agent.ramUsage || 0}%</span>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="meters">
+                      <div className="meter-row" style={{ position: 'relative' }}>
+                        <div className="meter-info" style={{ width: '145px', flexShrink: 0 }}>
+                          <span className="meter-title">MIC Input</span>
+                          <span className="meter-device" style={{ whiteSpace: 'normal', wordBreak: 'break-word', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', lineHeight: '1.2' }}>{agent.micDriverName || 'No Device'}</span>
+                        </div>
+                        {agent.micHistory && (
+                          <svg width="80" height="20" className="sparkline" style={{ flexShrink: 0 }}>
+                            <polyline
+                              points={agent.micHistory.map((val, i) => `${i * (80/30)},${20 - ((val || 0) / 100) * 20}`).join(' ')}
+                              fill="none" stroke="#10b981" strokeWidth="1.5"
+                            />
+                          </svg>
+                        )}
+                        <div className="meter-bar-container">
+                          <div className="meter-fill mic" style={{ width: `${Math.min(100, Math.max(0, agent.micLevel || 0))}%`, background: agent.micClipping ? 'var(--danger)' : '' }}></div>
+                        </div>
+                        <div style={{ width: '65px', textAlign: 'right', fontSize: '0.75rem', fontFamily: 'monospace', color: 'var(--text-muted)' }}>{agent.micDb !== undefined ? agent.micDb + ' dB' : ''}</div>
+                        {agent.micClipping && <span style={{ position: 'absolute', top: '-15px', right: 0, background: 'var(--danger)', color: '#fff', fontSize: '0.6rem', padding: '2px 4px', borderRadius: '4px', fontWeight: 'bold' }}>⚠️ PECAH</span>}
+                      </div>
+
+                      {agent.obsSources && agent.obsSources.length > 0 && agent.obsHistory && (
+                          <div style={{ display: 'flex', justifyContent: 'flex-start', paddingLeft: '140px', marginBottom: '2px' }}>
+                            <svg width="80" height="20" className="sparkline" style={{ opacity: 0.85 }}>
+                              <polyline
+                                points={agent.obsHistory.map((val, idx) => `${idx * (80/30)},${20 - ((val || 0) / 100) * 20}`).join(' ')}
+                                fill="none" stroke="#3b82f6" strokeWidth="1.5"
+                              />
                             </svg>
-                            <span style={{ fontStyle: 'italic', wordBreak: 'break-word', lineHeight: '1.2' }}>{agent.obsSourceName}</span>
                           </div>
                         )}
-                      </div>
-                      {agent.obsHistory && (
-                        <svg width="120" height="25" className="sparkline" style={{ marginTop: '2px', flexShrink: 0 }}>
-                          <polyline
-                            points={agent.obsHistory.map((val, i) => `${i * 4},${25 - ((val || 0) / 100) * 25}`).join(' ')}
-                            fill="none" stroke="#2196f3" strokeWidth="2"
-                          />
-                        </svg>
+                        {agent.obsSources && agent.obsSources.length > 0 ? (
+                        agent.obsSources.map((source, i) => {
+                          let monitorStr = 'Unknown';
+                          if (source.monitorType === 'OBS_MONITORING_TYPE_NONE') monitorStr = 'Monitor Off';
+                          else if (source.monitorType === 'OBS_MONITORING_TYPE_MONITOR_ONLY') monitorStr = 'Monitor Only';
+                          else if (source.monitorType === 'OBS_MONITORING_TYPE_MONITOR_AND_OUTPUT') monitorStr = 'Monitor & Output';
+                          
+                          // Compute percentage from mul. 1.0 mul is ~ 0dB. Let's map it roughly to 0-100%.
+                          // OBS uses cubic mapping, but for a simple bar, we can use the same logic we use for mic.
+                          const mappedObs = source.volume > 0 ? Math.max(0, Math.min(100, (source.db + 60) * (100 / 60))) : 0;
+                          
+                          return (
+                            <div className="meter-row" key={i}>
+                              <div className="meter-info" style={{ width: '145px', flexShrink: 0, opacity: source.muted ? 0.5 : 1 }}>
+                                <span className="meter-title" style={{ display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                  {source.name}
+                                  {source.muted && <span style={{ fontSize: '0.55rem', color: 'var(--danger)', border: '1px solid var(--danger)', borderRadius: '3px', padding: '0 3px' }}>MUTED</span>}
+                                </span>
+                                <span className="meter-device" title={source.monitorType}>{monitorStr}</span>
+                              </div>
+                              <div className="meter-bar-container" style={{ opacity: source.muted ? 0.3 : 1 }}>
+                                <div className="meter-fill obs" style={{ width: `${mappedObs}%` }}></div>
+                              </div>
+                              <div style={{ width: '65px', textAlign: 'right', fontSize: '0.75rem', fontFamily: 'monospace', color: 'var(--text-muted)' }}>{source.db !== undefined ? source.db + ' dB' : ''}</div>
+                            </div>
+                          );
+                        })
+                      ) : (
+                        <div className="meter-row">
+                          <div className="meter-info" style={{ width: '145px', flexShrink: 0 }}>
+                            <span className="meter-title">OBS Output</span>
+                            <span className="meter-device" style={{ whiteSpace: 'normal', wordBreak: 'break-word', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', lineHeight: '1.2' }}>{agent.obsSourceName || 'System / Desktop'}</span>
+                          </div>
+                          {agent.obsHistory && (
+                            <svg width="80" height="20" className="sparkline" style={{ flexShrink: 0 }}>
+                              <polyline
+                                points={agent.obsHistory.map((val, i) => `${i * (80/30)},${20 - ((val || 0) / 100) * 20}`).join(' ')}
+                                fill="none" stroke="#3b82f6" strokeWidth="1.5"
+                              />
+                            </svg>
+                          )}
+                          <div className="meter-bar-container">
+                            <div className="meter-fill obs" style={{ width: `${Math.min(100, Math.max(0, agent.obsLevel || 0))}%` }}></div>
+                          </div>
+                          <div style={{ width: '65px' }}></div>
+                        </div>
                       )}
                     </div>
-                    <div className="meter-bg">
-                      <div
-                        className="meter-fill obs"
-                        style={{ width: `${Math.min(agent.obsLevel, 100)}%` }}
-                      ></div>
+
+                    <div className="card-footer">
+                      <span>{isOffline ? 'Terputus' : 'Tersambung via WebSocket'}</span>
+                      <span>Update: {agent.timestamp ? new Date(agent.timestamp).toLocaleTimeString() : '-'}</span>
                     </div>
                   </div>
-                  </>
-                  )}
-                  <p className="timestamp">Last update: {new Date(agent.timestamp).toLocaleTimeString()}</p>
-                </div>
-              );
-            })}
-            {Object.keys(agents).length === 0 && (
-              <p className="empty-state">Waiting for PC Streaming connections...</p>
-            )}
-          </div>
-        </>
-      ) : currentView === 'logs' ? (
-        <div className="logs-container">
-          <h2>Recent Incidents</h2>
-          <button className="primary-btn" onClick={fetchLogs} style={{ marginBottom: '15px' }}>Refresh Logs</button>
-          <table className="logs-table">
-            <thead>
-              <tr>
-                <th>Time</th>
-                <th>PC Name</th>
-                <th>Type</th>
-                <th>Details</th>
-              </tr>
-            </thead>
-            <tbody>
-              {logs.length === 0 ? (
-                <tr><td colSpan="4" style={{ textAlign: 'center', padding: '20px' }}>No incidents recorded yet.</td></tr>
-              ) : (
-                logs.map(log => (
-                  <tr key={log.id} className={(log.incidentType || '').includes('RECOVERY') ? 'recovery-row' : (log.incidentType || '').includes('BAHAYA') ? 'danger-row' : ''}>
-                    <td>{new Date(log.timestamp).toLocaleString()}</td>
-                    <td>{log.pcName}</td>
-                    <td>{(log.incidentType || '').replace(/_/g, ' ')}</td>
-                    <td>{log.details}</td>
-                  </tr>
-                ))
+                );
+              })}
+              {sortedFilteredAgents.length === 0 && (
+                <div style={{ color: 'var(--text-muted)', gridColumn: '1/-1', textAlign: 'center', padding: '40px' }}>Tidak ada agen yang sesuai filter.</div>
               )}
-            </tbody>
-          </table>
-        </div>
-      ) : currentView === 'settings' ? (
-        <div className="logs-container">
-          <h2><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{marginRight: "6px", verticalAlign: "text-bottom"}}><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>Dashboard Settings</h2>
-          
-          <div style={{ background: '#222', padding: '20px', borderRadius: '8px', marginBottom: '20px', borderLeft: '4px solid #2196f3' }}>
-            <h3 style={{ marginTop: 0 }}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{marginRight: "8px", verticalAlign: "text-bottom"}}><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg>Telegram Alerts</h3>
-            <p style={{ color: '#aaa', fontSize: '0.9rem' }}>Konfigurasi bot Telegram untuk menerima peringatan jika ada audio yang bermasalah.</p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '15px', maxWidth: '500px' }}>
-              <div>
-                <label style={{ display: 'block', marginBottom: '5px', color: '#ccc' }}>Bot Token</label>
-                <input 
-                  type="text" 
-                  value={telegramToken}
-                  onChange={(e) => setTelegramToken(e.target.value)}
-                  className="search-input" 
-                  style={{ width: '100%' }}
-                  placeholder="e.g., 123456789:ABCdefGHIjklMNOpqrSTUvwxYZ"
-                />
+            </div>
+          </>
+        )}
+
+        {currentView === 'logs' && (
+          <div className="settings-layout" style={{ maxWidth: '1000px' }}>
+            <div>
+              <h1 className="settings-header">Incident Logs</h1>
+              <p className="settings-desc">Rekam jejak masalah audio (Bahaya Mute/Suara Buruk) dari seluruh PC.</p>
+            </div>
+            
+            <div className="settings-card">
+              <div className="settings-card-accent orange"></div>
+              <div className="settings-card-content" style={{ padding: '0' }}>
+                <table className="logs-table">
+                  <thead>
+                    <tr>
+                      <th>Waktu Kejadian</th>
+                      <th>PC / UUID</th>
+                      <th>Status Peringatan</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {logs.map((log, i) => (
+                      <tr key={i}>
+                        <td>{new Date(log.timestamp).toLocaleString()}</td>
+                        <td><strong>{log.pcName}</strong><br/><span style={{ fontSize: "0.7rem", color: "var(--text-muted)", fontFamily: "monospace" }}>{log.uuid}</span></td>
+                        <td><span className={getLogClass(log.incidentType || log.status)}>{log.incidentType || log.status || "UNKNOWN"}</span><div style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "4px" }}>{log.details}</div></td>
+                      </tr>
+                    ))}
+                    {logs.length === 0 && (
+                      <tr><td colSpan="3" style={{textAlign: 'center', color: 'var(--text-muted)'}}>Belum ada insiden tercatat.</td></tr>
+                    )}
+                  </tbody>
+                </table>
               </div>
-              <div>
-                <label style={{ display: 'block', marginBottom: '5px', color: '#ccc' }}>Chat ID</label>
-                <input 
-                  type="text" 
-                  value={telegramChatId}
-                  onChange={(e) => setTelegramChatId(e.target.value)}
-                  className="search-input" 
-                  style={{ width: '100%' }}
-                  placeholder="e.g., -100123456789"
-                />
-              </div>
-                <div>
-                  <label style={{ display: 'block', marginBottom: '5px', color: '#ccc', marginTop: '15px' }}>Interval Pesan Alert (Detik)</label>
-                  <input 
-                    type="number" 
-                    min="10"
-                    value={telegramInterval}
-                    onChange={(e) => setTelegramInterval(e.target.value)}
-                    className="search-input" 
-                    style={{ width: '100%' }}
-                    placeholder="Contoh: 60"
-                  />
-                  <p style={{ fontSize: '0.8rem', color: '#888', marginTop: '5px' }}>Waktu tunda sebelum bot mengirim pesan peringatan berulang jika bahaya berlanjut.</p>
+            </div>
+          </div>
+        )}
+
+        {currentView === 'settings' && (
+          <div className="settings-layout">
+            <div>
+              <h1 className="settings-header">Dashboard Settings</h1>
+              <p className="settings-desc">Kelola konfigurasi sistem peringatan pusat dan keamanan akses dashboard.</p>
+            </div>
+
+            <div className="settings-card">
+              <div className="settings-card-accent blue"></div>
+              <div className="settings-card-content">
+                <h2 className="settings-card-title">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+                  Telegram Alerts
+                </h2>
+                <p className="settings-card-subtitle">Konfigurasi bot Telegram untuk menerima peringatan terpusat jika ada audio PC yang bermasalah.</p>
+                
+                <div className="form-group">
+                  <label className="form-label">Bot Token</label>
+                  <input type="text" className="form-input" value={telegramToken} onChange={(e) => setTelegramToken(e.target.value)} placeholder="e.g., 123456789:ABCdefGHIjklMNOpqrSTUvwxYZ" />
                 </div>
-              <div style={{ display: 'flex', gap: '10px' }}>
-                <button className="primary-btn" onClick={saveTelegramConfig}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{marginRight: "6px", verticalAlign: "text-bottom"}}><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>Save Configuration</button>
-                <button className="view-btn" onClick={testTelegram} style={{ background: '#4caf50', color: 'white' }}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{marginRight: "6px", verticalAlign: "text-bottom"}}><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>Test Alert</button>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '20px' }}>
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label className="form-label">Chat ID / Group ID</label>
+                    <input type="text" className="form-input" value={telegramChatId} onChange={(e) => setTelegramChatId(e.target.value)} placeholder="e.g., -100123456789" />
+                  </div>
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label className="form-label">Interval Pesan (Detik)</label>
+                    <input type="number" className="form-input" value={telegramInterval} onChange={(e) => setTelegramInterval(e.target.value)} placeholder="60" />
+                    <span className="form-help">Waktu tunda bot berulang</span>
+                  </div>
+                </div>
+
+                <div className="button-group">
+                  <button className="btn btn-primary" onClick={saveTelegramConfig}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+                    Save Configuration
+                  </button>
+                  <button className="btn btn-success" onClick={testTelegram}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+                    Test Alert
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
 
-          <div style={{ background: '#222', padding: '20px', borderRadius: '8px', marginBottom: '20px', borderLeft: '4px solid #9c27b0' }}>
-            <h3 style={{ marginTop: 0 }}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{marginRight: "8px", verticalAlign: "text-bottom"}}><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>Keamanan Akses (PIN)</h3>
-            <p style={{ color: '#aaa', fontSize: '0.9rem' }}>Ubah PIN untuk mengakses Dashboard ini.</p>
-            <div style={{ display: 'flex', gap: '10px', maxWidth: '300px' }}>
-              <input 
-                type="password" 
-                value={newPinInput}
-                onChange={(e) => setNewPinInput(e.target.value)}
-                className="search-input" 
-                style={{ width: '100%' }}
-                placeholder="PIN Baru..."
-              />
-              <button className="primary-btn" onClick={savePinConfig}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{marginRight: "6px", verticalAlign: "text-bottom"}}><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>Ubah</button>
+            <div className="settings-card">
+              <div className="settings-card-accent purple"></div>
+              <div className="settings-card-content">
+                <h2 className="settings-card-title">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+                  Keamanan Akses (PIN)
+                </h2>
+                <p className="settings-card-subtitle">Ubah PIN master yang digunakan untuk menghapus PC atau mengakses pengaturan.</p>
+                <div style={{ display: 'flex', gap: '16px', maxWidth: '400px' }}>
+                  <input type="password" className="form-input" value={newPinInput} onChange={(e) => setNewPinInput(e.target.value)} placeholder="Masukkan PIN Baru..." />
+                  <button className="btn btn-primary" onClick={savePinConfig} style={{ whiteSpace: 'nowrap' }}>Ubah PIN</button>
+                </div>
+              </div>
             </div>
-          </div>
 
-          <div style={{ background: '#222', padding: '20px', borderRadius: '8px', marginBottom: '20px', borderLeft: '4px solid #ff9800' }}>
-            <h3 style={{ marginTop: 0 }}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{marginRight: "8px", verticalAlign: "text-bottom"}}><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>Local Dashboard Audio</h3>
-            <p style={{ color: '#aaa', fontSize: '0.9rem' }}>Pengaturan suara peringatan yang berbunyi langsung di browser ini.</p>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
-              <input 
-                type="checkbox" 
-                checked={enableBeep}
-                onChange={(e) => setEnableBeep(e.target.checked)}
-                style={{ width: '18px', height: '18px' }}
-              />
-              <span style={{ fontSize: '1.1rem' }}>Nyalakan suara "Beep" jika ada PC dalam status BAHAYA</span>
-            </label>
-          </div>
+            <div className="settings-card">
+              <div className="settings-card-accent teal"></div>
+              <div className="settings-card-content">
+                <h2 className="settings-card-title">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>
+                  Local Dashboard Audio
+                </h2>
+                <p className="settings-card-subtitle">Konfigurasi pemutaran suara peringatan langsung di browser pusat ini.</p>
+                <div className="setting-row">
+                  <div>
+                    <div className="form-label" style={{ margin: 0 }}>Nyalakan Alarm Bahaya Lokal</div>
+                    <span className="form-help" style={{ margin: 0 }}>Dashboard akan mengeluarkan suara 'Beep' jika ada agen berstatus BAHAYA.</span>
+                  </div>
+                  <label className="toggle-switch">
+                    <input type="checkbox" checked={enableBeep} onChange={(e) => setEnableBeep(e.target.checked)} />
+                    <span className="slider"></span>
+                  </label>
+                </div>
+              </div>
+            </div>
 
-          <div style={{ background: '#3a1515', padding: '20px', borderRadius: '8px', borderLeft: '4px solid #f44336' }}>
-            <h3 style={{ marginTop: 0, color: '#f44336' }}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{marginRight: "8px", verticalAlign: "text-bottom"}}><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>Danger Zone</h3>
-            <p style={{ color: '#aaa', fontSize: '0.9rem' }}>Tindakan destruktif yang tidak dapat dibatalkan.</p>
-            <button 
-              className="primary-btn" 
-              onClick={clearDatabase}
-              style={{ background: '#f44336' }}
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{marginRight: "6px", verticalAlign: "text-bottom"}}><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>Clear All Incident Logs
-            </button>
-          </div>
+            <div className="settings-card">
+              <div className="settings-card-accent red"></div>
+              <div className="settings-card-content">
+                <h2 className="settings-card-title" style={{color: 'var(--danger)'}}>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+                  Danger Zone
+                </h2>
+                <p className="settings-card-subtitle">Tindakan destruktif yang tidak dapat dibatalkan.</p>
+                <button className="btn btn-danger" onClick={clearDatabase}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                  Clear All Incident Logs
+                </button>
+              </div>
+            </div>
 
-        </div>
-      ) : null}
+          </div>
+        )}
+
+      </div>
     </div>
   );
 }

@@ -1,7 +1,7 @@
 import { io } from 'socket.io-client';
 
 class DashboardClient {
-  constructor(serverUrl, onConnectChange, onDataUpdate, onMonitoringStatus, onPcMonitoringUpdate, onPcMonitoringStates) {
+  constructor(serverUrl, onConnectChange, onDataUpdate, onMonitoringStatus, onPcMonitoringUpdate, onPcMonitoringStates, onAllAgents, onAgentDeleted) {
     this.serverUrl = serverUrl;
     this.socket = null;
     this.onConnectChange = onConnectChange;
@@ -9,6 +9,8 @@ class DashboardClient {
     this.onMonitoringStatus = onMonitoringStatus;
     this.onPcMonitoringUpdate = onPcMonitoringUpdate;
     this.onPcMonitoringStates = onPcMonitoringStates;
+    this.onAllAgents = onAllAgents;
+    this.onAgentDeleted = onAgentDeleted;
   }
 
   connect() {

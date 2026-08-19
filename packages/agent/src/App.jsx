@@ -8,6 +8,9 @@ import TelemetryClient from './core/TelemetryClient';
 function App() {
   const [uuid, setUuid] = useState('Loading...');
   const [rawMicLevel, setRawMicLevel] = useState(0);
+  const [micDb, setMicDb] = useState(-100);
+  const [micClipping, setMicClipping] = useState(false);
+  const [obsSources, setObsSources] = useState([]);
   const [micLevel, setMicLevel] = useState(0);
   const [obsLevel, setObsLevel] = useState(0);
   const [status, setStatus] = useState('AMAN');
@@ -59,21 +62,31 @@ function App() {
   const [streamTimecode, setStreamTimecode] = useState('00:00:00');
 
   useEffect(() => {
-    const streamTimer = setInterval(() => {
-      if (obsClient.current && obsConnected) {
-        obsClient.current.getStreamStatus().then(status => {
-          setIsStreaming(status.outputActive);
-          if (status.outputActive && status.outputTimecode) {
-             setStreamTimecode(status.outputTimecode.split('.')[0]); // remove milliseconds
-          } else {
-             setStreamTimecode('00:00:00');
-          }
-        }).catch(() => {});
-      } else {
-        setIsStreaming(false);
-        setStreamTimecode('00:00:00');
-      }
-    }, 1000);
+    let streamTimer;
+    if (obsConnected) {
+      streamTimer = setInterval(() => {
+        if (obsClient.current) {
+          let timeoutId;
+          Promise.race([
+            obsClient.current.getStreamStatus(),
+            new Promise((_, rej) => { timeoutId = setTimeout(() => rej(new Error('Timeout')), 3000); })
+          ]).then(status => {
+            clearTimeout(timeoutId);
+            setIsStreaming(status.outputActive);
+            if (status.outputActive && status.outputTimecode) {
+               setStreamTimecode(status.outputTimecode.split('.')[0]);
+            } else {
+               setStreamTimecode('00:00:00');
+            }
+          }).catch(() => {
+            clearTimeout(timeoutId);
+          });
+        }
+      }, 1000);
+    } else {
+      setIsStreaming(false);
+      setStreamTimecode('00:00:00');
+    }
     return () => clearInterval(streamTimer);
   }, [obsConnected]);
   const [autoStart, setAutoStart] = useState(false);
@@ -153,7 +166,9 @@ function App() {
 
   // Initialize Audio & OBS Clients
   useEffect(() => {
-    audioProcessor.current = new AudioProcessor((level) => {
+    audioProcessor.current = new AudioProcessor(({ level, db, isClipping }) => {
+      setMicDb(db);
+      setMicClipping(isClipping);
       setRawMicLevel(level);
       const gate = noiseGateRef.current;
       setMicLevel(level < gate ? 0 : level);
@@ -257,7 +272,13 @@ function App() {
   const silenceTimeout = useRef(null);
   const deadMicTimeout = useRef(null);
   const dangerScore = useRef(0);
+  const lastTickRef = useRef(0);
   const clippingScore = useRef(0);
+
+  const currentMicLevel = useRef(0);
+  const currentObsLevel = useRef(0);
+  useEffect(() => { currentMicLevel.current = micLevel; }, [micLevel]);
+  useEffect(() => { currentObsLevel.current = obsLevel; }, [obsLevel]);
 
   // Hybrid Monitoring Logic
   useEffect(() => {
@@ -273,8 +294,8 @@ function App() {
     }
 
     let nextStatus = status;
-    const isTalking = micLevel > 10;
-    const isObsMuted = obsLevel < 0.5; // Lowered threshold to ensure we only catch true mutes or extremely low volumes
+    const isTalking = currentMicLevel.current > 10;
+    const isObsMuted = currentObsLevel.current < 0.5;
 
     // Clipping Logic (build score if rawMicLevel exceeds threshold)
     if (rawMicLevel >= clippingThreshold) {
@@ -390,17 +411,14 @@ function App() {
       micDriverName,
       obsSourceName,
       micLevel,
-      rawMicLevel,
-      noiseGate,
-      obsLevel,
-      status,
+      rawMicLevel, micDb, micClipping, obsSources, noiseGate, obsLevel, status,
       cpuUsage: hardwareUsage.cpuUsage,
       ramUsage: hardwareUsage.ramUsage,
       isMonitoringActive,
       isStreaming,
       streamTimecode
     };
-  }, [micLevel, rawMicLevel, noiseGate, obsLevel, status, hardwareUsage, uuid, agentName, micDriverName, obsSourceName, isMonitoringActive, isStreaming, streamTimecode]);
+  }, [micLevel, rawMicLevel, micDb, micClipping, obsSources, noiseGate, obsLevel, status, hardwareUsage, uuid, agentName, micDriverName, obsSourceName, isMonitoringActive, isStreaming, streamTimecode]);
 
   // Telemetry Sender (Throttled to 500ms)
   useEffect(() => {

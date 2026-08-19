@@ -35,8 +35,10 @@ class AudioProcessor {
         
         this.analyser.getFloatTimeDomainData(pcmData);
         let sum = 0;
+        let clipCount = 0;
         for (let i = 0; i < pcmData.length; i++) {
           sum += pcmData[i] * pcmData[i];
+          if (Math.abs(pcmData[i]) >= 0.99) clipCount++;
         }
         
         let rms = Math.sqrt(sum / pcmData.length);
@@ -45,7 +47,8 @@ class AudioProcessor {
         
         if (this.onLevelChange) {
           // Send raw level
-          this.onLevelChange(level);
+          const isClipping = clipCount > 5;
+          this.onLevelChange({ level, db: parseFloat(db.toFixed(1)), isClipping });
         }
         
         // Use setTimeout instead of requestAnimationFrame so it keeps running when window is minimized/hidden in tray

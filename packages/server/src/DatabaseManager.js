@@ -38,11 +38,16 @@ class DatabaseManager {
   }
 
   saveDb() {
-    try {
-      fs.writeFileSync(this.dbPath, JSON.stringify(this.incidents, null, 2));
-    } catch (err) {
-      console.error('Error saving JSON DB:', err.message);
-    }
+    if (this._saveTimeout) clearTimeout(this._saveTimeout);
+    this._saveTimeout = setTimeout(() => {
+      try {
+        const tempPath = this.dbPath + '.tmp';
+        require('fs').writeFileSync(tempPath, JSON.stringify(this.incidents, null, 2));
+        require('fs').renameSync(tempPath, this.dbPath);
+      } catch (err) {
+        console.error('Error saving JSON DB:', err.message);
+      }
+    }, 500);
   }
 
   autoCleanup() {

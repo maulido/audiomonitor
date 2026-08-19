@@ -48,7 +48,7 @@ class TelemetryHub {
       });
 
       socket.on('telemetry', (data) => {
-        if (!data) return;
+        if (!data || !data.uuid) return;
         if (data.uuid) {
           socket.agentUuid = data.uuid;
           socket.agentName = data.name;
@@ -59,7 +59,7 @@ class TelemetryHub {
         this.handleTelemetry(data);
       });
 
-      socket.on('agent-rename', (data) => {
+      socket.on('agent-rename', (data) => { if (!data) return;
           if (data.uuid && data.newName) {
             this.configManager.setPcName(data.uuid, data.newName);
             this.notifyAgentNameChange(data.uuid, data.newName);
@@ -70,7 +70,7 @@ class TelemetryHub {
           }
       });
 
-      socket.on('agent-monitoring', (data) => {
+      socket.on('agent-monitoring', (data) => { if (!data) return;
         if (data.uuid && data.active !== undefined) {
           this.setPcMonitoring(data.uuid, data.active);
         }

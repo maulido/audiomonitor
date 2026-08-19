@@ -45,6 +45,18 @@ class ServerApp {
 
   setupRoutes() {
     // API for Dashboard to rename PCs
+    
+    this.app.delete('/api/pc/:uuid', (req, res) => {
+      const pin = req.headers['x-pin'];
+      if (!pin || pin !== this.configManager.config.dashboardPin) {
+        return res.status(401).json({ error: 'Invalid PIN' });
+      }
+      const { uuid } = req.params;
+      this.telemetryHub.deleteAgent(uuid);
+      delete this.configManager.config.pcMapping[uuid];
+      this.configManager.saveConfig();
+      res.json({ success: true });
+    });
     this.app.post('/api/rename', (req, res) => {
       const { uuid, newName } = req.body;
       if (!uuid || !newName) return res.status(400).send({ success: false, error: 'Invalid data' });

@@ -35,7 +35,7 @@ class AlertManager {
     const telegramConfig = this.configManager.getTelegramConfig();
     if (this.bot && telegramConfig.chatId) {
       this.bot.sendMessage(telegramConfig.chatId, message, { parse_mode: 'HTML' })
-        .catch(err => console.error('Telegram error:', err.message));
+        .catch(err => console.error('Telegram error:', err ? err.message : "Unknown error"));
     }
   }
 
@@ -57,7 +57,7 @@ class AlertManager {
     if (isDanger) {
       const lastAlertTime = this.lastAlertState[data.uuid] || 0;
       const now = Date.now();
-      const throttleMs = (this.configManager.getTelegramConfig().interval || 60) * 1000;
+      const throttleMs = (this.configManager.getTelegramConfig().interval ?? 60) * 1000;
       
       if (now - lastAlertTime > throttleMs) {
         this.sendTelegramAlert(
@@ -80,7 +80,7 @@ class AlertManager {
       const hwKey = `${data.uuid}_hw`;
       const lastHwAlertTime = this.lastAlertState[hwKey] || 0;
       const now = Date.now();
-      const throttleMs = (this.configManager.getTelegramConfig().interval || 60) * 1000;
+      const throttleMs = (this.configManager.getTelegramConfig().interval ?? 60) * 1000;
       
       if (now - lastHwAlertTime > throttleMs) {
         let issues = [];

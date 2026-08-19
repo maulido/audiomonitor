@@ -71,7 +71,7 @@ class OBSClient {
     try {
       // Fetch all inputs from OBS
       const response = await this.obs.call('GetInputList');
-      return response.inputs;
+      return response.inputs || [];
     } catch (error) {
       console.error("Failed to fetch OBS inputs:", error);
       return [];
@@ -89,7 +89,43 @@ class OBSClient {
     }
   }
 
+
+  async getDetailedSources() {
+    if (!this.isConnected) return [];
+    try {
+      const response = await this.obs.call('GetInputList');
+      const inputs = response.inputs || [];
+      const detailed = [];
+      
+      for (const input of inputs) {
+        if (!['wasapi_input_capture', 'wasapi_output_capture', 'wasapi_process_output_capture', 'browser_source'].includes(input.unversionedInputKind)) {
+          // It's a hacky filter, but OBS doesn't provide an explicit 'isAudio' flag.
+          // Let's just catch exceptions, but filter out pure visual sources.
+        }
+        try {
+          const muteRes = await this.obs.call('GetInputMute', { inputName: input.inputName });
+          const volRes = await this.obs.call('GetInputVolume', { inputName: input.inputName });
+          const monRes = await this.obs.call('GetInputAudioMonitorType', { inputName: input.inputName });
+          
+          detailed.push({
+            name: input.inputName,
+            muted: muteRes.inputMuted,
+            db: parseFloat((volRes.inputVolumeDb).toFixed(1)),
+            volume: volRes.inputVolumeMul,
+            monitorType: monRes.monitorType
+          });
+        } catch (e) {
+          // Ignore non-audio inputs
+        }
+      }
+      return detailed;
+    } catch (e) {
+      return [];
+    }
+  }
+
   disconnect() {
+
     this.intentionalDisconnect = true;
     if (this.reconnectInterval) {
       clearInterval(this.reconnectInterval);
