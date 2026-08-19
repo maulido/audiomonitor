@@ -20,6 +20,7 @@ function App() {
   // Settings State
   const [telegramToken, setTelegramToken] = useState('');
   const [telegramChatId, setTelegramChatId] = useState('');
+  const [telegramInterval, setTelegramInterval] = useState(60);
   const [newPinInput, setNewPinInput] = useState('');
   const [isMonitoringActive, setIsMonitoringActive] = useState(true);
   const [enableBeep, setEnableBeep] = useState(() => {
@@ -63,6 +64,7 @@ function App() {
     if (data.telegram) {
       setTelegramToken(data.telegram.token || '');
       setTelegramChatId(data.telegram.chatId || '');
+        setTelegramInterval(data.telegram.interval || 60);
     }
   };
 
@@ -195,7 +197,7 @@ function App() {
     try {
       const res = await apiFetch(`/api/config/telegram`, {
         method: 'POST',
-        body: JSON.stringify({ token: telegramToken, chatId: telegramChatId })
+        body: JSON.stringify({ token: telegramToken, chatId: telegramChatId, interval: parseInt(telegramInterval, 10) })
       });
       if (res.ok) alert('Telegram Configuration Saved & Bot Reloaded!');
     } catch (e) {

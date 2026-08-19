@@ -57,8 +57,9 @@ class AlertManager {
     if (isDanger) {
       const lastAlertTime = this.lastAlertState[data.uuid] || 0;
       const now = Date.now();
+      const throttleMs = (this.configManager.getTelegramConfig().interval || 60) * 1000;
       
-      if (now - lastAlertTime > this.THROTTLE_MS) {
+      if (now - lastAlertTime > throttleMs) {
         this.sendTelegramAlert(
           `[ALERT] <b>AUDIO ISSUE</b>\n<b>${safePcName}</b> mengalami masalah: <b>${safeStatus}</b>`
         );
@@ -79,8 +80,9 @@ class AlertManager {
       const hwKey = `${data.uuid}_hw`;
       const lastHwAlertTime = this.lastAlertState[hwKey] || 0;
       const now = Date.now();
+      const throttleMs = (this.configManager.getTelegramConfig().interval || 60) * 1000;
       
-      if (now - lastHwAlertTime > this.THROTTLE_MS) {
+      if (now - lastHwAlertTime > throttleMs) {
         let issues = [];
         if (data.cpuUsage > 85) issues.push(`CPU (${data.cpuUsage}%)`);
         if (data.ramUsage > 85) issues.push(`RAM (${data.ramUsage}%)`);

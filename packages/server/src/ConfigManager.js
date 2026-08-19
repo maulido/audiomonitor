@@ -12,7 +12,7 @@ class ConfigManager {
     this.configPath = path.join(basePath, configFilePath);
     this.defaultConfig = {
       pcMapping: {},
-      telegram: { token: '', chatId: '' },
+      telegram: { token: '', chatId: '', interval: 60 },
       monitoringActive: true,
       dashboardPin: '1234'
     };
@@ -31,6 +31,7 @@ class ConfigManager {
           telegram: {
             token: '',
             chatId: '',
+            interval: 60,
             ...(parsed.telegram || {})
           },
           monitoringActive: parsed.monitoringActive !== undefined ? parsed.monitoringActive : true,
@@ -76,7 +77,7 @@ class ConfigManager {
   }
 
   getTelegramConfig() {
-    return this.config.telegram || { token: '', chatId: '' };
+    return this.config.telegram || { token: '', chatId: '', interval: 60 };
   }
 }
 

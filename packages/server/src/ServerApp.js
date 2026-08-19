@@ -72,9 +72,10 @@ class ServerApp {
     });
 
     this.app.post('/api/config/telegram', (req, res) => {
-      const { token, chatId } = req.body || {};
+      const { token, chatId, interval } = req.body || {};
       if (token !== undefined) this.configManager.config.telegram.token = token;
       if (chatId !== undefined) this.configManager.config.telegram.chatId = chatId;
+      if (interval !== undefined) this.configManager.config.telegram.interval = parseInt(interval, 10);
       this.configManager.saveConfig();
       this.alertManager.initBot(); // Re-initialize the bot
       
