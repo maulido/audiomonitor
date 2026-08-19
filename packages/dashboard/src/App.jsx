@@ -654,6 +654,19 @@ function App() {
                   placeholder="e.g., -100123456789"
                 />
               </div>
+                <div>
+                  <label style={{ display: 'block', marginBottom: '5px', color: '#ccc', marginTop: '15px' }}>Interval Pesan Alert (Detik)</label>
+                  <input 
+                    type="number" 
+                    min="10"
+                    value={telegramInterval}
+                    onChange={(e) => setTelegramInterval(e.target.value)}
+                    className="search-input" 
+                    style={{ width: '100%' }}
+                    placeholder="Contoh: 60"
+                  />
+                  <p style={{ fontSize: '0.8rem', color: '#888', marginTop: '5px' }}>Waktu tunda sebelum bot mengirim pesan peringatan berulang jika bahaya berlanjut.</p>
+                </div>
               <div style={{ display: 'flex', gap: '10px' }}>
                 <button className="primary-btn" onClick={saveTelegramConfig}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{marginRight: "6px", verticalAlign: "text-bottom"}}><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>Save Configuration</button>
                 <button className="view-btn" onClick={testTelegram} style={{ background: '#4caf50', color: 'white' }}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{marginRight: "6px", verticalAlign: "text-bottom"}}><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>Test Alert</button>
