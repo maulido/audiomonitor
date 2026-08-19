@@ -52,6 +52,7 @@ function App() {
   const [obsInputs, setObsInputs] = useState([]);
   const [micDriverName, setMicDriverName] = useState('');
   const [hardwareUsage, setHardwareUsage] = useState({ cpuUsage: 0, ramUsage: 0 });
+  const [activeTab, setActiveTab] = useState('monitoring');
   
   const obsSourceNameRef = useRef(obsSourceName);
   const noiseGateRef = useRef(noiseGate);
@@ -371,216 +372,189 @@ function App() {
         </div>
       </div>
 
-      <div className="info-panel">
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-          <h2 style={{margin: '0 0 5px 0', fontSize: '1.2em'}}>{agentName}</h2>
-          <p className="pc-id" title={uuid}>ID: <span>{uuid.length > 15 ? uuid.substring(0, 8) + '...' + uuid.slice(-4) : uuid}</span></p>
-          <button 
-            onClick={() => {
-              const newState = !isMonitoringActive;
-              setIsMonitoringActive(newState);
+      <div className="main-status">
+        <div>
+          <input 
+            type="text" 
+            className="pc-name-input" 
+            value={agentName} 
+            onChange={e => setAgentName(e.target.value)} 
+            onBlur={() => {
               if (telemetryClient.current && telemetryClient.current.socket) {
-                telemetryClient.current.socket.emit('agent-monitoring', { uuid, active: newState });
+                telemetryClient.current.socket.emit('agent-rename', { uuid, newName: agentName });
               }
             }}
-            style={{
-              padding: '4px 10px',
-              borderRadius: '12px',
-              border: `1px solid ${isMonitoringActive ? '#4caf50' : '#f44336'}`,
-              background: isMonitoringActive ? '#1e3a24' : '#3a1e1e',
-              color: isMonitoringActive ? '#4caf50' : '#f44336',
-              cursor: 'pointer',
-              fontWeight: 'bold',
-              width: 'fit-content'
-            }}
-          >
-            {isMonitoringActive ? '● MONITORING ON' : '● MONITORING OFF'}
-          </button>
-        </div>
-        <div className={`status-badge ${status}`} style={{ opacity: isMonitoringActive ? 1 : 0.5 }}>
-          {isMonitoringActive ? status.replace(/_/g, ' ') : 'MONITORING DISABLED'}
-        </div>
-      </div>
-
-      <div className="settings-grid">
-        <div className="settings-card full-width">
-          <h2>Server Settings</h2>
-          <div className="form-group">
-            <input 
-              type="text" 
-              value={agentName} 
-              onChange={e => setAgentName(e.target.value)} 
-              onBlur={() => {
+            onKeyDown={e => {
+              if (e.key === 'Enter') {
                 if (telemetryClient.current && telemetryClient.current.socket) {
                   telemetryClient.current.socket.emit('agent-rename', { uuid, newName: agentName });
                 }
-              }}
-              onKeyDown={e => {
-                if (e.key === 'Enter') {
-                  if (telemetryClient.current && telemetryClient.current.socket) {
-                    telemetryClient.current.socket.emit('agent-rename', { uuid, newName: agentName });
-                  }
-                  e.target.blur();
+                e.target.blur();
+              }
+            }}
+            title="Klik untuk mengubah nama PC"
+          />
+          <div style={{ fontSize: '11px', color: '#666', marginTop: '4px' }} title={uuid}>
+            ID: {uuid.length > 15 ? uuid.substring(0, 8) + '...' + uuid.slice(-4) : uuid}
+          </div>
+        </div>
+        <div style={{ textAlign: 'right' }}>
+          <div className={`status-badge ${status}`} style={{ opacity: isMonitoringActive ? 1 : 0.5 }}>
+            {isMonitoringActive ? status.replace(/_/g, ' ') : 'PAUSED'}
+          </div>
+        </div>
+      </div>
+
+      <div className="tabs">
+        <div className={`tab ${activeTab === 'monitoring' ? 'active' : ''}`} onClick={() => setActiveTab('monitoring')}>Monitoring</div>
+        <div className={`tab ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => setActiveTab('settings')}>Settings</div>
+      </div>
+
+      <div className="tab-content" style={{ padding: activeTab === 'settings' ? '10px 15px' : '15px' }}>
+        {activeTab === 'monitoring' ? (
+          <div className="meters-grid">
+            <div className="meter-row">
+              <div className="meter-header">
+                <span title={micDriverName}>Hardware Mic ({micDriverName.length > 20 ? micDriverName.substring(0,20)+'...' : micDriverName})</span>
+                <span className="meter-val" style={{ color: micLevel === 0 ? '#888' : '#fff' }}>
+                  {rawMicLevel.toFixed(1).padStart(4, '0')} dB
+                </span>
+              </div>
+              <div className="meter-bar" style={{ position: 'relative' }}>
+                <div style={{
+                  position: 'absolute', left: `${noiseGate}%`, top: 0, bottom: 0, width: '2px', backgroundColor: '#ff9800', zIndex: 10
+                }} title={`Batas Noise Gate (${noiseGate}%)`}></div>
+                <div className="meter-fill mic" style={{ 
+                  width: `${Math.min(rawMicLevel, 100)}%`,
+                  filter: micLevel === 0 ? 'grayscale(100%) opacity(0.4)' : 'none'
+                }}></div>
+              </div>
+            </div>
+
+            <div className="meter-row">
+              <div className="meter-header">
+                <span>OBS Output ({obsSourceName})</span>
+                <span className="meter-val">{obsLevel.toFixed(1).padStart(4, '0')} dB</span>
+              </div>
+              <div className="meter-bar">
+                <div className="meter-fill obs" style={{ width: `${Math.min(obsLevel, 100)}%` }}></div>
+              </div>
+            </div>
+
+            <button 
+              className="toggle-btn"
+              onClick={() => {
+                const newState = !isMonitoringActive;
+                setIsMonitoringActive(newState);
+                if (telemetryClient.current && telemetryClient.current.socket) {
+                  telemetryClient.current.socket.emit('agent-monitoring', { uuid, active: newState });
                 }
               }}
-              placeholder="Nama PC (misal: PC Studio 1)" 
-            />
-            <input 
-              type="text" 
-              value={serverIp} 
-              onChange={e => setServerIp(e.target.value)} 
-              onBlur={e => setCommittedServerIp(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') setCommittedServerIp(e.target.value); }}
-              placeholder="http://192.168.1.100:4000" 
-            />
-            <p style={{ margin: 0, fontSize: '0.85em', color: serverConnected ? '#4caf50' : '#ff5252' }}>
-              {serverConnected ? '✓ Terhubung ke Server' : '✕ Terputus dari Server'}
-            </p>
-          </div>
-        </div>
-        
-        <div className="settings-card">
-          <h2>Audio Settings</h2>
-          <div className="form-group">
-            <select value={selectedMicId} onChange={handleMicChange}>
-              {audioDevices.map(device => (
-                <option key={device.deviceId} value={device.deviceId}>
-                  {device.label || `Microphone ${device.deviceId.slice(0,5)}...`}
-                </option>
-              ))}
-            </select>
-            
-            <div className="slider-group">
-              <label>Mic Noise Gate: {noiseGate}%</label>
-              <input 
-                type="range" 
-                min="0" max="100" 
-                value={noiseGate} 
-                onChange={e => setNoiseGate(Number(e.target.value))} 
-                title="Abaikan suara berisik/statis di bawah batas ini"
-              />
-            </div>
-            
-            <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
-              <div style={{ flex: 1 }}>
-                <label style={{ fontSize: '0.75em', color: '#aaa', display: 'block', marginBottom: '4px' }} title="Durasi hening (detik) sebelum PC dianggap STANDBY">Silence (s)</label>
-                <input 
-                  type="number" 
-                  min="5" max="3600"
-                  value={silenceTimeoutSec} 
-                  onChange={e => setSilenceTimeoutSec(Number(e.target.value))} 
-                />
-              </div>
-              <div style={{ flex: 1 }}>
-                <label style={{ fontSize: '0.75em', color: '#aaa', display: 'block', marginBottom: '4px' }} title="Durasi hening mutlak (detik) sebelum menembakkan alarm BAHAYA MIC MATI">Dead Mic (s)</label>
-                <input 
-                  type="number" 
-                  min="15" max="7200"
-                  value={deadMicTimeoutSec} 
-                  onChange={e => setDeadMicTimeoutSec(Number(e.target.value))} 
-                />
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
-              <div style={{ flex: 1 }}>
-                <label style={{ fontSize: '0.75em', color: '#aaa', display: 'block', marginBottom: '4px' }} title="Batas level suara (persen) dianggap pecah/clipping">Batas Pecah (%)</label>
-                <input 
-                  type="number" 
-                  min="50" max="100"
-                  value={clippingThreshold} 
-                  onChange={e => setClippingThreshold(Number(e.target.value))} 
-                />
-              </div>
-              <div style={{ flex: 1 }}>
-                <label style={{ fontSize: '0.75em', color: '#aaa', display: 'block', marginBottom: '4px' }} title="Durasi (detik) suara pecah sebelum alarm berbunyi">Durasi Pecah (s)</label>
-                <input 
-                  type="number" 
-                  min="1" max="10"
-                  value={clippingDurationSec} 
-                  onChange={e => setClippingDurationSec(Number(e.target.value))} 
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="settings-card">
-          <h2>OBS Settings</h2>
-          <div className="form-group">
-            <input 
-              type="text" 
-              value={obsIp} 
-              onChange={e => setObsIp(e.target.value)} 
-              placeholder="IP:Port (localhost:4455)" 
-            />
-            <input 
-              type="password" 
-              value={obsPassword} 
-              onChange={e => setObsPassword(e.target.value)} 
-              placeholder="OBS WebSocket Password" 
-            />
-            {obsConnected && obsInputs.length > 0 ? (
-              <select value={obsSourceName} onChange={e => setObsSourceName(e.target.value)} title="Pilih input audio dari OBS">
-                {/* Fallback in case current selection isn't in the list */}
-                {!obsInputs.find(i => i.inputName === obsSourceName) && (
-                  <option value={obsSourceName}>{obsSourceName}</option>
-                )}
-                {obsInputs.map(input => (
-                  <option key={input.inputName} value={input.inputName}>{input.inputName}</option>
-                ))}
-              </select>
-            ) : (
-              <input 
-                type="text" 
-                value={obsSourceName} 
-                onChange={e => setObsSourceName(e.target.value)} 
-                placeholder="OBS Audio Source Name" 
-                title="Ketik nama sumber audio jika OBS belum terhubung"
-              />
-            )}
-            <button className="primary-btn" onClick={connectOBS} disabled={obsConnected}>
-              {obsConnected ? 'Connected' : 'Connect to OBS'}
+              style={{
+                background: isMonitoringActive ? '#1e3a24' : '#3a1e1e',
+                color: isMonitoringActive ? '#4caf50' : '#f44336',
+                borderColor: isMonitoringActive ? '#4caf50' : '#f44336'
+              }}
+            >
+              {isMonitoringActive ? '● MONITORING ON' : '● MONITORING OFF'}
             </button>
           </div>
-        </div>
+        ) : (
+          <div className="settings-grid">
+            <div className="setting-group full">
+              <label>Server URL {serverConnected ? <span style={{color: '#4caf50'}}>(Connected)</span> : <span style={{color: '#f44336'}}>(Disconnected)</span>}</label>
+              <input 
+                type="text" 
+                value={serverIp} 
+                onChange={e => setServerIp(e.target.value)} 
+                onBlur={e => setCommittedServerIp(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') setCommittedServerIp(e.target.value); }}
+                placeholder="http://192.168.1.100:4000" 
+              />
+            </div>
+
+            <div className="setting-group full" style={{ marginTop: '5px', paddingTop: '10px', borderTop: '1px dashed #333' }}>
+              <label>Hardware Microphone</label>
+              <select value={selectedMicId} onChange={handleMicChange}>
+                {audioDevices.map(device => (
+                  <option key={device.deviceId} value={device.deviceId}>
+                    {device.label || `Microphone ${device.deviceId.slice(0,5)}...`}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="setting-group full">
+              <div className="split-row">
+                <div className="setting-group" style={{ flex: 1 }}>
+                  <label>Noise Gate (%)</label>
+                  <input type="number" min="0" max="100" value={noiseGate} onChange={e => setNoiseGate(Number(e.target.value))} />
+                </div>
+                <div className="setting-group" style={{ flex: 1 }}>
+                  <label>Silence (s)</label>
+                  <input type="number" min="5" max="3600" value={silenceTimeoutSec} onChange={e => setSilenceTimeoutSec(Number(e.target.value))} />
+                </div>
+                <div className="setting-group" style={{ flex: 1 }}>
+                  <label>Dead Mic (s)</label>
+                  <input type="number" min="15" max="7200" value={deadMicTimeoutSec} onChange={e => setDeadMicTimeoutSec(Number(e.target.value))} />
+                </div>
+              </div>
+            </div>
+
+            <div className="setting-group full">
+              <div className="split-row">
+                <div className="setting-group" style={{ flex: 1 }}>
+                  <label>Batas Pecah (%)</label>
+                  <input type="number" min="50" max="100" value={clippingThreshold} onChange={e => setClippingThreshold(Number(e.target.value))} />
+                </div>
+                <div className="setting-group" style={{ flex: 1 }}>
+                  <label>Durasi Pecah (s)</label>
+                  <input type="number" min="1" max="10" value={clippingDurationSec} onChange={e => setClippingDurationSec(Number(e.target.value))} />
+                </div>
+              </div>
+            </div>
+
+            <div className="setting-group full" style={{ marginTop: '5px', paddingTop: '10px', borderTop: '1px dashed #333' }}>
+              <label>OBS IP & Port</label>
+              <div className="split-row">
+                <input type="text" value={obsIp} onChange={e => setObsIp(e.target.value)} placeholder="localhost:4455" style={{ flex: 2 }} />
+                <input type="password" value={obsPassword} onChange={e => setObsPassword(e.target.value)} placeholder="Password" style={{ flex: 1 }} />
+              </div>
+            </div>
+
+            <div className="setting-group full">
+              <label>OBS Source Name</label>
+              <div className="split-row">
+                {obsConnected && obsInputs.length > 0 ? (
+                  <select value={obsSourceName} onChange={e => setObsSourceName(e.target.value)} style={{ flex: 2 }}>
+                    {!obsInputs.find(i => i.inputName === obsSourceName) && (
+                      <option value={obsSourceName}>{obsSourceName}</option>
+                    )}
+                    {obsInputs.map(input => (
+                      <option key={input.inputName} value={input.inputName}>{input.inputName}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <input type="text" value={obsSourceName} onChange={e => setObsSourceName(e.target.value)} style={{ flex: 2 }} />
+                )}
+                <button 
+                  onClick={connectOBS} 
+                  disabled={obsConnected}
+                  style={{
+                    background: obsConnected ? '#1e3a24' : '#2196f3',
+                    color: obsConnected ? '#4caf50' : '#fff',
+                    border: 'none', borderRadius: '4px', cursor: obsConnected ? 'default' : 'pointer', flex: 1, fontWeight: 'bold'
+                  }}
+                >
+                  {obsConnected ? 'Connected' : 'Connect'}
+                </button>
+              </div>
+            </div>
+
+          </div>
+        )}
       </div>
 
-      <div className="meters-section">
-        <div className="meter-box">
-          <h3>Hardware Mic</h3>
-          <div className="meter-bar" style={{ position: 'relative' }}>
-            {/* Indikator visual batas Noise Gate */}
-            <div style={{
-              position: 'absolute',
-              left: `${noiseGate}%`,
-              top: 0,
-              bottom: 0,
-              width: '2px',
-              backgroundColor: '#ff9800',
-              zIndex: 10
-            }} title={`Batas Noise Gate (${noiseGate}%)`}></div>
-            
-            <div 
-              className="meter-fill mic" 
-              style={{ 
-                width: `${Math.min(rawMicLevel, 100)}%`,
-                filter: micLevel === 0 ? 'grayscale(100%) opacity(0.4)' : 'none'
-              }}
-            ></div>
-          </div>
-          <p className="meter-val" style={{ color: micLevel === 0 ? '#888' : '#fff' }}>
-            {rawMicLevel.toFixed(1).padStart(4, '0')} dB
-          </p>
-        </div>
-        <div className="meter-box">
-          <h3>OBS Output</h3>
-          <div className="meter-bar">
-            <div className="meter-fill obs" style={{ width: `${Math.min(obsLevel, 100)}%` }}></div>
-          </div>
-          <p className="meter-val">{obsLevel.toFixed(1).padStart(4, '0')} dB</p>
-        </div>
-      </div>
     </div>
   );
 }
