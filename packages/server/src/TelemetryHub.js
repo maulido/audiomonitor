@@ -108,7 +108,13 @@ class TelemetryHub {
   }
 
   notifyAgentNameChange(uuid, newName) {
-    this.io.to(`agent-${uuid}`).emit('command-rename', newName);
+    const socketId = this.agentSockets.get(uuid);
+    if (socketId) {
+      this.io.to(socketId).emit('command-rename', newName);
+    } else {
+      // Fallback
+      this.io.to(`agent-${uuid}`).emit('command-rename', newName);
+    }
   }
 
   setPcMonitoring(uuid, active) {

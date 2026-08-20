@@ -2,8 +2,9 @@ import OBSWebSocket from 'obs-websocket-js';
 
 class OBSClient {
   constructor(onConnect, onDisconnect, onVolumeUpdate, onStreamStateChange) {
-    this.obs = new OBSWebSocket();
+    this.obs = null;
     this.isConnected = false;
+    this.isConnecting = false;
     this.onConnectCallback = onConnect;
     this.onDisconnectCallback = onDisconnect;
     this.onVolumeUpdate = onVolumeUpdate;
@@ -12,6 +13,10 @@ class OBSClient {
     this.lastIp = '';
     this.lastPassword = '';
     this.intentionalDisconnect = false;
+  }
+
+  _bindEvents() {
+    if (!this.obs) return;
     
     this.obs.on('ConnectionClosed', () => {
       this.isConnected = false;
@@ -21,8 +26,8 @@ class OBSClient {
       if (!this.intentionalDisconnect && !this.reconnectInterval) {
         console.log("OBS Connection lost. Attempting auto-reconnect...");
         this.reconnectInterval = setInterval(() => {
-          this.connect(this.lastIp, this.lastPassword).catch(() => {});
-        }, 5000); // Try to reconnect every 5 seconds
+          this.connect(this.lastIp, this.lastPassword, true).catch(() => {});
+        }, 5000);
       }
     });
 
@@ -39,10 +44,38 @@ class OBSClient {
     });
   }
 
-  async connect(ip, password) {
+  async connect(ip, password, isAutoReconnect = false) {
+    if (this.isConnecting) return false;
+    
+    // Prevent duplicate connections if already connected to the same destination
+    if (!isAutoReconnect && this.isConnected && this.lastIp === ip && this.lastPassword === password && this.obs) {
+      if (this.onConnectCallback) this.onConnectCallback();
+      return true;
+    }
+    
+    this.isConnecting = true;
+
+    if (!isAutoReconnect && this.reconnectInterval) {
+      clearInterval(this.reconnectInterval);
+      this.reconnectInterval = null;
+    }
+
+    // Completely destroy old instance to avoid zombie connections
+    if (this.obs) {
+      try {
+        this.obs.removeAllListeners();
+        await this.obs.disconnect();
+      } catch(e) {}
+      this.obs = null;
+    }
+
     this.lastIp = ip;
     this.lastPassword = password;
     this.intentionalDisconnect = false;
+
+    // Create fresh instance
+    this.obs = new OBSWebSocket();
+    this._bindEvents();
 
     try {
       await this.obs.connect(`ws://${ip}`, password, { 
@@ -50,58 +83,55 @@ class OBSClient {
         eventSubscriptions: 65601 
       });
       this.isConnected = true;
+      this.isConnecting = false;
       
-      // If we reconnected successfully, clear the interval
       if (this.reconnectInterval) {
         clearInterval(this.reconnectInterval);
         this.reconnectInterval = null;
-        console.log("OBS reconnected successfully!");
       }
-
+      
       if (this.onConnectCallback) this.onConnectCallback();
       return true;
     } catch (error) {
       this.isConnected = false;
+      this.isConnecting = false;
+      if (this.obs) {
+        this.obs.removeAllListeners();
+        try { this.obs.disconnect(); } catch(e) {}
+        this.obs = null;
+      }
       throw error;
     }
   }
 
   async getAudioInputs() {
-    if (!this.isConnected) return [];
+    if (!this.isConnected || !this.obs) return [];
     try {
-      // Fetch all inputs from OBS
       const response = await this.obs.call('GetInputList');
       return response.inputs || [];
     } catch (error) {
-      console.error("Failed to fetch OBS inputs:", error);
       return [];
     }
   }
 
   async getStreamStatus() {
-    if (!this.isConnected) return { outputActive: false };
+    if (!this.isConnected || !this.obs) return { outputActive: false };
     try {
       const response = await this.obs.call('GetStreamStatus');
       return response;
     } catch (error) {
-      console.error("Failed to fetch OBS stream status:", error);
       return { outputActive: false };
     }
   }
 
-
   async getDetailedSources() {
-    if (!this.isConnected) return [];
+    if (!this.isConnected || !this.obs) return [];
     try {
       const response = await this.obs.call('GetInputList');
       const inputs = response.inputs || [];
       const detailed = [];
       
       for (const input of inputs) {
-        if (!['wasapi_input_capture', 'wasapi_output_capture', 'wasapi_process_output_capture', 'browser_source'].includes(input.unversionedInputKind)) {
-          // It's a hacky filter, but OBS doesn't provide an explicit 'isAudio' flag.
-          // Let's just catch exceptions, but filter out pure visual sources.
-        }
         try {
           const muteRes = await this.obs.call('GetInputMute', { inputName: input.inputName });
           const volRes = await this.obs.call('GetInputVolume', { inputName: input.inputName });
@@ -114,9 +144,7 @@ class OBSClient {
             volume: volRes.inputVolumeMul,
             monitorType: monRes.monitorType
           });
-        } catch (e) {
-          // Ignore non-audio inputs
-        }
+        } catch (e) {}
       }
       return detailed;
     } catch (e) {
@@ -125,13 +153,17 @@ class OBSClient {
   }
 
   disconnect() {
-
     this.intentionalDisconnect = true;
     if (this.reconnectInterval) {
       clearInterval(this.reconnectInterval);
       this.reconnectInterval = null;
     }
-    this.obs.disconnect();
+    if (this.obs) {
+      this.obs.removeAllListeners();
+      try { this.obs.disconnect(); } catch(e) {}
+      this.obs = null;
+    }
+    this.isConnected = false;
   }
 }
 

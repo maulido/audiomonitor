@@ -62,7 +62,17 @@ class ServerApp {
       if (!uuid || !newName) return res.status(400).send({ success: false, error: 'Invalid data' });
       
       this.configManager.setPcName(uuid, newName);
-      res.send({ success: true, pcMapping: this.configManager.getAllPcMappings() });
+        
+        // Notify the agent to update its local state
+        this.telemetryHub.notifyAgentNameChange(uuid, newName);
+        
+        // Update server's internal state and broadcast to dashboards
+        const existing = this.telemetryHub.lastKnownState.get(uuid) || {};
+        existing.pcName = newName;
+        this.telemetryHub.lastKnownState.set(uuid, existing);
+        this.telemetryHub.io.to('dashboards').emit('dashboard-update', existing);
+
+        res.send({ success: true, pcMapping: this.configManager.getAllPcMappings() });
     });
 
     this.app.get('/api/config', (req, res) => {

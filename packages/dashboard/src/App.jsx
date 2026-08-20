@@ -508,23 +508,21 @@ function App() {
                           <span className="meter-device" style={{ whiteSpace: 'normal', wordBreak: 'break-word', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', lineHeight: '1.2' }}>{agent.micDriverName || 'No Device'}</span>
                         </div>
                         {agent.micHistory && (
-                          <svg width="80" height="20" className="sparkline" style={{ flexShrink: 0 }}>
+                          <svg width="100%" height="20" viewBox="0 0 80 20" preserveAspectRatio="none" className="sparkline" style={{ flex: 1, margin: "0 10px" }}>
                             <polyline
                               points={agent.micHistory.map((val, i) => `${i * (80/30)},${20 - ((val || 0) / 100) * 20}`).join(' ')}
                               fill="none" stroke="#10b981" strokeWidth="1.5"
                             />
                           </svg>
                         )}
-                        <div className="meter-bar-container">
-                          <div className="meter-fill mic" style={{ width: `${Math.min(100, Math.max(0, agent.micLevel || 0))}%`, background: agent.micClipping ? 'var(--danger)' : '' }}></div>
-                        </div>
+                        
                         <div style={{ width: '65px', textAlign: 'right', fontSize: '0.75rem', fontFamily: 'monospace', color: 'var(--text-muted)' }}>{agent.micDb !== undefined ? agent.micDb + ' dB' : ''}</div>
                         {agent.micClipping && <span style={{ position: 'absolute', top: '-15px', right: 0, background: 'var(--danger)', color: '#fff', fontSize: '0.6rem', padding: '2px 4px', borderRadius: '4px', fontWeight: 'bold' }}>⚠️ PECAH</span>}
                       </div>
 
                       {agent.obsSources && agent.obsSources.length > 0 && agent.obsHistory && (
                           <div style={{ display: 'flex', justifyContent: 'flex-start', paddingLeft: '140px', marginBottom: '2px' }}>
-                            <svg width="80" height="20" className="sparkline" style={{ opacity: 0.85 }}>
+                            <svg width="100%" height="20" viewBox="0 0 80 20" preserveAspectRatio="none" className="sparkline" style={{ flex: 1, margin: "0 10px", opacity: 0.85 }}>
                               <polyline
                                 points={agent.obsHistory.map((val, idx) => `${idx * (80/30)},${20 - ((val || 0) / 100) * 20}`).join(' ')}
                                 fill="none" stroke="#3b82f6" strokeWidth="1.5"
@@ -552,9 +550,7 @@ function App() {
                                 </span>
                                 <span className="meter-device" title={source.monitorType}>{monitorStr}</span>
                               </div>
-                              <div className="meter-bar-container" style={{ opacity: source.muted ? 0.3 : 1 }}>
-                                <div className="meter-fill obs" style={{ width: `${mappedObs}%` }}></div>
-                              </div>
+                              
                               <div style={{ width: '65px', textAlign: 'right', fontSize: '0.75rem', fontFamily: 'monospace', color: 'var(--text-muted)' }}>{source.db !== undefined ? source.db + ' dB' : ''}</div>
                             </div>
                           );
@@ -566,16 +562,14 @@ function App() {
                             <span className="meter-device" style={{ whiteSpace: 'normal', wordBreak: 'break-word', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', lineHeight: '1.2' }}>{agent.obsSourceName || 'System / Desktop'}</span>
                           </div>
                           {agent.obsHistory && (
-                            <svg width="80" height="20" className="sparkline" style={{ flexShrink: 0 }}>
+                            <svg width="100%" height="20" viewBox="0 0 80 20" preserveAspectRatio="none" className="sparkline" style={{ flex: 1, margin: "0 10px" }}>
                               <polyline
                                 points={agent.obsHistory.map((val, i) => `${i * (80/30)},${20 - ((val || 0) / 100) * 20}`).join(' ')}
                                 fill="none" stroke="#3b82f6" strokeWidth="1.5"
                               />
                             </svg>
                           )}
-                          <div className="meter-bar-container">
-                            <div className="meter-fill obs" style={{ width: `${Math.min(100, Math.max(0, agent.obsLevel || 0))}%` }}></div>
-                          </div>
+                          
                           <div style={{ width: '65px' }}></div>
                         </div>
                       )}

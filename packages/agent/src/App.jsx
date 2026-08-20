@@ -15,6 +15,8 @@ function App() {
   const [obsLevel, setObsLevel] = useState(0);
   const [status, setStatus] = useState('AMAN');
   const [obsConnected, setObsConnected] = useState(false);
+    const [obsError, setObsError] = useState('');
+    const [isConnectingOBS, setIsConnectingOBS] = useState(false);
   const [serverConnected, setServerConnected] = useState(false);
   const [isMonitoringActive, setIsMonitoringActive] = useState(true);
 
@@ -222,12 +224,17 @@ function App() {
       }
     );
 
-    // Initial connection attempt
-    if (obsIp && obsPassword) {
-      obsClient.current.connect(obsIp, obsPassword).catch(() => {
-        // Silent catch for initial fail
-      });
-    }
+    
+      // Safe Auto-Connect on Mount
+      if (obsIp && obsPassword && obsClient.current) {
+        setIsConnectingOBS(true);
+        obsClient.current.connect(obsIp, obsPassword).then(() => {
+          setIsConnectingOBS(false);
+        }).catch(() => {
+          setIsConnectingOBS(false);
+        });
+      }
+
 
     return () => {
       if (audioProcessor.current) audioProcessor.current.stop();
@@ -435,14 +442,21 @@ function App() {
   }, []);
 
   const connectOBS = async () => {
-    if (obsClient.current) {
-      try {
-        await obsClient.current.connect(obsIp, obsPassword);
-      } catch (error) {
-        alert('Gagal koneksi ke OBS. Periksa IP dan Password.');
+      if (isConnectingOBS) return;
+      setObsError('');
+      setIsConnectingOBS(true);
+      if (obsClient.current) {
+        try {
+          await obsClient.current.connect(obsIp, obsPassword);
+          setIsConnectingOBS(false);
+        } catch (error) {
+          setIsConnectingOBS(false);
+          setObsError('Gagal: ' + (error.message || error));
+        }
+      } else {
+        setIsConnectingOBS(false);
       }
-    }
-  };
+    };
 
   return (
     <div className="container">
@@ -560,18 +574,26 @@ function App() {
             
             <div className="setting-group full" style={{ marginTop: '5px', paddingTop: '10px', borderTop: '1px dashed #333' }}>
               <label>System Settings</label>
-              <div style={{ display: 'flex', gap: '15px', marginTop: '5px', color: '#ccc', fontSize: '12px' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer', color: '#fff', fontSize: '12px' }}>
-                  <input type="checkbox" style={{ width: 'auto', margin: 0 }} checked={autoStart} onChange={e => {
-                    const val = e.target.checked;
-                    setAutoStart(val);
-                    window.electronAPI.setAutostart(val);
-                  }} /> Auto Start with Windows
-                </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer', color: '#fff', fontSize: '12px' }}>
-                  <input type="checkbox" style={{ width: 'auto', margin: 0 }} checked={obsSyncStreaming} onChange={e => setObsSyncStreaming(e.target.checked)} /> Auto-Monitor on OBS Live
-                </label>
-              </div>
+              <div style={{ display: 'flex', gap: '20px', marginTop: '5px', color: '#ccc', fontSize: '12px' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', color: '#fff', fontSize: '12px' }}>
+                    <div className="switch">
+                      <input type="checkbox" checked={autoStart} onChange={e => {
+                        const val = e.target.checked;
+                        setAutoStart(val);
+                        window.electronAPI.setAutostart(val);
+                      }} />
+                      <span className="slider"></span>
+                    </div>
+                    Auto Start with Windows
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', color: '#fff', fontSize: '12px' }}>
+                    <div className="switch">
+                      <input type="checkbox" checked={obsSyncStreaming} onChange={e => setObsSyncStreaming(e.target.checked)} />
+                      <span className="slider"></span>
+                    </div>
+                    Auto-Monitor on OBS Live
+                  </label>
+                </div>
             </div>
 
             <div className="setting-group full" style={{ marginTop: '5px', paddingTop: '10px', borderTop: '1px dashed #333' }}>
@@ -593,11 +615,11 @@ function App() {
                 </div>
                 <div className="setting-group" style={{ flex: 1 }}>
                   <label>Silence (s)</label>
-                  <input type="number" min="5" max="3600" value={silenceTimeoutSec} onChange={e => setSilenceTimeoutSec(Number(e.target.value))} />
+                  <input type="number" min="5" max="3600" value={silenceTimeoutSec} onChange={e => setSilenceTimeoutSec(Number(e.target.value))} style={{ height: "28px", margin: 0 }} />
                 </div>
                 <div className="setting-group" style={{ flex: 1 }}>
                   <label>Dead Mic (s)</label>
-                  <input type="number" min="15" max="7200" value={deadMicTimeoutSec} onChange={e => setDeadMicTimeoutSec(Number(e.target.value))} />
+                  <input type="number" min="15" max="7200" value={deadMicTimeoutSec} onChange={e => setDeadMicTimeoutSec(Number(e.target.value))} style={{ height: "28px", margin: 0 }} />
                 </div>
               </div>
             </div>
@@ -610,7 +632,7 @@ function App() {
                 </div>
                 <div className="setting-group" style={{ flex: 1 }}>
                   <label>Durasi Pecah (s)</label>
-                  <input type="number" min="1" max="10" value={clippingDurationSec} onChange={e => setClippingDurationSec(Number(e.target.value))} />
+                  <input type="number" min="1" max="10" value={clippingDurationSec} onChange={e => setClippingDurationSec(Number(e.target.value))} style={{ height: "28px", margin: 0 }} />
                 </div>
               </div>
             </div>
@@ -619,38 +641,42 @@ function App() {
               <label>OBS IP & Port</label>
               <div className="split-row">
                 <input type="text" value={obsIp} onChange={e => setObsIp(e.target.value)} placeholder="localhost:4455" style={{ flex: 2 }} />
-                <input type="password" value={obsPassword} onChange={e => setObsPassword(e.target.value)} placeholder="Password" style={{ flex: 1 }} />
+                <input type="password" value={obsPassword} onChange={e => setObsPassword(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') connectOBS(); }} placeholder="Password" style={{ flex: 1 }} />
               </div>
             </div>
 
             <div className="setting-group full">
-              <label>OBS Source Name</label>
-              <div className="split-row">
-                {obsConnected && obsInputs.length > 0 ? (
-                  <select value={obsSourceName} onChange={e => setObsSourceName(e.target.value)} style={{ flex: 2 }}>
-                    {!obsInputs.find(i => i.inputName === obsSourceName) && (
-                      <option value={obsSourceName}>{obsSourceName}</option>
-                    )}
-                    {obsInputs.map(input => (
-                      <option key={input.inputName} value={input.inputName}>{input.inputName}</option>
-                    ))}
-                  </select>
-                ) : (
-                  <input type="text" value={obsSourceName} onChange={e => setObsSourceName(e.target.value)} style={{ flex: 2 }} />
-                )}
+                <label>OBS Source Name</label>
+                <div style={{ marginBottom: '10px' }}>
+                  {obsConnected && obsInputs.length > 0 ? (
+                    <select value={obsSourceName} onChange={e => setObsSourceName(e.target.value)}>
+                      {!obsInputs.find(i => i.inputName === obsSourceName) && (
+                        <option value={obsSourceName}>{obsSourceName}</option>
+                      )}
+                      {obsInputs.map(input => (
+                        <option key={input.inputName} value={input.inputName}>{input.inputName}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input type="text" value={obsSourceName} onChange={e => setObsSourceName(e.target.value)} />
+                  )}
+                </div>
+                {obsError && <div style={{color: '#f44336', fontSize: '11px', marginBottom: '8px', textAlign: 'center', fontWeight: 'bold'}}>{obsError}</div>}
                 <button 
                   onClick={connectOBS} 
-                  disabled={obsConnected}
+                  disabled={obsConnected || isConnectingOBS}
                   style={{
-                    background: obsConnected ? '#1e3a24' : '#2196f3',
+                    width: '100%',
+                    padding: '8px',
+                    background: obsConnected ? '#1e3a24' : (isConnectingOBS ? '#555' : '#2196f3'),
                     color: obsConnected ? '#4caf50' : '#fff',
-                    border: 'none', borderRadius: '4px', cursor: obsConnected ? 'default' : 'pointer', flex: 1, fontWeight: 'bold'
+                    border: 'none', borderRadius: '4px', cursor: (obsConnected || isConnectingOBS) ? 'default' : 'pointer',
+                    fontWeight: 'bold'
                   }}
                 >
-                  {obsConnected ? 'Connected' : 'Connect'}
+                  {obsConnected ? 'OBS Connected' : (isConnectingOBS ? 'Connecting...' : 'Connect to OBS')}
                 </button>
               </div>
-            </div>
 
           </div>
         )}
