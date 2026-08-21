@@ -626,16 +626,7 @@ function App() {
                         {agent.micClipping && <span style={{ position: 'absolute', top: '-15px', right: 0, background: 'var(--danger)', color: '#fff', fontSize: '0.6rem', padding: '2px 4px', borderRadius: '4px', fontWeight: 'bold' }}>⚠️ PECAH</span>}
                       </div>
 
-                      {agent.obsSources && agent.obsSources.length > 0 && agent.obsHistory && (
-                          <div style={{ display: 'flex', justifyContent: 'flex-start', paddingLeft: '140px', marginBottom: '2px' }}>
-                            <svg width="100%" height="20" viewBox="0 0 80 20" preserveAspectRatio="none" className="sparkline" style={{ flex: 1, margin: "0 10px", opacity: 0.85 }}>
-                              <polyline
-                                points={agent.obsHistory.map((val, idx) => `${idx * (80/30)},${20 - ((val || 0) / 100) * 20}`).join(' ')}
-                                fill="none" stroke="#3b82f6" strokeWidth="1.5"
-                              />
-                            </svg>
-                          </div>
-                        )}
+                      
                         
                         <div className="meter-row">
                           <div className="meter-info" style={{ width: '145px', flexShrink: 0 }}>
