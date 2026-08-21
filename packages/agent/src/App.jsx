@@ -1,3 +1,24 @@
+/**
+ * ============================================================================
+ * AUDIO MONITOR AGENT - KODE INTI ANTARMUKA (App.jsx)
+ * ============================================================================
+ * Berkas ini merupakan "otak" utama dari aplikasi Agent yang berjalan di setiap PC Studio.
+ * Aplikasi ini dibangun menggunakan React (berjalan di dalam Electron).
+ * 
+ * Fungsi Utama:
+ * 1. Manajemen State (Hook): Menyimpan setelan lokal (localStorage) seperti IP OBS, 
+ *    Batas Pecah (clipping), Noise Gate, dan setelan waktu (Silence, Dead Mic).
+ * 2. Pemantauan Audio (AudioProcessor): Menangkap volume mic secara real-time.
+ * 3. Pemantauan OBS (OBSClient): Menangkap status streaming dan volume meter dari OBS.
+ * 4. Pemantauan Perangkat Keras: Membaca CPU dan RAM lewat Electron IPC.
+ * 5. Mesin Hibrida Bahaya (Hybrid Danger System): Menghitung skor bahaya (dangerScore) 
+ *    berdasarkan keheningan (silence), mikrofon mati (dead mic), atau audio pecah (clipping).
+ * 6. Telemetri (TelemetryClient): Mengirim seluruh data di atas ke Dashboard secara real-time.
+ * 7. Peringatan Luring (Offline Alert): Jika server Dashboard mati, Agent akan 
+ *    mengambil alih tugas mengirim pesan Telegram secara mandiri (Fallback).
+ * ============================================================================
+ */
+
 import React, { useState, useEffect, useRef } from 'react';
 import './style.css';
 
