@@ -555,8 +555,8 @@ function App() {
                           {editingId === agent.uuid ? (
                             <form onSubmit={(e) => submitInlineRename(e, agent.uuid)} style={{display: 'flex', gap: '5px', width: '100%'}}>
                               <input autoFocus value={editingName} onChange={e => setEditingName(e.target.value)} className="form-input" style={{padding: '4px 8px'}} />
-                              <button type="submit" className="icon-btn" style={{background: 'var(--accent)', color: '#fff'}}>✓</button>
-                              <button type="button" onClick={() => setEditingId(null)} className="icon-btn">✕</button>
+                              <button type="submit" className="icon-btn" style={{background: 'var(--accent)', color: '#fff'}}><i className="fa-solid fa-check"></i></button>
+                              <button type="button" onClick={() => setEditingId(null)} className="icon-btn"><i className="fa-solid fa-times"></i></button>
                             </form>
                           ) : (
                             <>
@@ -571,22 +571,24 @@ function App() {
                                   className={`toggle-btn ${agent.isMonitoringActive ? '' : 'off'}`}
                                   onClick={() => togglePcMonitoring(agent.uuid, !agent.isMonitoringActive)}
                                 >
-                                    {agent.isMonitoringActive ? <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{marginRight:'4px'}}><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg> : <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{marginRight:'4px'}}><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>} {agent.isMonitoringActive ? 'ON' : 'OFF'}
+                                    {agent.isMonitoringActive ? <i className="fa-solid fa-pause" style={{marginRight: '4px'}}></i> : <i className="fa-solid fa-play" style={{marginRight: '4px'}}></i>} {agent.isMonitoringActive ? 'ON' : 'OFF'}
                                 </button>
                                 <button className="icon-btn" title="Remote Config" onClick={() => { 
-  setConfigModalAgent(agent); 
-  setRemoteConfig({
-    agentName: agent.pcName,
-    micDriverName: agent.micDriverName || '',
-    noiseGate: agent.noiseGate ?? 15,
-    silenceTimeoutSec: agent.silenceTimeoutSec ?? 10,
-    deadMicTimeoutSec: agent.deadMicTimeoutSec ?? 60,
-    clippingThreshold: agent.clippingThreshold ?? 95,
-    clippingDurationSec: agent.clippingDurationSec ?? 3,
-    obsSourceName: agent.obsSourceName || 'Mic/Aux'
-  }); 
-}}>⚙️</button>
-                                <button className="icon-btn" onClick={() => handleDeletePC(agent.uuid)}>🗑</button>
+    setConfigModalAgent(agent); 
+    setRemoteConfig({
+      agentName: agent.pcName,
+      micDriverName: agent.micDriverName || '',
+      noiseGate: agent.noiseGate ?? 15,
+      silenceTimeoutSec: agent.silenceTimeoutSec ?? 10,
+      deadMicTimeoutSec: agent.deadMicTimeoutSec ?? 60,
+      clippingThreshold: agent.clippingThreshold ?? 95,
+      clippingDurationSec: agent.clippingDurationSec ?? 3,
+      obsSourceName: agent.obsSourceName || 'Mic/Aux'
+    }); 
+  }}><i className="fa-solid fa-gear"></i></button>
+                                <button className="icon-btn" title="Delete PC" onClick={() => handleDeletePC(agent.uuid)}>
+                                    <i className="fa-solid fa-trash"></i>
+                                  </button>
                               </div>
                             </>
                           )}
