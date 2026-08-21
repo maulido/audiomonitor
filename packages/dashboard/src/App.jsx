@@ -8,6 +8,26 @@ function App() {
   const [agents, setAgents] = useState({});
   const [isConnected, setIsConnected] = useState(false);
   const [editingId, setEditingId] = useState(null);
+    const [dialogParams, setDialogParams] = useState(null);
+  const customAlert = (message, title = 'Notifikasi') => {
+    return new Promise((resolve) => {
+      setDialogParams({
+        type: 'alert', title, message,
+        onConfirm: () => { setDialogParams(null); resolve(true); },
+        onCancel: () => { setDialogParams(null); resolve(false); }
+      });
+    });
+  };
+  const customConfirm = (message, title = 'Konfirmasi') => {
+    return new Promise((resolve) => {
+      setDialogParams({
+        type: 'confirm', title, message,
+        onConfirm: () => { setDialogParams(null); resolve(true); },
+        onCancel: () => { setDialogParams(null); resolve(false); }
+      });
+    });
+  };
+
   const [configModalAgent, setConfigModalAgent] = useState(null);
   const [remoteConfig, setRemoteConfig] = useState({});
   const [editingName, setEditingName] = useState('');
@@ -441,7 +461,28 @@ function App() {
 
   return (
     <div className="dashboard">
+      
+      {dialogParams && (
+        <div className="modal-overlay" style={{ zIndex: 9999 }}>
+          <div className="modal" style={{ maxWidth: '400px', backgroundColor: '#1a1a1a', border: '1px solid rgba(255,255,255,0.1)' }}>
+            <div className="modal-header">
+              <h3 style={{ margin: 0, fontSize: '1.1rem' }}>{dialogParams.title}</h3>
+              <button type="button" className="close-btn" onClick={dialogParams.onCancel}>&times;</button>
+            </div>
+            <div className="modal-body" style={{ padding: '24px' }}>
+              <p style={{ margin: 0, fontSize: '0.95rem', color: '#ccc' }}>{dialogParams.message}</p>
+            </div>
+            <div className="modal-footer" style={{ padding: '16px 24px', display: 'flex', justifyContent: 'flex-end', gap: '10px', background: 'rgba(255,255,255,0.02)', borderTop: '1px solid rgba(255,255,255,0.04)' }}>
+              {dialogParams.type === 'confirm' && (
+                <button type="button" style={{ background: 'rgba(255,255,255,0.1)', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '6px', cursor: 'pointer', fontWeight: 600 }} onClick={dialogParams.onCancel}>Batal</button>
+              )}
+              <button type="button" style={{ background: dialogParams.type === 'confirm' ? 'var(--danger)' : 'var(--accent)', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '6px', cursor: 'pointer', fontWeight: 600 }} onClick={dialogParams.onConfirm}>OK</button>
+            </div>
+          </div>
+        </div>
+      )}
       <nav className="navbar">
+
         <div className="brand">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12h4l3-9 5 18 3-9h5"/></svg>
           Audio Monitor
