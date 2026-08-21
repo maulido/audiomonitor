@@ -571,7 +571,7 @@ function App() {
                                   className={`toggle-btn ${agent.isMonitoringActive ? '' : 'off'}`}
                                   onClick={() => togglePcMonitoring(agent.uuid, !agent.isMonitoringActive)}
                                 >
-                                  ● {agent.isMonitoringActive ? 'ON' : 'OFF'}
+                                    {agent.isMonitoringActive ? <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{marginRight:'4px'}}><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg> : <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{marginRight:'4px'}}><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>} {agent.isMonitoringActive ? 'ON' : 'OFF'}
                                 </button>
                                 <button className="icon-btn" title="Remote Config" onClick={() => { 
   setConfigModalAgent(agent); 
