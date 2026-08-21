@@ -1,31 +1,54 @@
 const fs = require('fs');
 const path = require('path');
 
+/**
+ * Class ConfigManager
+ * Berfungsi sebagai pengelola penyimpanan data persisten (Storage).
+ * Mengatur baca-tulis file JSON untuk pengaturan global Server, 
+ * seperti daftar nama PC, PIN Dashboard, dan kunci Telegram.
+ */
 class ConfigManager {
+  /**
+   * Menginisialisasi letak file konfigurasi berdasarkan lingkungan jalannya aplikasi 
+   * (saat masa pengembangan/dev vs saat sudah menjadi EXE/prod).
+   * @param {string} configFilePath - Nama file (default: config.json).
+   */
   constructor(configFilePath = 'config.json') {
     let basePath = path.resolve(__dirname, '../');
+    
+    // Mendeteksi apakah aplikasi sedang dibungkus di dalam Electron atau pkg
+    // Agar file config.json selalu tersimpan di sebelah file EXE, bukan di dalam direktori internal sistem
     if (process.versions && process.versions.electron) {
       basePath = path.dirname(process.execPath);
     } else if (process.pkg) {
       basePath = path.dirname(process.execPath);
     }
+    
     this.configPath = path.join(basePath, configFilePath);
+    
+    // Struktur baku sistem (Defaults)
     this.defaultConfig = {
-      pcMapping: {},
+      pcMapping: {}, // Menyimpan kamus relasi antara UUID yang jelek -> Nama PC yang bagus
       telegram: { token: '', chatId: '', interval: 60 },
       monitoringActive: true,
       dashboardPin: '1234'
     };
+    
     this.config = { ...this.defaultConfig };
     this.loadConfig();
   }
 
+  /**
+   * Membaca pengaturan dari sistem penyimpanan lokal (Hard Disk).
+   * Melakukan penggabungan mendalam (Deep Merge) jika ada file lama yang kehilangan properti baru.
+   */
   loadConfig() {
     if (fs.existsSync(this.configPath)) {
       try {
         const fileContent = fs.readFileSync(this.configPath, 'utf8');
         const parsed = JSON.parse(fileContent);
-        // Fix 7: Deep merge with defaults to prevent missing key crashes
+        
+        // Deep merge untuk mencegah error jika objek 'telegram' kosong/hilang dari file JSON lama
         this.config = {
           pcMapping: parsed.pcMapping || {},
           telegram: {
@@ -39,6 +62,7 @@ class ConfigManager {
         };
       } catch (err) {
         console.error('Error reading config file, using defaults:', err.message);
+        // Jika file JSON rusak/corrupt, kembalikan ke setelan pabrik
         this.config = { ...this.defaultConfig, telegram: { ...this.defaultConfig.telegram } };
         this.saveConfig();
       }
@@ -47,6 +71,9 @@ class ConfigManager {
     }
   }
 
+  /**
+   * Menulis struktur memori saat ini (Object config) langsung ke dalam file JSON secara permanen.
+   */
   saveConfig() {
     try {
       fs.writeFileSync(this.configPath, JSON.stringify(this.config, null, 2));
@@ -55,16 +82,27 @@ class ConfigManager {
     }
   }
 
+  /**
+   * Mengonversi UUID jelek (contoh: 53a2-df92...) menjadi nama yang sudah disetel user (PC-Studio-1).
+   * @param {string} uuid - ID Asli.
+   * @returns {string} Nama Alias PC, atau UUID aslinya jika belum diberi nama.
+   */
   getPcName(uuid) {
     return (this.config.pcMapping && this.config.pcMapping[uuid]) || uuid;
   }
 
+  /**
+   * Mendaftarkan nama baru untuk sebuah PC dan menyimpannya.
+   */
   setPcName(uuid, name) {
     if (!this.config.pcMapping) this.config.pcMapping = {};
     this.config.pcMapping[uuid] = name;
     this.saveConfig();
   }
 
+  /**
+   * Menghapus sebuah PC dari ingatan Server (biasanya saat user menghapus manual dari Dashboard).
+   */
   deletePcMapping(uuid) {
     if (this.config.pcMapping && this.config.pcMapping[uuid]) {
       delete this.config.pcMapping[uuid];
@@ -72,10 +110,16 @@ class ConfigManager {
     }
   }
 
+  /**
+   * Mengambil semua direktori terdaftar PC yang ada.
+   */
   getAllPcMappings() {
     return this.config.pcMapping || {};
   }
 
+  /**
+   * Mengambil aturan kunci bot telegram.
+   */
   getTelegramConfig() {
     return this.config.telegram || { token: '', chatId: '', interval: 60 };
   }

@@ -1,21 +1,40 @@
 let TelegramBot = require('node-telegram-bot-api');
 if (TelegramBot.default) TelegramBot = TelegramBot.default;
 
+/**
+ * Class AlertManager
+ * Bertanggung jawab penuh atas pengiriman notifikasi (khususnya via Telegram) 
+ * dan pencatatan insiden ke dalam sistem database lokal jika terjadi masalah pada Agent.
+ */
 class AlertManager {
+  /**
+   * Konstruktor untuk inisialisasi AlertManager.
+   * @param {Object} configManager - Referensi ke ConfigManager untuk membaca Token & ChatID Telegram.
+   * @param {Object} dbManager - Referensi ke DatabaseManager untuk menyimpan log insiden (riwayat eror).
+   */
   constructor(configManager, dbManager) {
     this.configManager = configManager;
     this.dbManager = dbManager;
     this.bot = null;
+    
+    // Menyimpan rekam jejak waktu notifikasi terakhir dikirim per Agent 
+    // agar bot tidak melakukan spam pesan jika error terjadi terus-menerus.
     this.lastAlertState = {};
+    
     this.THROTTLE_MS = 60000;
 
     this.initBot();
   }
 
+  /**
+   * Menginisialisasi Bot Telegram menggunakan token yang ada di config.json.
+   * Jika token tidak ada/salah, fitur Telegram akan otomatis dimatikan tanpa error fatal.
+   */
   initBot() {
     const telegramConfig = this.configManager.getTelegramConfig();
     if (telegramConfig && telegramConfig.token) {
       try {
+        // Polling dibuat false karena kita hanya butuh MENGIRIM pesan (bukan membalas perintah/chat masuk)
         this.bot = new TelegramBot(telegramConfig.token, { polling: false });
         console.log('Telegram Bot initialized.');
       } catch (err) {
@@ -23,14 +42,17 @@ class AlertManager {
         this.bot = null;
       }
     } else {
-      // Fix 9: Explicitly null the bot when no token
+      // Pastikan objek bot disetel null jika tidak ada token
       this.bot = null;
       console.log('No Telegram token found in config. Bot alerts disabled.');
     }
   }
 
-  // Fix 8: Use HTML parse mode to avoid Markdown crashes on underscores
-  // Fix 21: No hardcoded prefix — caller provides full message
+  /**
+   * Mengirim pesan peringatan nyata ke obrolan (chat) Telegram.
+   * Menggunakan format parse_mode 'HTML' untuk menghindari crash akibat karakter aneh seperti '_'.
+   * @param {string} message - Pesan yang sudah diformat untuk dikirim.
+   */
   sendTelegramAlert(message) {
     const telegramConfig = this.configManager.getTelegramConfig();
     if (this.bot && telegramConfig.chatId) {
@@ -39,7 +61,11 @@ class AlertManager {
     }
   }
 
-  // Helper to escape HTML special characters in dynamic text
+  /**
+   * Mengamankan teks dinamis (seperti Nama PC) agar tidak merusak format HTML Telegram.
+   * @param {string} text - Teks mentah.
+   * @returns {string} Teks yang aman.
+   */
   escapeHtml(text) {
     return String(text)
       .replace(/&/g, '&amp;')
@@ -47,6 +73,12 @@ class AlertManager {
       .replace(/>/g, '&gt;');
   }
 
+  /**
+   * Menganalisis paket telemetri yang datang dari Agent.
+   * Menentukan apakah statusnya mengindikasikan bahaya (Mute/Pecah) lalu mengirim Telegram jika iya.
+   * @param {Object} data - Payload telemetri dari Agent.
+   * @param {string} pcName - Nama PC Agent pengirim.
+   */
   processTelemetry(data, pcName) {
     if (!data || typeof data.status !== 'string') return; // Defensive check
 
@@ -57,26 +89,30 @@ class AlertManager {
     if (isDanger) {
       const lastAlertTime = this.lastAlertState[data.uuid] || 0;
       const now = Date.now();
+      
+      // Batas waktu jeda (throttle) didapatkan dari konfigurasi interval di UI Dashboard
       const throttleMs = (this.configManager.getTelegramConfig().interval ?? 60) * 1000;
       
       if (now - lastAlertTime > throttleMs) {
         this.sendTelegramAlert(
           `[ALERT] <b>AUDIO ISSUE</b>\n<b>${safePcName}</b> mengalami masalah: <b>${safeStatus}</b>`
         );
+        // Catat kejadian bahaya ke dalam Log / SQLite DB
         if (this.dbManager) this.dbManager.logIncident(data.uuid, pcName, data.status, 'Audio/OBS Issue Detected');
         this.lastAlertState[data.uuid] = now;
       }
     } else if (data.status === 'AMAN' && this.lastAlertState[data.uuid]) {
+      // Jika statusnya membaik menjadi AMAN, kirimkan notifikasi Recovery
       this.sendTelegramAlert(`[OK] <b>${safePcName}</b> audio sudah kembali AMAN.`);
       if (this.dbManager) this.dbManager.logIncident(data.uuid, pcName, 'RECOVERY', 'Audio kembali AMAN');
       delete this.lastAlertState[data.uuid];
     } else if (!isDanger && data.status !== 'AMAN' && this.lastAlertState[data.uuid]) {
-      // Fix 10: Clear alert state on transitions like BAHAYA -> STANDBY_DIAM
+      // Jika statusnya tidak bahaya dan bukan AMAN (contohnya STANDBY/DIAM), hapus timer penahan notifikasi
       delete this.lastAlertState[data.uuid];
     }
 
-    // Hardware checks
-    // Disabled per user request (August 21, 2026)
+    // Pengecekan Perangkat Keras CPU/RAM
+    // Sengaja dinonaktifkan atas permintaan (Agustus 21, 2026) karena terlalu berisik (spammy).
     /*
     if (data.cpuUsage > 85 || data.ramUsage > 85) {
       ...
@@ -84,10 +120,17 @@ class AlertManager {
     */
   }
 
+  /**
+   * Menangani peristiwa ketika koneksi Agent PC terputus (mati lampu, restart, dsb).
+   * @param {string} uuid - UUID PC yang mati.
+   * @param {string} pcName - Nama PC yang mati.
+   */
   processOffline(uuid, pcName) {
     const safePcName = this.escapeHtml(pcName);
     this.sendTelegramAlert(`[OFFLINE] <b>${safePcName}</b> terputus dari jaringan.`);
     if (this.dbManager) this.dbManager.logIncident(uuid, pcName, 'OFFLINE', 'Koneksi terputus');
+    
+    // Bersihkan status notifikasi sebelumnya untuk PC ini
     delete this.lastAlertState[uuid];
     delete this.lastAlertState[`${uuid}_hw`];
   }
