@@ -636,46 +636,15 @@ function App() {
                             </svg>
                           </div>
                         )}
-                        {agent.obsSources && agent.obsSources.length > 0 ? (
-                        agent.obsSources.map((source, i) => {
-                          let monitorStr = 'Unknown';
-                          if (source.monitorType === 'OBS_MONITORING_TYPE_NONE') monitorStr = 'Monitor Off';
-                          else if (source.monitorType === 'OBS_MONITORING_TYPE_MONITOR_ONLY') monitorStr = 'Monitor Only';
-                          else if (source.monitorType === 'OBS_MONITORING_TYPE_MONITOR_AND_OUTPUT') monitorStr = 'Monitor & Output';
-                          
-                          // Compute percentage from mul. 1.0 mul is ~ 0dB. Let's map it roughly to 0-100%.
-                          // OBS uses cubic mapping, but for a simple bar, we can use the same logic we use for mic.
-                          const mappedObs = source.volume > 0 ? Math.max(0, Math.min(100, (source.db + 60) * (100 / 60))) : 0;
-                          
-                          return (
-                            <div className="meter-row" key={i}>
-                              <div className="meter-info" style={{ width: '145px', flexShrink: 0, opacity: source.muted ? 0.5 : 1 }}>
-                                <span className="meter-title" style={{ display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                  {source.name}
-                                  {source.muted && <span style={{ fontSize: '0.55rem', color: 'var(--danger)', border: '1px solid var(--danger)', borderRadius: '3px', padding: '0 3px' }}>MUTED</span>}
-                                </span>
-                                <span className="meter-device" title={source.monitorType}>{monitorStr}</span>
-                              {source.hardwareId && source.hardwareId !== 'Default' && source.hardwareId !== 'Unknown' && (
-                                    <span style={{ display: 'block', fontSize: '10px', color: '#888', marginTop: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={source.hardwareId}>
-                                      ID: {source.hardwareId.split('{')[0].substring(0, 15)}...
-                                    </span>
-                                  )}
-                                </div>
-                              
-                              <div style={{ width: '65px', textAlign: 'right', fontSize: '0.75rem', fontFamily: 'monospace', color: 'var(--text-muted)' }}>{source.db !== undefined ? source.db.toFixed(1) + ' dB' : ''}</div>
-                            </div>
-                          );
-                        })
-                      ) : (
+                        
                         <div className="meter-row">
                           <div className="meter-info" style={{ width: '145px', flexShrink: 0 }}>
                             <span className="meter-title">OBS Output</span>
-                                <span className="meter-device" style={{ whiteSpace: 'normal', wordBreak: 'break-word', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', lineHeight: '1.2' }}>{agent.obsSourceName || 'System / Desktop'}</span>
-                                {agent.obsSources && agent.obsSources.find(s => s.name === agent.obsSourceName) && agent.obsSources.find(s => s.name === agent.obsSourceName).hardwareId && agent.obsSources.find(s => s.name === agent.obsSourceName).hardwareId !== 'Default' && agent.obsSources.find(s => s.name === agent.obsSourceName).hardwareId !== 'Unknown' && (
-                                  <span style={{ display: 'block', fontSize: '10px', color: '#888', marginTop: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={agent.obsSources.find(s => s.name === agent.obsSourceName).hardwareId}>
-                                    ID: {agent.obsSources.find(s => s.name === agent.obsSourceName).hardwareId.split('{')[0].substring(0, 15)}...
-                                  </span>
-                                )}
+                                <span className="meter-device" style={{ whiteSpace: 'normal', wordBreak: 'break-word', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', lineHeight: '1.2' }}>{agent.obsSourceName || 'System / Desktop'}
+                                  {agent.obsSources && agent.obsSources.find(s => s.name === agent.obsSourceName) && agent.obsSources.find(s => s.name === agent.obsSourceName).hardwareId && agent.obsSources.find(s => s.name === agent.obsSourceName).hardwareId !== 'Default' && agent.obsSources.find(s => s.name === agent.obsSourceName).hardwareId !== 'Unknown' && (
+                                    <span style={{ color: '#888' }}> - {agent.obsSources.find(s => s.name === agent.obsSourceName).hardwareId.split('{')[0] || 'Hardware'}</span>
+                                  )}
+                                </span>
                               </div>
                             {agent.obsHistory && (
                               <svg width="100%" height="20" viewBox="0 0 80 20" preserveAspectRatio="none" className="sparkline" style={{ flex: 1, margin: "0 10px" }}>
@@ -686,8 +655,7 @@ function App() {
                               </svg>
                             )}
                             <div style={{ width: '65px', textAlign: 'right', fontSize: '0.75rem', fontFamily: 'monospace', color: 'var(--text-muted)' }}>{ (agent.obsDb !== undefined ? agent.obsDb : ((agent.obsLevel || 0) * 0.6 - 60)).toFixed(1) + ' dB' }</div>
-                        </div>
-                      )}
+                          </div>
                     </div>
 
                     <div className="card-footer">
