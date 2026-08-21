@@ -1,6 +1,6 @@
 {
   "name": "server",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Audio Monitor Server",
   "main": "electron/main.js",
   "bin": "index.js",
@@ -31,7 +31,7 @@
     "nsis": {
       "oneClick": true,
       "perMachine": false,
-      "artifactName": "AudioMonitor_Server_Installer_v1.0.0.exe",
+      "artifactName": "AudioMonitor_Agent_Installer_v1.0.1.exe",
       "uninstallDisplayName": "Audio Monitor Server"
     }
   },

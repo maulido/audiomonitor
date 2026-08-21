@@ -1,7 +1,7 @@
 {
   "name": "agent",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Multi-PC Audio Monitor Agent",
   "author": "syhn foss",
   "type": "commonjs",
@@ -51,7 +51,7 @@
     "nsis": {
       "oneClick": true,
       "perMachine": false,
-      "artifactName": "AudioMonitor_Agent_Installer_v1.0.exe",
+      "artifactName": "AudioMonitor_Agent_Installer_v1.0.1.exe",
       "uninstallDisplayName": "Audio Monitor Agent"
     }
   }
