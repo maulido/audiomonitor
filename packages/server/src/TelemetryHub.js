@@ -207,10 +207,14 @@ class TelemetryHub {
     const enrichedData = { ...data, pcName, isMonitoringActive, lastSeen: Date.now() };
     
     // Simpan untuk Dashboard yang baru dibuka nanti
-    this.lastKnownState.set(data.uuid, enrichedData);
+          this.lastKnownState.set(data.uuid, enrichedData);
+      
+      if (enrichedData.obsSources) {
+         console.log("OBS Sources for " + enrichedData.pcName + ":", JSON.stringify(enrichedData.obsSources, null, 2));
+      }
 
-    // Pancarkan data terkini ini ke seluruh Dashboard agar bar Volume bergerak
-    this.io.to('dashboards').emit('dashboard-update', enrichedData);
+      // Pancarkan data terkini ini ke seluruh Dashboard agar bar Volume bergerak
+      this.io.to('dashboards').emit('dashboard-update', enrichedData);
 
     // Proses Peringatan Telegram (Hanya jika sistem pengawasan sedang ON)
     const globalActive = this.configManager.config.monitoringActive !== false;

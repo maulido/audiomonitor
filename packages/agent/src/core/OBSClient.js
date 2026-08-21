@@ -220,9 +220,9 @@ class OBSClient {
           try {
             const setRes = await this.obs.call('GetInputSettings', { inputName: input.inputName });
             let rawId = setRes.inputSettings.device_id || setRes.inputSettings.device || 'Default';
-            const match = rawId.match(/\{[a-fA-F0-9\-]+\}/);
-            if (match) {
-              const guid = match[0].toLowerCase();
+            const matches = rawId.match(/\{[a-fA-F0-9\-]+\}/g);
+              if (matches && matches.length > 0) {
+                const guid = matches[matches.length - 1].toLowerCase();
               if (!this._deviceMapping) {
                 this._deviceMapping = await this.getWindowsAudioDevices();
               }
