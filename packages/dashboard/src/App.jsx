@@ -209,7 +209,7 @@ function App() {
         setEditingId(null);
       } catch (err) {
         console.error(err);
-        alert('Error renaming PC');
+        await customAlert('Error renaming PC', 'Error');
       }
     }
   };
@@ -220,9 +220,9 @@ function App() {
         method: 'POST',
         body: JSON.stringify({ token: telegramToken, chatId: telegramChatId, interval: parseInt(telegramInterval, 10) || 60 })
       });
-      if (res.ok) alert('Telegram Configuration Saved & Bot Reloaded!');
+      if (res.ok) await customAlert('Telegram Configuration Saved & Bot Reloaded!', 'Sukses');
     } catch (e) {
-      alert('Failed to save configuration');
+      await customAlert('Failed to save configuration', 'Error');
     }
   };
 
@@ -255,7 +255,7 @@ function App() {
 
   const savePinConfig = async () => {
     if (newPinInput.length < 4) {
-      alert('PIN minimal 4 karakter');
+      await customAlert('PIN minimal 4 karakter', 'Peringatan');
       return;
     }
     try {
@@ -264,22 +264,22 @@ function App() {
         body: JSON.stringify({ newPin: newPinInput })
       });
       if (res.ok) {
-        alert('PIN Berhasil Diubah!');
+        await customAlert('PIN Berhasil Diubah!', 'Sukses');
         setPin(newPinInput);
         sessionStorage.setItem('dashboardPin', newPinInput);
         setNewPinInput('');
       }
     } catch (e) {
-      alert('Gagal mengubah PIN');
+      await customAlert('Gagal mengubah PIN', 'Error');
     }
   };
 
   const testTelegram = async () => {
     try {
       const res = await apiFetch(`/api/telegram/test`, { method: 'POST' });
-      if (res.ok) alert('Test signal sent! Check your Telegram.');
+      if (res.ok) await customAlert('Test signal sent! Check your Telegram.', 'Sukses');
     } catch (e) {
-      alert('Failed to send test signal');
+      await customAlert('Failed to send test signal', 'Error');
     }
   };
 
@@ -293,26 +293,28 @@ function App() {
   };
 
   const clearDatabase = async () => {
-    if (window.confirm("ARE YOU SURE? This will permanently delete all incident logs from the server database.")) {
+    const confirmed = await customConfirm("ARE YOU SURE? This will permanently delete all incident logs from the server database.", "Hapus Database?");
+      if (confirmed) {
       try {
         const res = await apiFetch(`/api/incidents`, { method: 'DELETE' });
         if (res.ok) {
-          alert('Database cleared!');
+          await customAlert('Database cleared!', 'Sukses');
           if (currentView === 'logs') fetchLogs();
         }
       } catch (e) {
-        alert('Failed to clear database');
+        await customAlert('Failed to clear database', 'Error');
       }
     }
   };
 
 
   const handleDeletePC = async (uuid) => {
-    if (window.confirm('Apakah Anda yakin ingin menghapus PC ini dari Dashboard?')) {
+    const confirmed = await customConfirm('Apakah Anda yakin ingin menghapus PC ini dari Dashboard?', 'Hapus PC?');
+      if (confirmed) {
       try {
         await client.current.deletePC(uuid, pin);
       } catch (e) {
-        alert('Gagal menghapus PC');
+        await customAlert('Gagal menghapus PC', 'Error');
       }
     }
   };
@@ -335,7 +337,7 @@ function App() {
         ...prev,
         [uuid]: { ...prev[uuid], isMonitoringActive: !active }
       }));
-      alert('Failed to toggle PC monitoring');
+      await customAlert('Failed to toggle PC monitoring', 'Error');
     }
   };
 
