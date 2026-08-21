@@ -594,17 +594,26 @@ function App() {
                           )}
                         </div>
                         <div className="pc-id">ID: {agent.uuid}</div>
+                        {agent.currentScene && <div className="pc-id" style={{ marginTop: '2px', color: 'var(--accent)', fontWeight: 'bold' }}>Scene: {agent.currentScene}</div>}
                       </div>
                     </div>
 
                     <div className={statusAreaClass}>
                       <h3 className="status-text">{(agent.status || '').replace(/_/g, ' ')}</h3>
                       {!isOffline && (
-                        <div className="hw-stats">
-                          <span style={{ color: agent.cpuUsage > 85 ? 'var(--warning)' : 'inherit' }}>CPU: {agent.cpuUsage || 0}%</span>
-                          <span style={{ color: agent.ramUsage > 85 ? 'var(--warning)' : 'inherit' }}>RAM: {agent.ramUsage || 0}%</span>
-                        </div>
-                      )}
+                          <>
+                          <div className="hw-stats">
+                            <span style={{ color: agent.cpuUsage > 85 ? 'var(--warning)' : 'inherit' }}>CPU: {agent.cpuUsage || 0}%</span>
+                            <span style={{ color: agent.ramUsage > 85 ? 'var(--warning)' : 'inherit' }}>RAM: {agent.ramUsage || 0}%</span>
+                          </div>
+                          {agent.isStreaming && agent.streamBitrate !== undefined && (
+                            <div className="hw-stats" style={{ marginTop: '4px', color: (agent.streamDroppedFrames > 0 && agent.streamTotalFrames > 0 && (agent.streamDroppedFrames / agent.streamTotalFrames) > 0.05) ? 'var(--danger)' : 'var(--accent)', fontSize: '0.75rem' }}>
+                               <span style={{ fontWeight: 'bold' }}>{agent.streamBitrate} Kbps</span>
+                               {agent.streamDroppedFrames > 0 && <span style={{ marginLeft: '6px' }}>({agent.streamDroppedFrames} Drop)</span>}
+                            </div>
+                          )}
+                          </>
+                        )}
                     </div>
 
                     <div className="meters">

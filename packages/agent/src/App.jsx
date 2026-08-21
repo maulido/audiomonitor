@@ -87,6 +87,11 @@ function App() {
   
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamTimecode, setStreamTimecode] = useState('00:00:00');
+  const [streamBitrate, setStreamBitrate] = useState(0);
+  const [streamDroppedFrames, setStreamDroppedFrames] = useState(0);
+  const [streamTotalFrames, setStreamTotalFrames] = useState(0);
+  const [currentScene, setCurrentScene] = useState('');
+  const lastStreamBytes = useRef({ bytes: 0, time: 0 });
 
   useEffect(() => {
     let streamTimer;
@@ -112,11 +117,25 @@ function App() {
           ]).then(status => {
             clearTimeout(timeoutId);
             setIsStreaming(status.outputActive);
-            if (status.outputActive && status.outputTimecode) {
-               setStreamTimecode(status.outputTimecode.split('.')[0]);
-            } else {
-               setStreamTimecode('00:00:00');
-            }
+              if (status.outputActive && status.outputTimecode) {
+                 setStreamTimecode(status.outputTimecode.split('.')[0]);
+                 const now = Date.now();
+                 if (lastStreamBytes.current.bytes > 0 && status.outputBytes > lastStreamBytes.current.bytes) {
+                    const diffBytes = status.outputBytes - lastStreamBytes.current.bytes;
+                    const diffTime = (now - lastStreamBytes.current.time) / 1000;
+                    if (diffTime > 0) {
+                       const kbps = Math.round((diffBytes * 8) / 1000 / diffTime);
+                       setStreamBitrate(kbps);
+                    }
+                 }
+                 lastStreamBytes.current = { bytes: status.outputBytes || 0, time: now };
+                 setStreamDroppedFrames(status.outputSkippedFrames || 0);
+                 setStreamTotalFrames(status.outputTotalFrames || 0);
+              } else {
+                 setStreamTimecode('00:00:00');
+                 setStreamBitrate(0);
+                 lastStreamBytes.current = { bytes: 0, time: 0 };
+              }
           }).catch(() => {
             clearTimeout(timeoutId);
           });
@@ -273,6 +292,14 @@ function App() {
              setIsMonitoringActive(status.outputActive);
            }
         }).catch(console.error);
+        
+        obsClient.current.obs.call('GetCurrentProgramScene').then(res => {
+           setCurrentScene(res.currentProgramSceneName);
+        }).catch(() => {});
+        
+        obsClient.current.onSceneChange = (sceneName) => {
+           setCurrentScene(sceneName);
+        };
       },
       () => setObsConnected(false),
       (inputs) => {
@@ -505,14 +532,18 @@ function App() {
       ramUsage: hardwareUsage.ramUsage,
       isMonitoringActive,
       isStreaming,
-        streamTimecode,
+      streamTimecode,
+      streamBitrate,
+      streamDroppedFrames,
+      streamTotalFrames,
+      currentScene,
         silenceTimeoutSec,
         deadMicTimeoutSec,
         clippingThreshold,
         clippingDurationSec,
         audioDevices: audioDevicesRef.current.map(d => d.label || 'Default Microphone')
       };
-  }, [micLevel, rawMicLevel, micDb, micClipping, obsSources, noiseGate, obsLevel, obsDb, status, hardwareUsage, uuid, agentName, micDriverName, obsSourceName, isMonitoringActive, isStreaming, streamTimecode, silenceTimeoutSec, deadMicTimeoutSec, clippingThreshold, clippingDurationSec]);
+  }, [micLevel, rawMicLevel, micDb, micClipping, obsSources, noiseGate, obsLevel, obsDb, status, hardwareUsage, uuid, agentName, micDriverName, obsSourceName, isMonitoringActive, isStreaming, streamTimecode, streamBitrate, streamDroppedFrames, streamTotalFrames, currentScene, silenceTimeoutSec, deadMicTimeoutSec, clippingThreshold, clippingDurationSec]);
 
   // Telemetry Sender (Throttled to 500ms)
   useEffect(() => {

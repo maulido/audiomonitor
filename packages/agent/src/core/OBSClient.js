@@ -61,6 +61,13 @@ class OBSClient {
         this.onStreamStateChange(data.outputActive);
       }
     });
+
+    // Menangkap pergantian scene
+    this.obs.on('CurrentProgramSceneChanged', (data) => {
+      if (this.onSceneChange) {
+        this.onSceneChange(data.sceneName);
+      }
+    });
   }
 
   /**
