@@ -655,7 +655,12 @@ function App() {
                                   {source.muted && <span style={{ fontSize: '0.55rem', color: 'var(--danger)', border: '1px solid var(--danger)', borderRadius: '3px', padding: '0 3px' }}>MUTED</span>}
                                 </span>
                                 <span className="meter-device" title={source.monitorType}>{monitorStr}</span>
-                              </div>
+                              {source.hardwareId && source.hardwareId !== 'Default' && source.hardwareId !== 'Unknown' && (
+                                    <span style={{ display: 'block', fontSize: '10px', color: '#888', marginTop: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={source.hardwareId}>
+                                      ID: {source.hardwareId.split('{')[0].substring(0, 15)}...
+                                    </span>
+                                  )}
+                                </div>
                               
                               <div style={{ width: '65px', textAlign: 'right', fontSize: '0.75rem', fontFamily: 'monospace', color: 'var(--text-muted)' }}>{source.db !== undefined ? source.db.toFixed(1) + ' dB' : ''}</div>
                             </div>
