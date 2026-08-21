@@ -44,14 +44,16 @@ class ServerApp {
     this.app.use(express.json());
     
     // Middleware Keamanan PIN khusus rute API
-    // Memastikan siapa pun yang mengirim POST/DELETE ke API harus menyertakan PIN di header
+    // Memastikan siapa pun yang mengirim POST/DELETE/PUT ke API harus menyertakan PIN di header
     this.app.use('/api', (req, res, next) => {
-      const pin = req.headers['x-pin'];
-      const correctPin = this.configManager.config.dashboardPin || '1234';
-      if (pin !== correctPin) {
-        return res.status(401).json({ success: false, error: 'Unauthorized', message: 'PIN Salah' });
+      if (['POST', 'DELETE', 'PUT'].includes(req.method)) {
+        const pin = req.headers['x-pin'];
+        const correctPin = this.configManager.config.dashboardPin || '1234';
+        if (pin !== correctPin) {
+          return res.status(401).json({ success: false, error: 'Unauthorized', message: 'PIN Salah' });
+        }
       }
-      next(); // Jika PIN benar, lanjutkan ke route tujuan
+      next(); // Jika method GET atau PIN benar, lanjutkan
     });
     
     // Menyajikan antarmuka Dashboard (React Build) agar bisa diakses via Browser (http://localhost:4000)
@@ -125,7 +127,12 @@ class ServerApp {
       const { token, chatId, interval } = req.body || {};
       if (token !== undefined) this.configManager.config.telegram.token = token;
       if (chatId !== undefined) this.configManager.config.telegram.chatId = chatId;
-      if (interval !== undefined) this.configManager.config.telegram.interval = parseInt(interval, 10);
+      if (interval !== undefined) {
+        const parsedInterval = parseInt(interval, 10);
+        if (!isNaN(parsedInterval)) {
+          this.configManager.config.telegram.interval = parsedInterval;
+        }
+      }
       this.configManager.saveConfig();
       
       this.alertManager.initBot(); // Muat ulang bot dengan token baru

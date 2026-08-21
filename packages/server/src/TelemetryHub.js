@@ -133,23 +133,26 @@ class TelemetryHub {
         
         // Jika yang putus adalah PC Agent (bukan Dashboard)
         if (socket.agentUuid) {
-          this.agentSockets.delete(socket.agentUuid);
-          const pcName = this.configManager.config.pcMapping[socket.agentUuid] || socket.agentName || socket.agentUuid;
-          
-          const existing = this.lastKnownState.get(socket.agentUuid) || {};
-          const offlineData = { ...existing, uuid: socket.agentUuid, pcName, status: 'OFFLINE', lastSeen: Date.now() };
-          
-          // Simpan status barunya sebagai OFFLINE
-          this.lastKnownState.set(socket.agentUuid, offlineData);
+          // Hanya hapus jika socket ini memang koneksi aktif yang terbaru
+          if (this.agentSockets.get(socket.agentUuid) === socket.id) {
+            this.agentSockets.delete(socket.agentUuid);
+            const pcName = this.configManager.config.pcMapping[socket.agentUuid] || socket.agentName || socket.agentUuid;
+            
+            const existing = this.lastKnownState.get(socket.agentUuid) || {};
+            const offlineData = { ...existing, uuid: socket.agentUuid, pcName, status: 'OFFLINE', lastSeen: Date.now() };
+            
+            // Simpan status barunya sebagai OFFLINE
+            this.lastKnownState.set(socket.agentUuid, offlineData);
 
-          // Umumkan ke seluruh layar Dashboard agar kotak PC tersebut berubah jadi gelap (OFFLINE)
-          this.io.to('dashboards').emit('agent-disconnect', offlineData);
-          
-          // Kirimkan notifikasi ke Telegram (Jika opsi pemantauan tidak sedang dimatikan secara manual)
-          const globalActive = this.configManager.config.monitoringActive !== false;
-          const pcActive = this.pcMonitoringState[socket.agentUuid] !== false;
-          if (globalActive && pcActive) {
-            this.alertManager.processOffline(socket.agentUuid, pcName);
+            // Umumkan ke seluruh layar Dashboard agar kotak PC tersebut berubah jadi gelap (OFFLINE)
+            this.io.to('dashboards').emit('agent-disconnect', offlineData);
+            
+            // Kirimkan notifikasi ke Telegram (Jika opsi pemantauan tidak sedang dimatikan secara manual)
+            const globalActive = this.configManager.config.monitoringActive !== false;
+            const pcActive = this.pcMonitoringState[socket.agentUuid] !== false;
+            if (globalActive && pcActive) {
+              this.alertManager.processOffline(socket.agentUuid, pcName);
+            }
           }
         }
       });

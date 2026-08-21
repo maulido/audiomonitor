@@ -131,6 +131,7 @@ function App() {
               ...prevData,
               ...data,
               timestamp: Date.now(),
+                obsSources: updatedObsSources,
               micLevel: mic,
               obsLevel: obs,
               micHistory: [...(prevData.micHistory || Array(30).fill(0)), mic].slice(-30),
@@ -157,6 +158,23 @@ function App() {
             }
           }
           return updated;
+        });
+      },
+      (dataArray) => {
+        setAgents(prev => {
+          const next = { ...prev };
+          for (const d of dataArray) {
+            if (!next[d.uuid]) next[d.uuid] = d;
+            else next[d.uuid] = { ...next[d.uuid], ...d };
+          }
+          return next;
+        });
+      },
+      (uuid) => {
+        setAgents(prev => {
+          const next = { ...prev };
+          delete next[uuid];
+          return next;
         });
       }
     );
@@ -808,7 +826,7 @@ function App() {
                     <span>Batas Pecah (Clipping Threshold)</span>
                     <span style={{ color: 'var(--danger)', fontWeight: 'bold' }}>{remoteConfig.clippingThreshold}%</span>
                   </label>
-                  <input className="range-slider range-danger" type="range" value={remoteConfig.clippingThreshold} onChange={e => setRemoteConfig({...remoteConfig, clippingThreshold: Number(e.target.value)})} min="0" max="100" />
+                  <input className="range-slider range-danger" type="range" value={remoteConfig.clippingThreshold} onChange={e => setRemoteConfig({...remoteConfig, clippingThreshold: Number(e.target.value)})} min="50" max="100" />
                 </div>
 
                 <div style={{ display: 'flex', gap: '10px' }}>

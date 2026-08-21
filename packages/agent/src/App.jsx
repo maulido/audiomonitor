@@ -340,8 +340,10 @@ function App() {
 
   const currentMicLevel = useRef(0);
   const currentObsLevel = useRef(0);
+  const currentRawMicLevel = useRef(0);
   useEffect(() => { currentMicLevel.current = micLevel; }, [micLevel]);
   useEffect(() => { currentObsLevel.current = obsLevel; }, [obsLevel]);
+  useEffect(() => { currentRawMicLevel.current = rawMicLevel; }, [rawMicLevel]);
 
     useEffect(() => {
       if (!obsConnected) {
@@ -368,7 +370,7 @@ function App() {
     const isObsMuted = currentObsLevel.current < 0.5;
 
     // Clipping Logic (build score if rawMicLevel exceeds threshold)
-    if (rawMicLevel >= clippingThreshold) {
+    if (currentRawMicLevel.current >= clippingThreshold) {
       clippingScore.current += 100;
     } else {
       clippingScore.current = Math.max(0, clippingScore.current - 100);
@@ -389,7 +391,7 @@ function App() {
       nextStatus = 'AMAN';
     }
 
-    if (micLevel < 2 && obsLevel < 2) {
+    if (currentMicLevel.current < 2 && currentObsLevel.current < 2) {
       // Start standby timer if quiet
       if (!silenceTimeout.current && status !== 'STANDBY_DIAM' && status !== 'BAHAYA_MIC_MATI' && nextStatus !== 'BAHAYA_OBS_MUTE' && nextStatus !== 'BAHAYA_AUDIO_PECAH') {
         silenceTimeout.current = setTimeout(() => {
@@ -452,7 +454,7 @@ function App() {
         lastNotificationTime.current = now;
       }
     }
-  }, [micLevel, obsLevel, obsConnected, status, silenceTimeoutSec, deadMicTimeoutSec, isMonitoringActive, tick]);
+  }, [obsConnected, status, silenceTimeoutSec, deadMicTimeoutSec, isMonitoringActive, tick, clippingThreshold, clippingDurationSec]);
 
   // Refs to hold latest values for telemetry throttling
   
