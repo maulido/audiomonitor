@@ -497,6 +497,8 @@ function App() {
                 if (isOffline) cardClass += ' offline';
                 else if (isDanger) cardClass += ' danger';
                 else if (isStandby) cardClass += ' standby';
+                
+                if (agent.isMonitoringActive === false && !isOffline) cardClass += ' monitoring-off';
 
                 let statusAreaClass = 'status-area';
                 if (isOffline) statusAreaClass += ' offline';
