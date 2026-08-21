@@ -1,6 +1,17 @@
 import OBSWebSocket from 'obs-websocket-js';
 
+/**
+ * Class OBSClient
+ * Menangani seluruh interaksi dan koneksi WebSocket antara aplikasi Agent dan aplikasi OBS Studio.
+ */
 class OBSClient {
+  /**
+   * Menginisialisasi klien OBS.
+   * @param {Function} onConnect - Callback ketika berhasil terkoneksi ke OBS.
+   * @param {Function} onDisconnect - Callback ketika koneksi ke OBS terputus.
+   * @param {Function} onVolumeUpdate - Callback yang dipanggil saat ada data perubahan volume meter dari OBS.
+   * @param {Function} onStreamStateChange - Callback yang dipanggil ketika status streaming OBS berubah (LIVE/OFF).
+   */
   constructor(onConnect, onDisconnect, onVolumeUpdate, onStreamStateChange) {
     this.obs = null;
     this.isConnected = false;
@@ -15,14 +26,20 @@ class OBSClient {
     this.intentionalDisconnect = false;
   }
 
+  /**
+   * Fungsi internal untuk mengikat (binding) event-event dari library obs-websocket-js ke callback milik kelas ini.
+   * Menangani event pemutusan koneksi (termasuk auto-reconnect), pembaruan meteran audio, dan status stream.
+   * @private
+   */
   _bindEvents() {
     if (!this.obs) return;
     
+    // Dipanggil saat koneksi OBS tertutup
     this.obs.on('ConnectionClosed', () => {
       this.isConnected = false;
       if (this.onDisconnectCallback) this.onDisconnectCallback();
       
-      // Auto-reconnect logic
+      // Auto-reconnect logic: Jika putus bukan karena tombol Disconnect manual, coba hubungkan ulang setiap 5 detik.
       if (!this.intentionalDisconnect && !this.reconnectInterval) {
         console.log("OBS Connection lost. Attempting auto-reconnect...");
         this.reconnectInterval = setInterval(() => {
@@ -31,12 +48,14 @@ class OBSClient {
       }
     });
 
+    // Menangkap pergerakan bar hijau (Volume Meter) dari dalam OBS
     this.obs.on('InputVolumeMeters', (data) => {
       if (this.onVolumeUpdate && data.inputs) {
         this.onVolumeUpdate(data.inputs);
       }
     });
 
+    // Menangkap perubahan status tombol Start/Stop Streaming
     this.obs.on('StreamStateChanged', (data) => {
       if (this.onStreamStateChange) {
         this.onStreamStateChange(data.outputActive);
@@ -44,10 +63,17 @@ class OBSClient {
     });
   }
 
+  /**
+   * Menghubungkan ke server WebSocket OBS Studio.
+   * @param {string} ip - Alamat IP:Port WebSocket OBS (contoh: 127.0.0.1:4455).
+   * @param {string} password - Kata sandi otentikasi WebSocket OBS.
+   * @param {boolean} isAutoReconnect - Flag internal untuk menandai apakah koneksi ini merupakan proses penyambungan ulang otomatis.
+   * @returns {Promise<boolean>} Resolves jika berhasil terhubung, Reject jika gagal.
+   */
   async connect(ip, password, isAutoReconnect = false) {
     if (this.isConnecting) return false;
     
-    // Prevent duplicate connections if already connected to the same destination
+    // Cegah koneksi ganda jika sudah terhubung ke tujuan yang sama
     if (!isAutoReconnect && this.isConnected && this.lastIp === ip && this.lastPassword === password && this.obs) {
       if (this.onConnectCallback) this.onConnectCallback();
       return true;
@@ -55,12 +81,13 @@ class OBSClient {
     
     this.isConnecting = true;
 
+    // Bersihkan interval koneksi ulang otomatis yang lama
     if (!isAutoReconnect && this.reconnectInterval) {
       clearInterval(this.reconnectInterval);
       this.reconnectInterval = null;
     }
 
-    // Completely destroy old instance to avoid zombie connections
+    // Hancurkan instansi OBS yang lama secara total untuk mencegah 'koneksi zombie'
     if (this.obs) {
       try {
         this.obs.removeAllListeners();
@@ -73,18 +100,21 @@ class OBSClient {
     this.lastPassword = password;
     this.intentionalDisconnect = false;
 
-    // Create fresh instance
+    // Buat instansi OBS WebSocket baru
     this.obs = new OBSWebSocket();
     this._bindEvents();
 
     try {
+      // eventSubscriptions 65601 mengaktifkan langganan event khusus (contoh: InputVolumeMeters)
       await this.obs.connect(`ws://${ip}`, password, { 
         rpcVersion: 1,
         eventSubscriptions: 65601 
       });
+      
       this.isConnected = true;
       this.isConnecting = false;
       
+      // Matikan interval auto-reconnect karena kita sudah berhasil masuk
       if (this.reconnectInterval) {
         clearInterval(this.reconnectInterval);
         this.reconnectInterval = null;
@@ -104,6 +134,10 @@ class OBSClient {
     }
   }
 
+  /**
+   * Mengambil daftar seluruh sumber Audio (Input List) yang saat ini ada di OBS.
+   * @returns {Promise<Array>} Array berisi detail setiap Input Audio (contoh: inputName, inputKind).
+   */
   async getAudioInputs() {
     if (!this.isConnected || !this.obs) return [];
     try {
@@ -114,6 +148,11 @@ class OBSClient {
     }
   }
 
+  /**
+   * Mengecek status siaran (Streaming) secara instan.
+   * Berbeda dengan event listener, ini secara aktif memanggil API ke OBS untuk menanyakan status.
+   * @returns {Promise<Object>} Mengembalikan objek berisi status { outputActive: boolean } dan waktu siaran jika sedang aktif.
+   */
   async getStreamStatus() {
     if (!this.isConnected || !this.obs) return { outputActive: false };
     try {
@@ -124,6 +163,12 @@ class OBSClient {
     }
   }
 
+  /**
+   * Mengambil detail komprehensif untuk SEMUA sumber (Sources) audio.
+   * Untuk setiap sumber, fungsi ini juga memanggil API ekstra untuk mendapatkan Mute Status, Volume DB, dan Monitor Type.
+   * Fungsi ini memakan waktu dan sumber daya (multiple RPC calls) sehingga cocok dipanggil sekali di awal untuk membangun state UI.
+   * @returns {Promise<Array>} Array berisi objek sumber audio yang lengkap dengan status mute dan db.
+   */
   async getDetailedSources() {
     if (!this.isConnected || !this.obs) return [];
     try {
@@ -152,6 +197,10 @@ class OBSClient {
     }
   }
 
+  /**
+   * Memutus koneksi OBS secara manual.
+   * Berbeda dengan pemutusan tak sengaja, ini mematikan bendera auto-reconnect.
+   */
   disconnect() {
     this.intentionalDisconnect = true;
     if (this.reconnectInterval) {

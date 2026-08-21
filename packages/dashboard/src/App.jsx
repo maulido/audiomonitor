@@ -8,6 +8,8 @@ function App() {
   const [agents, setAgents] = useState({});
   const [isConnected, setIsConnected] = useState(false);
   const [editingId, setEditingId] = useState(null);
+  const [configModalAgent, setConfigModalAgent] = useState(null);
+  const [remoteConfig, setRemoteConfig] = useState({});
   const [editingName, setEditingName] = useState('');
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -204,6 +206,33 @@ function App() {
     } catch (e) {
       alert('Failed to save configuration');
     }
+  };
+
+  
+  const handleRemoteConfigSave = (e) => {
+    e.preventDefault();
+    if (!configModalAgent || !client.current || !client.current.socket) return;
+    
+    client.current.socket.emit('agent-config-update', {
+      uuid: configModalAgent.uuid,
+      config: remoteConfig
+    });
+
+    setAgents(prev => {
+      if (prev[configModalAgent.uuid]) {
+        return {
+          ...prev,
+          [configModalAgent.uuid]: {
+            ...prev[configModalAgent.uuid],
+            ...remoteConfig,
+            pcName: remoteConfig.agentName
+          }
+        };
+      }
+      return prev;
+    });
+
+    setConfigModalAgent(null);
   };
 
   const savePinConfig = async () => {
@@ -481,7 +510,19 @@ function App() {
                                 >
                                   ● {agent.isMonitoringActive ? 'ON' : 'OFF'}
                                 </button>
-                                <button className="icon-btn" onClick={() => { setEditingId(agent.uuid); setEditingName(agent.pcName); }}>✎</button>
+                                <button className="icon-btn" title="Remote Config" onClick={() => { 
+  setConfigModalAgent(agent); 
+  setRemoteConfig({
+    agentName: agent.pcName,
+    micDriverName: agent.micDriverName || '',
+    noiseGate: agent.noiseGate ?? 15,
+    silenceTimeoutSec: agent.silenceTimeoutSec ?? 10,
+    deadMicTimeoutSec: agent.deadMicTimeoutSec ?? 60,
+    clippingThreshold: agent.clippingThreshold ?? 95,
+    clippingDurationSec: agent.clippingDurationSec ?? 3,
+    obsSourceName: agent.obsSourceName || 'Mic/Aux'
+  }); 
+}}>⚙️</button>
                                 <button className="icon-btn" onClick={() => handleDeletePC(agent.uuid)}>🗑</button>
                               </div>
                             </>
@@ -724,9 +765,88 @@ function App() {
           </div>
         )}
 
+      
+
+      {configModalAgent && (
+        <div className="modal-overlay">
+          <div className="modal" style={{ maxWidth: '500px' }}>
+            <div className="modal-header">
+              <div>
+                <h3 style={{ margin: 0 }}>Pengaturan: {configModalAgent.pcName}</h3>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px', fontFamily: 'monospace' }}>ID: {configModalAgent.uuid}</div>
+              </div>
+              <button className="close-btn" onClick={() => setConfigModalAgent(null)}>×</button>
+            </div>
+            <div className="modal-body">
+              <form onSubmit={handleRemoteConfigSave}>
+                <div className="setting-group">
+                  <label>PC Name</label>
+                  <input className="form-input" value={remoteConfig.agentName} onChange={e => setRemoteConfig({...remoteConfig, agentName: e.target.value})} required />
+                </div>
+                
+                <div className="setting-group">
+                  <label>Hardware Microphone</label>
+                  {configModalAgent.audioDevices && configModalAgent.audioDevices.length > 0 ? (
+                    <select className="form-input" value={remoteConfig.micDriverName} onChange={e => setRemoteConfig({...remoteConfig, micDriverName: e.target.value})}>
+                      {configModalAgent.audioDevices.map((dev, i) => <option key={i} value={dev}>{dev}</option>)}
+                    </select>
+                  ) : (
+                    <input className="form-input" value={remoteConfig.micDriverName} onChange={e => setRemoteConfig({...remoteConfig, micDriverName: e.target.value})} />
+                  )}
+                </div>
+
+                <div className="setting-group">
+                  <label style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span>Noise Gate</span>
+                    <span style={{ color: 'var(--warning)', fontWeight: 'bold' }}>{remoteConfig.noiseGate}%</span>
+                  </label>
+                  <input className="range-slider range-warning" type="range" value={remoteConfig.noiseGate} onChange={e => setRemoteConfig({...remoteConfig, noiseGate: Number(e.target.value)})} min="0" max="100" />
+                </div>
+
+                <div className="setting-group">
+                  <label style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span>Batas Pecah (Clipping Threshold)</span>
+                    <span style={{ color: 'var(--danger)', fontWeight: 'bold' }}>{remoteConfig.clippingThreshold}%</span>
+                  </label>
+                  <input className="range-slider range-danger" type="range" value={remoteConfig.clippingThreshold} onChange={e => setRemoteConfig({...remoteConfig, clippingThreshold: Number(e.target.value)})} min="0" max="100" />
+                </div>
+
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <div className="setting-group" style={{ flex: 1 }}>
+                    <label>Silence (detik)</label>
+                    <input className="form-input" type="number" value={remoteConfig.silenceTimeoutSec} onChange={e => setRemoteConfig({...remoteConfig, silenceTimeoutSec: Number(e.target.value)})} min="1" />
+                  </div>
+                  <div className="setting-group" style={{ flex: 1 }}>
+                    <label>Dead Mic (detik)</label>
+                    <input className="form-input" type="number" value={remoteConfig.deadMicTimeoutSec} onChange={e => setRemoteConfig({...remoteConfig, deadMicTimeoutSec: Number(e.target.value)})} min="1" />
+                  </div>
+                  <div className="setting-group" style={{ flex: 1 }}>
+                    <label>Durasi Pecah</label>
+                    <input className="form-input" type="number" value={remoteConfig.clippingDurationSec} onChange={e => setRemoteConfig({...remoteConfig, clippingDurationSec: Number(e.target.value)})} min="1" />
+                  </div>
+                </div>
+
+                <div className="setting-group">
+                  <label>OBS Source Name</label>
+                  {configModalAgent.obsSources && configModalAgent.obsSources.length > 0 ? (
+                    <select className="form-input" value={remoteConfig.obsSourceName} onChange={e => setRemoteConfig({...remoteConfig, obsSourceName: e.target.value})}>
+                      {configModalAgent.obsSources.map((s, i) => <option key={i} value={s.name}>{s.name}</option>)}
+                    </select>
+                  ) : (
+                    <input className="form-input" value={remoteConfig.obsSourceName} onChange={e => setRemoteConfig({...remoteConfig, obsSourceName: e.target.value})} />
+                  )}
+                </div>
+                <button type="submit" className="btn" style={{ background: 'var(--success)', color: '#fff', marginTop: '15px', width: '100%', padding: '10px', fontSize: '1rem', fontWeight: 'bold' }}>Save & Sync to Agent</button>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
       </div>
     </div>
   );
 }
 
 export default App;
+

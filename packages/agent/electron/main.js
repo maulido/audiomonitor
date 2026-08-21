@@ -10,7 +10,12 @@ let mainWindow = null;
 let tray = null;
 let isQuitting = false;
 
-// Ensure unique ID exists
+/**
+ * Fungsi ini bertugas membaca UUID dari file konfigurasi lokal.
+ * Jika file atau UUID tidak ditemukan, maka akan membuat UUID acak baru
+ * dan menyimpannya ke dalam file tersebut agar perangkat ini dikenali secara permanen.
+ * @returns {string} UUID (Universally Unique Identifier) milik Agent ini.
+ */
 function getOrCreateUUID() {
   try {
     if (fs.existsSync(configPath)) {
@@ -30,6 +35,12 @@ function getOrCreateUUID() {
   return newUuid;
 }
 
+/**
+ * Membuat jendela aplikasi utama (BrowserWindow).
+ * Menghitung koordinat X dan Y agar jendela selalu muncul di sudut kanan bawah layar
+ * (dekat area tray/jam Windows), serta mematikan "backgroundThrottling" 
+ * agar proses telemetri tidak tersendat (throttled) saat aplikasi berada di latar belakang.
+ */
 function createWindow() {
   const primaryDisplay = screen.getPrimaryDisplay();
   const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize;
@@ -38,10 +49,11 @@ function createWindow() {
   const windowWidth = 380;
   const windowHeight = 520;
 
-  // Calculate bottom right corner with 15px padding
+  // Kalkulasi agar jendela melayang di ujung kanan bawah (15px padding)
   const x = workAreaX + screenWidth - windowWidth - 15;
   const y = workAreaY + screenHeight - windowHeight - 15;
 
+  // Mengecek apakah aplikasi dijalankan dari Startup otomatis
   const isHiddenBoot = process.argv.includes('--hidden');
 
   mainWindow = new BrowserWindow({
@@ -51,16 +63,16 @@ function createWindow() {
     y: y,
     resizable: false,
     autoHideMenuBar: true,
-    show: !isHiddenBoot,
+    show: !isHiddenBoot, // Sembunyikan otomatis jika berjalan saat Windows baru menyala
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
       contextIsolation: true,
-      backgroundThrottling: false // CRITICAL: Prevent 1Hz throttling when window is in tray
+      backgroundThrottling: false // SANGAT KRUSIAL: Mencegah penurunan FPS ke 1Hz saat diminimize
     }
   });
 
-  // Hide window instead of closing
+  // Saat jendela ditutup lewat tombol X, aplikasi hanya disembunyikan (minimize ke tray), bukan dimatikan.
   mainWindow.on('close', (e) => {
     if (!isQuitting) {
       e.preventDefault();
@@ -75,8 +87,11 @@ function createWindow() {
   }
 }
 
+/**
+ * Membuat ikon Sistem Tray (di sudut kanan bawah taskbar).
+ * Mendaftarkan menu konteks (klik kanan) untuk memunculkan atau mematikan aplikasi sepenuhnya.
+ */
 function createTray() {
-  // Use a robust .ico file for Windows system tray
   let iconPath = path.join(__dirname, '../public/icon.ico');
   if (!isDev) {
     iconPath = path.join(__dirname, '../dist/icon.ico');
@@ -104,12 +119,14 @@ function createTray() {
   tray.setToolTip('Audio Monitor Agent');
   tray.setContextMenu(contextMenu);
   
+  // Memunculkan jendela utama saat ikon tray di-klik kiri
   tray.on('click', () => {
     mainWindow.show();
   });
 }
 
 
+// Memastikan hanya ada 1 instansi aplikasi yang berjalan (Single Instance Lock)
 const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
   app.quit();
@@ -124,7 +141,10 @@ if (!gotTheLock) {
   });
 }
 
+// Inisialisasi utama Electron
 app.whenReady().then(() => {
+  // Memberikan izin otomatis untuk permintaan perangkat keras (seperti mikrofon) 
+  // tanpa memunculkan dialog popup yang mengganggu ke user
   session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
     callback(true);
   });
@@ -152,7 +172,10 @@ app.on('before-quit', () => {
   isQuitting = true;
 });
 
-// IPC Handlers
+// ============================================
+// IPC Handlers (Jembatan komunikasi UI ke Sistem)
+// ============================================
+
 ipcMain.handle('get-uuid', () => {
   return getOrCreateUUID();
 });
@@ -161,6 +184,7 @@ ipcMain.handle('get-autostart', () => {
   return app.getLoginItemSettings().openAtLogin;
 });
 
+// Mengatur agar aplikasi menyala otomatis (Startup) ketika Windows boot
 ipcMain.on('set-autostart', (event, enable) => {
   app.setLoginItemSettings({
     openAtLogin: enable,
@@ -171,6 +195,11 @@ ipcMain.on('set-autostart', (event, enable) => {
 
 let previousCpus = require('os').cpus();
 
+/**
+ * Menghitung penggunaan CPU (%) dan RAM (%) dari sistem operasi.
+ * Membandingkan waktu 'idle' dan waktu prosesor total sejak pemanggilan sebelumnya 
+ * untuk menghasilkan angka load CPU yang akurat (seperti di Task Manager).
+ */
 ipcMain.handle('get-hardware-telemetry', () => {
   const os = require('os');
   const free = os.freemem();
@@ -204,6 +233,7 @@ ipcMain.handle('get-hardware-telemetry', () => {
   };
 });
 
+// Menampilkan Pop-Up Notifikasi Windows
 ipcMain.on('show-notification', (event, { title, body }) => {
   new Notification({ title, body }).show();
 });

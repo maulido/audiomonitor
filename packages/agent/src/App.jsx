@@ -50,6 +50,9 @@ function App() {
     return saved !== null ? Number(saved) : 3;
   });
   const [audioDevices, setAudioDevices] = useState([]);
+  const audioDevicesRef = useRef([]);
+  useEffect(() => { audioDevicesRef.current = audioDevices; }, [audioDevices]);
+
 
   const [tick, setTick] = useState(0);
   useEffect(() => {
@@ -106,6 +109,31 @@ function App() {
   }, []);
 
   
+  
+  const handleConfigUpdate = (config) => {
+    if (config.agentName !== undefined) setAgentName(config.agentName);
+    if (config.noiseGate !== undefined) setNoiseGate(config.noiseGate);
+    if (config.silenceTimeoutSec !== undefined) setSilenceTimeoutSec(config.silenceTimeoutSec);
+    if (config.deadMicTimeoutSec !== undefined) setDeadMicTimeoutSec(config.deadMicTimeoutSec);
+    if (config.clippingThreshold !== undefined) setClippingThreshold(config.clippingThreshold);
+    if (config.clippingDurationSec !== undefined) setClippingDurationSec(config.clippingDurationSec);
+    if (config.obsSourceName !== undefined) setObsSourceName(config.obsSourceName);
+    if (config.micDriverName !== undefined) {
+      const devices = audioDevicesRef.current;
+      const targetDevice = devices.find(d => d.label === config.micDriverName || (d.label || 'Default Microphone') === config.micDriverName);
+      if (targetDevice) {
+        setSelectedMicId(targetDevice.deviceId);
+        setMicDriverName(targetDevice.label || 'Default Microphone');
+        if (audioProcessor.current) {
+          audioProcessor.current.stop();
+          audioProcessor.current.start(targetDevice.deviceId).catch(console.error);
+        }
+      }
+    }
+  };
+  const handleConfigUpdateRef = useRef(handleConfigUpdate);
+  useEffect(() => { handleConfigUpdateRef.current = handleConfigUpdate; });
+  
   const obsSourceNameRef = useRef(obsSourceName);
   const noiseGateRef = useRef(noiseGate);
   
@@ -158,8 +186,12 @@ function App() {
       });
 
       telemetryClient.current.setRenameListener((newName) => {
-        setAgentName(newName);
-      });
+          setAgentName(newName);
+        });
+
+        telemetryClient.current.setConfigUpdateListener((config) => {
+          if (handleConfigUpdateRef.current) handleConfigUpdateRef.current(config);
+        });
 
       return () => {
         telemetryClient.current.disconnect();
@@ -435,9 +467,14 @@ function App() {
       ramUsage: hardwareUsage.ramUsage,
       isMonitoringActive,
       isStreaming,
-      streamTimecode
-    };
-  }, [micLevel, rawMicLevel, micDb, micClipping, obsSources, noiseGate, obsLevel, obsDb, status, hardwareUsage, uuid, agentName, micDriverName, obsSourceName, isMonitoringActive, isStreaming, streamTimecode]);
+        streamTimecode,
+        silenceTimeoutSec,
+        deadMicTimeoutSec,
+        clippingThreshold,
+        clippingDurationSec,
+        audioDevices: audioDevicesRef.current.map(d => d.label || 'Default Microphone')
+      };
+  }, [micLevel, rawMicLevel, micDb, micClipping, obsSources, noiseGate, obsLevel, obsDb, status, hardwareUsage, uuid, agentName, micDriverName, obsSourceName, isMonitoringActive, isStreaming, streamTimecode, silenceTimeoutSec, deadMicTimeoutSec, clippingThreshold, clippingDurationSec]);
 
   // Telemetry Sender (Throttled to 500ms)
   useEffect(() => {

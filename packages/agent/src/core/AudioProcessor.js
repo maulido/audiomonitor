@@ -1,4 +1,13 @@
+/**
+ * Class AudioProcessor
+ * Bertanggung jawab untuk menangkap aliran audio dari mikrofon perangkat keras,
+ * menganalisis frekuensi/level volumenya, dan menghitung persentase tingkat kebisingan (Noise Level).
+ */
 class AudioProcessor {
+  /**
+   * Konstruktor untuk menginisiasi prosesor audio.
+   * @param {Function} onLevelChange - Fungsi callback yang akan dipanggil setiap kali ada pembaruan level audio.
+   */
   constructor(onLevelChange) {
     this.audioContext = null;
     this.analyser = null;
@@ -7,52 +16,76 @@ class AudioProcessor {
     this.onLevelChange = onLevelChange; // Callback for UI
   }
 
+  /**
+   * Memulai pemantauan mikrofon.
+   * Akan meminta izin mikrofon, membuat AudioContext, dan menjalankan loop analisis audio.
+   * @param {string|null} deviceId - ID Perangkat mikrofon yang ingin digunakan. Jika null, menggunakan mikrofon default.
+   */
   async start(deviceId = null) {
     try {
+      // Mendefinisikan aturan permintaan media (hanya audio)
       const constraints = {
         audio: deviceId ? { deviceId: { exact: deviceId } } : true,
         video: false
       };
+      
+      // Meminta akses aliran (stream) mikrofon dari sistem operasi
       this.stream = await navigator.mediaDevices.getUserMedia(constraints);
+      
+      // Membuat AudioContext standar Web Audio API
       this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
       if (this.audioContext.state === 'suspended') {
         await this.audioContext.resume();
       }
+      
+      // Membuat node Analyser untuk membaca gelombang suara (PCM)
       this.analyser = this.audioContext.createAnalyser();
       this.microphone = this.audioContext.createMediaStreamSource(this.stream);
       
+      // Mengatur seberapa mulus pergerakan nilai audio dan ukuran sampel FFT
       this.analyser.smoothingTimeConstant = 0.8;
       this.analyser.fftSize = 1024;
       this.microphone.connect(this.analyser);
 
+      // Buffer array untuk menampung gelombang data audio mentah
       const pcmData = new Float32Array(this.analyser.fftSize);
       
       let isRunning = true;
       this.isRunning = isRunning;
       
+      /**
+       * Fungsi loop internal untuk terus membaca data mikrofon secara real-time.
+       */
       const updateLevel = () => {
         if (!this.isRunning) return;
         
+        // Memasukkan data gelombang suara (time-domain) ke dalam pcmData
         this.analyser.getFloatTimeDomainData(pcmData);
         let sum = 0;
         let clipCount = 0;
+        
+        // Mengkalkulasi jumlah kuadrat amplitudo (RMS) dan mengecek apakah gelombang mencapai puncak (clipping)
         for (let i = 0; i < pcmData.length; i++) {
           sum += pcmData[i] * pcmData[i];
           if (Math.abs(pcmData[i]) >= 0.99) clipCount++;
         }
         
+        // Menghitung nilai Root Mean Square (RMS) dan mengkonversinya ke Decibel (dB)
         let rms = Math.sqrt(sum / pcmData.length);
         let db = rms > 0 ? 20 * Math.log10(rms) : -100;
+        
+        // Memetakan nilai dB (-60 sampai 0) menjadi nilai presentase (0% sampai 100%)
         let level = Math.max(0, Math.min(100, (db + 60) * (100 / 60)));
         
         if (this.onLevelChange) {
-          // Send raw level
+          // Menentukan apakah audio "pecah" (clipping) jika lebih dari 5 sampel menyentuh puncak
           const isClipping = clipCount > 5;
+          // Mengirim hasil kembali ke callback UI
           this.onLevelChange({ level, db: parseFloat(db.toFixed(1)), isClipping });
         }
         
-        // Use setTimeout instead of requestAnimationFrame so it keeps running when window is minimized/hidden in tray
-        this.animationFrame = setTimeout(updateLevel, 50); // ~20fps polling is enough for telemetry
+        // Menggunakan setTimeout agar iterasi tetap berjalan walaupun jendela tertutup (Background mode)
+        this.animationFrame = setTimeout(updateLevel, 50); // ~20fps polling
       };
       
       updateLevel();
@@ -61,6 +94,10 @@ class AudioProcessor {
     }
   }
 
+  /**
+   * Menghentikan seluruh proses pemantauan audio, membersihkan memory,
+   * dan mematikan perangkat mikrofon di sistem.
+   */
   stop() {
     this.isRunning = false;
     if (this.animationFrame) clearTimeout(this.animationFrame);

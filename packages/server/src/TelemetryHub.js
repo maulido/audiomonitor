@@ -59,6 +59,22 @@ class TelemetryHub {
         this.handleTelemetry(data);
       });
 
+      socket.on('agent-config-update', (data) => {
+        if (!data || !data.uuid || !data.config) return;
+        
+        // If config includes a name change, save it via ConfigManager
+        if (data.config.agentName) {
+          this.configManager.setPcName(data.uuid, data.config.agentName);
+          const existing = this.lastKnownState.get(data.uuid) || {};
+          existing.pcName = data.config.agentName;
+          this.lastKnownState.set(data.uuid, existing);
+          this.io.to('dashboards').emit('dashboard-update', existing);
+        }
+
+        // Forward configuration to the specific agent
+        this.io.to('agent-' + data.uuid).emit('update-config', data.config);
+      });
+
       socket.on('agent-rename', (data) => { if (!data) return;
           if (data.uuid && data.newName) {
             this.configManager.setPcName(data.uuid, data.newName);
