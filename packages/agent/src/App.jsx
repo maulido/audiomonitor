@@ -90,7 +90,19 @@ function App() {
 
   useEffect(() => {
     let streamTimer;
+    let sourcesTimer;
     if (obsConnected) {
+      // Fetch detailed sources once on connect, then every 10s
+      const fetchSources = () => {
+        if (obsClient.current) {
+          obsClient.current.getDetailedSources().then(sources => {
+            setObsSources(sources);
+          }).catch(console.error);
+        }
+      };
+      fetchSources();
+      sourcesTimer = setInterval(fetchSources, 10000);
+
       streamTimer = setInterval(() => {
         if (obsClient.current) {
           let timeoutId;
@@ -114,7 +126,10 @@ function App() {
       setIsStreaming(false);
       setStreamTimecode('00:00:00');
     }
-    return () => clearInterval(streamTimer);
+    return () => {
+      clearInterval(streamTimer);
+      clearInterval(sourcesTimer);
+    };
   }, [obsConnected]);
   const [autoStart, setAutoStart] = useState(false);
   const [obsSyncStreaming, setObsSyncStreaming] = useState(() => localStorage.getItem('obsSyncStreaming') === 'true');

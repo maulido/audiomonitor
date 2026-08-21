@@ -182,17 +182,25 @@ class OBSClient {
           const volRes = await this.obs.call('GetInputVolume', { inputName: input.inputName });
           const monRes = await this.obs.call('GetInputAudioMonitorType', { inputName: input.inputName });
           
+          let hardwareId = 'Unknown';
+          try {
+            const setRes = await this.obs.call('GetInputSettings', { inputName: input.inputName });
+            hardwareId = setRes.inputSettings.device_id || setRes.inputSettings.device || 'Default';
+          } catch (err) {}
+          
           detailed.push({
             name: input.inputName,
             muted: muteRes.inputMuted,
             db: parseFloat((volRes.inputVolumeDb).toFixed(1)),
             volume: volRes.inputVolumeMul,
-            monitorType: monRes.monitorType
+            monitorType: monRes.monitorType,
+            hardwareId: hardwareId
           });
         } catch (e) {}
       }
       return detailed;
-    } catch (e) {
+    } catch (error) {
+      console.error("Failed to get detailed sources", error);
       return [];
     }
   }

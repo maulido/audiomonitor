@@ -665,8 +665,13 @@ function App() {
                         <div className="meter-row">
                           <div className="meter-info" style={{ width: '145px', flexShrink: 0 }}>
                             <span className="meter-title">OBS Output</span>
-                              <span className="meter-device" style={{ whiteSpace: 'normal', wordBreak: 'break-word', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', lineHeight: '1.2' }}>{agent.obsSourceName || 'System / Desktop'}</span>
-                            </div>
+                                <span className="meter-device" style={{ whiteSpace: 'normal', wordBreak: 'break-word', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', lineHeight: '1.2' }}>{agent.obsSourceName || 'System / Desktop'}</span>
+                                {agent.obsSources && agent.obsSources.find(s => s.name === agent.obsSourceName) && agent.obsSources.find(s => s.name === agent.obsSourceName).hardwareId && agent.obsSources.find(s => s.name === agent.obsSourceName).hardwareId !== 'Default' && agent.obsSources.find(s => s.name === agent.obsSourceName).hardwareId !== 'Unknown' && (
+                                  <span style={{ display: 'block', fontSize: '10px', color: '#888', marginTop: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={agent.obsSources.find(s => s.name === agent.obsSourceName).hardwareId}>
+                                    ID: {agent.obsSources.find(s => s.name === agent.obsSourceName).hardwareId.split('{')[0].substring(0, 15)}...
+                                  </span>
+                                )}
+                              </div>
                             {agent.obsHistory && (
                               <svg width="100%" height="20" viewBox="0 0 80 20" preserveAspectRatio="none" className="sparkline" style={{ flex: 1, margin: "0 10px" }}>
                                 <polyline
