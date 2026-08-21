@@ -533,3 +533,29 @@ input[type=range].range-danger::-webkit-slider-thumb {
 }
 .icon-btn:hover { background: rgba(255,255,255,0.08); }
 .toggle-btn { border: none; }
+
+
+/* Fix Agent Card Spacing & Icons */
+.agent-card {
+  gap: 0 !important;
+}
+
+.status-area {
+  margin: 16px 20px !important;
+}
+
+.meters {
+  gap: 6px !important;
+  padding-bottom: 20px !important;
+}
+
+.icon-btn {
+  background: transparent !important;
+  border: none !important;
+  color: var(--text-muted);
+}
+
+.icon-btn:hover {
+  background: rgba(255, 255, 255, 0.08) !important;
+  color: #fff;
+}
