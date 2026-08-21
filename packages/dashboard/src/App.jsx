@@ -642,7 +642,7 @@ function App() {
                             <span className="meter-title">OBS Output</span>
                                 <span className="meter-device" style={{ whiteSpace: 'normal', wordBreak: 'break-word', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', lineHeight: '1.2' }}>{agent.obsSourceName || 'System / Desktop'}
                                   {agent.obsSources && agent.obsSources.find(s => s.name === agent.obsSourceName) && agent.obsSources.find(s => s.name === agent.obsSourceName).hardwareId && agent.obsSources.find(s => s.name === agent.obsSourceName).hardwareId.toLowerCase() !== 'default' && agent.obsSources.find(s => s.name === agent.obsSourceName).hardwareId.toLowerCase() !== 'unknown' && (
-                                    <span style={{ color: '#888' }}> - {agent.obsSources.find(s => s.name === agent.obsSourceName).hardwareId.split('{')[0] || 'Hardware'}</span>
+                                    <span style={{ color: '#888' }}> - {agent.obsSources.find(s => s.name === agent.obsSourceName).hardwareId}</span>
                                   )}
                                 </span>
                               </div>
