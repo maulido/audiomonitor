@@ -70,8 +70,8 @@ body {
 .summary-value { font-size: 2.5rem; font-weight: 700; line-height: 1; margin-bottom: 8px; }
 .summary-label { color: var(--text-muted); font-size: 0.85rem; text-transform: uppercase; letter-spacing: 1px; font-weight: 600; }
 
-.toolbar { display: flex; gap: 16px; margin-bottom: 24px; }
-.search-input, .filter-select { background: var(--bg-card); border: 1px solid var(--border); color: var(--text-main); padding: 10px 16px; border-radius: 8px; font-size: 0.95rem; outline: none; transition: border-color 0.2s; }
+.toolbar { display: flex; gap: 16px; margin-bottom: 24px; align-items: center; }
+.search-input, .filter-select {  background: var(--bg-card); border: 1px solid var(--border); color: var(--text-main); padding: 10px 16px; border-radius: 8px; font-size: 0.95rem; outline: none; transition: border-color 0.2s;  height: 42px; box-sizing: border-box; }
 .search-input { flex: 1; max-width: 400px; }
 .search-input:focus, .filter-select:focus { border-color: var(--accent); }
 

@@ -551,7 +551,7 @@ function App() {
                                 <span className="meter-device" title={source.monitorType}>{monitorStr}</span>
                               </div>
                               
-                              <div style={{ width: '65px', textAlign: 'right', fontSize: '0.75rem', fontFamily: 'monospace', color: 'var(--text-muted)' }}>{source.db !== undefined ? source.db + ' dB' : ''}</div>
+                              <div style={{ width: '65px', textAlign: 'right', fontSize: '0.75rem', fontFamily: 'monospace', color: 'var(--text-muted)' }}>{source.db !== undefined ? source.db.toFixed(1) + ' dB' : ''}</div>
                             </div>
                           );
                         })
@@ -559,18 +559,17 @@ function App() {
                         <div className="meter-row">
                           <div className="meter-info" style={{ width: '145px', flexShrink: 0 }}>
                             <span className="meter-title">OBS Output</span>
-                            <span className="meter-device" style={{ whiteSpace: 'normal', wordBreak: 'break-word', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', lineHeight: '1.2' }}>{agent.obsSourceName || 'System / Desktop'}</span>
-                          </div>
-                          {agent.obsHistory && (
-                            <svg width="100%" height="20" viewBox="0 0 80 20" preserveAspectRatio="none" className="sparkline" style={{ flex: 1, margin: "0 10px" }}>
-                              <polyline
-                                points={agent.obsHistory.map((val, i) => `${i * (80/30)},${20 - ((val || 0) / 100) * 20}`).join(' ')}
-                                fill="none" stroke="#3b82f6" strokeWidth="1.5"
-                              />
-                            </svg>
-                          )}
-                          
-                          <div style={{ width: '65px' }}></div>
+                              <span className="meter-device" style={{ whiteSpace: 'normal', wordBreak: 'break-word', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', lineHeight: '1.2' }}>{agent.obsSourceName || 'System / Desktop'}</span>
+                            </div>
+                            {agent.obsHistory && (
+                              <svg width="100%" height="20" viewBox="0 0 80 20" preserveAspectRatio="none" className="sparkline" style={{ flex: 1, margin: "0 10px" }}>
+                                <polyline
+                                  points={agent.obsHistory.map((val, i) => `${i * (80/30)},${20 - ((val || 0) / 100) * 20}`).join(' ')}
+                                  fill="none" stroke="#3b82f6" strokeWidth="1.5"
+                                />
+                              </svg>
+                            )}
+                            <div style={{ width: '65px', textAlign: 'right', fontSize: '0.75rem', fontFamily: 'monospace', color: 'var(--text-muted)' }}>{ (agent.obsDb !== undefined ? agent.obsDb : ((agent.obsLevel || 0) * 0.6 - 60)).toFixed(1) + ' dB' }</div>
                         </div>
                       )}
                     </div>

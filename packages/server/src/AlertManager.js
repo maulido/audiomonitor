@@ -76,30 +76,12 @@ class AlertManager {
     }
 
     // Hardware checks
+    // Disabled per user request (August 21, 2026)
+    /*
     if (data.cpuUsage > 85 || data.ramUsage > 85) {
-      const hwKey = `${data.uuid}_hw`;
-      const lastHwAlertTime = this.lastAlertState[hwKey] || 0;
-      const now = Date.now();
-      const throttleMs = (this.configManager.getTelegramConfig().interval ?? 60) * 1000;
-      
-      if (now - lastHwAlertTime > throttleMs) {
-        let issues = [];
-        if (data.cpuUsage > 85) issues.push(`CPU (${data.cpuUsage}%)`);
-        if (data.ramUsage > 85) issues.push(`RAM (${data.ramUsage}%)`);
-        
-        let details = `Beban tinggi pada ${issues.join(' & ')}`;
-        this.sendTelegramAlert(`[WARN] <b>HARDWARE WARNING</b>\n<b>${safePcName}</b> mengalami ${this.escapeHtml(details)}.`);
-        if (this.dbManager) this.dbManager.logIncident(data.uuid, pcName, 'HARDWARE_WARNING', details);
-        this.lastAlertState[hwKey] = now;
-      }
-    } else {
-      const hwKey = `${data.uuid}_hw`;
-      if (this.lastAlertState[hwKey]) {
-        this.sendTelegramAlert(`[OK] <b>${safePcName}</b> hardware sudah kembali stabil.`);
-        if (this.dbManager) this.dbManager.logIncident(data.uuid, pcName, 'RECOVERY', 'Hardware kembali stabil');
-        delete this.lastAlertState[hwKey];
-      }
+      ...
     }
+    */
   }
 
   processOffline(uuid, pcName) {

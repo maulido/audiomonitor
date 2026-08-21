@@ -13,6 +13,7 @@ function App() {
   const [obsSources, setObsSources] = useState([]);
   const [micLevel, setMicLevel] = useState(0);
   const [obsLevel, setObsLevel] = useState(0);
+  const [obsDb, setObsDb] = useState(-100);
   const [status, setStatus] = useState('AMAN');
   const [obsConnected, setObsConnected] = useState(false);
     const [obsError, setObsError] = useState('');
@@ -213,8 +214,10 @@ function App() {
           const db = levelMul > 0 ? 20 * Math.log10(levelMul) : -100;
           const mappedLevel = Math.max(0, Math.min(100, (db + 60) * (100 / 60)));
           setObsLevel(mappedLevel);
+          setObsDb(db);
         } else {
           setObsLevel(0);
+          setObsDb(-100);
         }
       },
       (isActive) => {
@@ -286,6 +289,13 @@ function App() {
   const currentObsLevel = useRef(0);
   useEffect(() => { currentMicLevel.current = micLevel; }, [micLevel]);
   useEffect(() => { currentObsLevel.current = obsLevel; }, [obsLevel]);
+
+    useEffect(() => {
+      if (!obsConnected) {
+      setObsLevel(0);
+      setObsDb(-100);
+    }
+    }, [obsConnected]);
 
   // Hybrid Monitoring Logic
   useEffect(() => {
@@ -418,14 +428,16 @@ function App() {
       micDriverName,
       obsSourceName,
       micLevel,
-      rawMicLevel, micDb, micClipping, obsSources, noiseGate, obsLevel, status,
+      rawMicLevel, micDb, micClipping, obsSources, noiseGate, obsLevel,
+      obsDb,
+      status,
       cpuUsage: hardwareUsage.cpuUsage,
       ramUsage: hardwareUsage.ramUsage,
       isMonitoringActive,
       isStreaming,
       streamTimecode
     };
-  }, [micLevel, rawMicLevel, micDb, micClipping, obsSources, noiseGate, obsLevel, status, hardwareUsage, uuid, agentName, micDriverName, obsSourceName, isMonitoringActive, isStreaming, streamTimecode]);
+  }, [micLevel, rawMicLevel, micDb, micClipping, obsSources, noiseGate, obsLevel, obsDb, status, hardwareUsage, uuid, agentName, micDriverName, obsSourceName, isMonitoringActive, isStreaming, streamTimecode]);
 
   // Telemetry Sender (Throttled to 500ms)
   useEffect(() => {
@@ -441,7 +453,16 @@ function App() {
     return () => clearInterval(telemetryInterval);
   }, []);
 
-  const connectOBS = async () => {
+  const disconnectOBS = () => {
+      if (obsClient.current) {
+        obsClient.current.disconnect();
+      }
+      setObsConnected(false);
+      setObsError('');
+      setIsConnectingOBS(false);
+    };
+
+    const connectOBS = async () => {
       if (isConnectingOBS) return;
       setObsError('');
       setIsConnectingOBS(true);
@@ -608,11 +629,23 @@ function App() {
             </div>
 
             <div className="setting-group full">
+              <label style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                <span>Noise Gate (%)</span>
+                <span style={{ color: '#ff9800', fontWeight: 'bold' }}>{noiseGate}%</span>
+              </label>
+              <input type="range" className="slider-warning" min="0" max="100" value={noiseGate} onChange={e => setNoiseGate(Number(e.target.value))} style={{ width: '100%', cursor: 'pointer' }} />
+            </div>
+
+            <div className="setting-group full">
+              <label style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                <span>Batas Pecah (%)</span>
+                <span style={{ color: '#f44336', fontWeight: 'bold' }}>{clippingThreshold}%</span>
+              </label>
+              <input type="range" className="slider-danger" min="50" max="100" value={clippingThreshold} onChange={e => setClippingThreshold(Number(e.target.value))} style={{ width: '100%', cursor: 'pointer' }} />
+            </div>
+
+            <div className="setting-group full">
               <div className="split-row">
-                <div className="setting-group" style={{ flex: 1 }}>
-                  <label>Noise Gate (%)</label>
-                  <input type="number" min="0" max="100" value={noiseGate} onChange={e => setNoiseGate(Number(e.target.value))} />
-                </div>
                 <div className="setting-group" style={{ flex: 1 }}>
                   <label>Silence (s)</label>
                   <input type="number" min="5" max="3600" value={silenceTimeoutSec} onChange={e => setSilenceTimeoutSec(Number(e.target.value))} style={{ height: "28px", margin: 0 }} />
@@ -621,21 +654,14 @@ function App() {
                   <label>Dead Mic (s)</label>
                   <input type="number" min="15" max="7200" value={deadMicTimeoutSec} onChange={e => setDeadMicTimeoutSec(Number(e.target.value))} style={{ height: "28px", margin: 0 }} />
                 </div>
-              </div>
-            </div>
-
-            <div className="setting-group full">
-              <div className="split-row">
-                <div className="setting-group" style={{ flex: 1 }}>
-                  <label>Batas Pecah (%)</label>
-                  <input type="number" min="50" max="100" value={clippingThreshold} onChange={e => setClippingThreshold(Number(e.target.value))} />
-                </div>
                 <div className="setting-group" style={{ flex: 1 }}>
                   <label>Durasi Pecah (s)</label>
                   <input type="number" min="1" max="10" value={clippingDurationSec} onChange={e => setClippingDurationSec(Number(e.target.value))} style={{ height: "28px", margin: 0 }} />
                 </div>
               </div>
             </div>
+
+            
 
             <div className="setting-group full" style={{ marginTop: '5px', paddingTop: '10px', borderTop: '1px dashed #333' }}>
               <label>OBS IP & Port</label>
@@ -663,18 +689,19 @@ function App() {
                 </div>
                 {obsError && <div style={{color: '#f44336', fontSize: '11px', marginBottom: '8px', textAlign: 'center', fontWeight: 'bold'}}>{obsError}</div>}
                 <button 
-                  onClick={connectOBS} 
-                  disabled={obsConnected || isConnectingOBS}
+                  onClick={obsConnected ? disconnectOBS : connectOBS} 
+                  disabled={isConnectingOBS}
                   style={{
                     width: '100%',
                     padding: '8px',
-                    background: obsConnected ? '#1e3a24' : (isConnectingOBS ? '#555' : '#2196f3'),
-                    color: obsConnected ? '#4caf50' : '#fff',
-                    border: 'none', borderRadius: '4px', cursor: (obsConnected || isConnectingOBS) ? 'default' : 'pointer',
+                    background: obsConnected ? '#5c1f1f' : (isConnectingOBS ? '#555' : '#2196f3'),
+                    color: obsConnected ? '#ff8a8a' : '#fff',
+                    border: '1px solid ' + (obsConnected ? '#ff5252' : 'transparent'),
+                    borderRadius: '4px', cursor: isConnectingOBS ? 'default' : 'pointer',
                     fontWeight: 'bold'
                   }}
                 >
-                  {obsConnected ? 'OBS Connected' : (isConnectingOBS ? 'Connecting...' : 'Connect to OBS')}
+                  {obsConnected ? 'Disconnect from OBS' : (isConnectingOBS ? 'Connecting...' : 'Connect to OBS')}
                 </button>
               </div>
 
