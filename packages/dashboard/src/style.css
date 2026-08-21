@@ -368,3 +368,52 @@ input[type=range].range-warning::-webkit-slider-thumb {
 input[type=range].range-danger::-webkit-slider-thumb {
   border: 2px solid var(--danger);
 }
+
+
+/* Modal Section Grouping */
+.modal-section {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.modal-section-title {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  margin-bottom: 12px;
+  font-weight: 600;
+}
+
+.modal-body .setting-group label {
+  font-size: 0.85rem;
+  color: #aaa;
+  margin-bottom: 6px;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, #2ecc71, #27ae60);
+  color: #fff;
+  border: none;
+  padding: 12px;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+  width: 100%;
+  transition: all 0.2s;
+  box-shadow: 0 4px 12px rgba(46, 204, 113, 0.2);
+}
+
+.btn-primary:hover {
+  background: linear-gradient(135deg, #27ae60, #2196f3);
+  box-shadow: 0 4px 15px rgba(33, 150, 243, 0.3);
+}
+
+.timeout-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}

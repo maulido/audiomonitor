@@ -787,7 +787,7 @@ function App() {
 
       {configModalAgent && (
         <div className="modal-overlay">
-          <div className="modal" style={{ maxWidth: '500px' }}>
+          <div className="modal">
             <div className="modal-header">
               <div>
                 <h3 style={{ margin: 0 }}>Pengaturan: {configModalAgent.pcName}</h3>
@@ -795,68 +795,78 @@ function App() {
               </div>
               <button className="close-btn" onClick={() => setConfigModalAgent(null)}>×</button>
             </div>
-            <div className="modal-body">
-              <form onSubmit={handleRemoteConfigSave}>
-                <div className="setting-group">
-                  <label>PC Name</label>
-                  <input className="form-input" value={remoteConfig.agentName} onChange={e => setRemoteConfig({...remoteConfig, agentName: e.target.value})} required />
-                </div>
-                
-                <div className="setting-group">
-                  <label>Hardware Microphone</label>
-                  {configModalAgent.audioDevices && configModalAgent.audioDevices.length > 0 ? (
-                    <select className="form-input" value={remoteConfig.micDriverName} onChange={e => setRemoteConfig({...remoteConfig, micDriverName: e.target.value})}>
-                      {configModalAgent.audioDevices.map((dev, i) => <option key={i} value={dev}>{dev}</option>)}
-                    </select>
-                  ) : (
-                    <input className="form-input" value={remoteConfig.micDriverName} onChange={e => setRemoteConfig({...remoteConfig, micDriverName: e.target.value})} />
-                  )}
-                </div>
-
-                <div className="setting-group">
-                  <label style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span>Noise Gate</span>
-                    <span style={{ color: 'var(--warning)', fontWeight: 'bold' }}>{remoteConfig.noiseGate}%</span>
-                  </label>
-                  <input className="range-slider range-warning" type="range" value={remoteConfig.noiseGate} onChange={e => setRemoteConfig({...remoteConfig, noiseGate: Number(e.target.value)})} min="0" max="100" />
-                </div>
-
-                <div className="setting-group">
-                  <label style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span>Batas Pecah (Clipping Threshold)</span>
-                    <span style={{ color: 'var(--danger)', fontWeight: 'bold' }}>{remoteConfig.clippingThreshold}%</span>
-                  </label>
-                  <input className="range-slider range-danger" type="range" value={remoteConfig.clippingThreshold} onChange={e => setRemoteConfig({...remoteConfig, clippingThreshold: Number(e.target.value)})} min="50" max="100" />
-                </div>
-
-                <div style={{ display: 'flex', gap: '10px' }}>
-                  <div className="setting-group" style={{ flex: 1 }}>
-                    <label>Silence (detik)</label>
-                    <input className="form-input" type="number" value={remoteConfig.silenceTimeoutSec} onChange={e => setRemoteConfig({...remoteConfig, silenceTimeoutSec: Number(e.target.value)})} min="1" />
+                          <div className="modal-body" style={{ padding: '24px' }}>
+                <form onSubmit={handleRemoteConfigSave}>
+                  
+                  <div className="modal-section">
+                    <div className="modal-section-title">Identity & Audio Sources</div>
+                    <div className="setting-group">
+                      <label>PC Name</label>
+                      <input className="form-input" value={remoteConfig.agentName} onChange={e => setRemoteConfig({...remoteConfig, agentName: e.target.value})} required />
+                    </div>
+                    
+                    <div className="setting-group">
+                      <label>Hardware Microphone</label>
+                      {configModalAgent.audioDevices && configModalAgent.audioDevices.length > 0 ? (
+                        <select className="form-input" value={remoteConfig.micDriverName} onChange={e => setRemoteConfig({...remoteConfig, micDriverName: e.target.value})}>
+                          {configModalAgent.audioDevices.map((dev, i) => <option key={i} value={dev}>{dev}</option>)}
+                        </select>
+                      ) : (
+                        <input className="form-input" value={remoteConfig.micDriverName} onChange={e => setRemoteConfig({...remoteConfig, micDriverName: e.target.value})} />
+                      )}
+                    </div>
+                    <div className="setting-group" style={{ marginBottom: 0 }}>
+                      <label>OBS Source Name</label>
+                      {configModalAgent.obsSources && configModalAgent.obsSources.length > 0 ? (
+                        <select className="form-input" value={remoteConfig.obsSourceName} onChange={e => setRemoteConfig({...remoteConfig, obsSourceName: e.target.value})}>
+                          {configModalAgent.obsSources.map((s, i) => <option key={i} value={s.name}>{s.name}</option>)}
+                        </select>
+                      ) : (
+                        <input className="form-input" value={remoteConfig.obsSourceName} onChange={e => setRemoteConfig({...remoteConfig, obsSourceName: e.target.value})} />
+                      )}
+                    </div>
                   </div>
-                  <div className="setting-group" style={{ flex: 1 }}>
-                    <label>Dead Mic (detik)</label>
-                    <input className="form-input" type="number" value={remoteConfig.deadMicTimeoutSec} onChange={e => setRemoteConfig({...remoteConfig, deadMicTimeoutSec: Number(e.target.value)})} min="1" />
-                  </div>
-                  <div className="setting-group" style={{ flex: 1 }}>
-                    <label>Durasi Pecah</label>
-                    <input className="form-input" type="number" value={remoteConfig.clippingDurationSec} onChange={e => setRemoteConfig({...remoteConfig, clippingDurationSec: Number(e.target.value)})} min="1" />
-                  </div>
-                </div>
 
-                <div className="setting-group">
-                  <label>OBS Source Name</label>
-                  {configModalAgent.obsSources && configModalAgent.obsSources.length > 0 ? (
-                    <select className="form-input" value={remoteConfig.obsSourceName} onChange={e => setRemoteConfig({...remoteConfig, obsSourceName: e.target.value})}>
-                      {configModalAgent.obsSources.map((s, i) => <option key={i} value={s.name}>{s.name}</option>)}
-                    </select>
-                  ) : (
-                    <input className="form-input" value={remoteConfig.obsSourceName} onChange={e => setRemoteConfig({...remoteConfig, obsSourceName: e.target.value})} />
-                  )}
-                </div>
-                <button type="submit" className="btn" style={{ background: 'var(--success)', color: '#fff', marginTop: '15px', width: '100%', padding: '10px', fontSize: '1rem', fontWeight: 'bold' }}>Save & Sync to Agent</button>
-              </form>
-            </div>
+                  <div className="modal-section">
+                    <div className="modal-section-title">Volume Thresholds</div>
+                    <div className="setting-group">
+                      <label style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span>Noise Gate</span>
+                        <span style={{ color: 'var(--warning)', fontWeight: 'bold' }}>{remoteConfig.noiseGate}%</span>
+                      </label>
+                      <input className="range-slider range-warning" type="range" value={remoteConfig.noiseGate} onChange={e => setRemoteConfig({...remoteConfig, noiseGate: Number(e.target.value)})} min="0" max="100" />
+                    </div>
+    
+                    <div className="setting-group" style={{ marginBottom: 0 }}>
+                      <label style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span>Batas Pecah (Clipping Threshold)</span>
+                        <span style={{ color: 'var(--danger)', fontWeight: 'bold' }}>{remoteConfig.clippingThreshold}%</span>
+                      </label>
+                      <input className="range-slider range-danger" type="range" value={remoteConfig.clippingThreshold} onChange={e => setRemoteConfig({...remoteConfig, clippingThreshold: Number(e.target.value)})} min="50" max="100" />
+                    </div>
+                  </div>
+
+                  <div className="modal-section" style={{ marginBottom: '24px' }}>
+                    <div className="modal-section-title">Timeout Rules</div>
+                    <div className="timeout-grid">
+                      <div className="setting-group" style={{ marginBottom: 0 }}>
+                        <label>Silence (s)</label>
+                        <input className="form-input" type="number" value={remoteConfig.silenceTimeoutSec} onChange={e => setRemoteConfig({...remoteConfig, silenceTimeoutSec: Number(e.target.value)})} min="1" />
+                      </div>
+                      <div className="setting-group" style={{ marginBottom: 0 }}>
+                        <label>Dead Mic (s)</label>
+                        <input className="form-input" type="number" value={remoteConfig.deadMicTimeoutSec} onChange={e => setRemoteConfig({...remoteConfig, deadMicTimeoutSec: Number(e.target.value)})} min="1" />
+                      </div>
+                      <div className="setting-group" style={{ marginBottom: 0 }}>
+                        <label>Pecah (s)</label>
+                        <input className="form-input" type="number" value={remoteConfig.clippingDurationSec} onChange={e => setRemoteConfig({...remoteConfig, clippingDurationSec: Number(e.target.value)})} min="1" />
+                      </div>
+                    </div>
+                  </div>
+  
+                  <button type="submit" className="btn-primary">Save & Sync to Agent</button>
+                </form>
+              </div>
           </div>
         </div>
       )}
