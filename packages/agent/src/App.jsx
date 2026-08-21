@@ -294,7 +294,7 @@ function App() {
         }).catch(console.error);
         
         obsClient.current.obs.call('GetCurrentProgramScene').then(res => {
-           setCurrentScene(res.currentProgramSceneName);
+           setCurrentScene(res ? res.currentProgramSceneName : '');
         }).catch(() => {});
         
         obsClient.current.onSceneChange = (sceneName) => {
