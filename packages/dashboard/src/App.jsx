@@ -651,25 +651,31 @@ function App() {
 
                       
                         
-                        <div className="meter-row">
-                          <div className="meter-info" style={{ width: '145px', flexShrink: 0 }}>
-                            <span className="meter-title">OBS Output</span>
-                                <span className="meter-device" style={{ whiteSpace: 'normal', wordBreak: 'break-word', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', lineHeight: '1.2' }}>{agent.obsSourceName || 'System / Desktop'}
-                                  {agent.obsSources && agent.obsSources.find(s => s.name === agent.obsSourceName) && (
-                                      <span style={{ color: '#888' }}> - {agent.obsSources.find(s => s.name === agent.obsSourceName).hardwareId === 'Unknown' ? (agent.micDriverName ? agent.micDriverName : 'Unknown') : agent.obsSources.find(s => s.name === agent.obsSourceName).hardwareId}</span>
-                                    )}
-                                </span>
+                        <div className="meter-row" style={{ opacity: (agent.obsConnected === false) ? 0.4 : 1 }}>
+                            <div className="meter-info" style={{ width: '145px', flexShrink: 0 }}>
+                              <span className="meter-title">OBS Output</span>
+                                  <span className="meter-device" style={{ whiteSpace: 'normal', wordBreak: 'break-word', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', lineHeight: '1.2' }}>{agent.obsConnected === false ? 'Terputus dari OBS' : (agent.obsSourceName || 'System / Desktop')}
+                                    {agent.obsConnected !== false && agent.obsSources && agent.obsSources.find(s => s.name === agent.obsSourceName) && (
+                                        <span style={{ color: '#888' }}> - {agent.obsSources.find(s => s.name === agent.obsSourceName).hardwareId === 'Unknown' ? (agent.micDriverName ? agent.micDriverName : 'Unknown') : agent.obsSources.find(s => s.name === agent.obsSourceName).hardwareId}</span>
+                                      )}
+                                  </span>
+                                </div>
+                              {agent.obsHistory && (
+                                <svg width="100%" height="20" viewBox="0 0 80 20" preserveAspectRatio="none" className="sparkline" style={{ flex: 1, margin: "0 10px" }}>
+                                  {agent.obsConnected === false ? (
+                                    <line x1="0" y1="10" x2="80" y2="10" stroke="var(--danger)" strokeWidth="1.5" strokeDasharray="4 2" />
+                                  ) : (
+                                    <polyline
+                                      points={agent.obsHistory.map((val, i) => `${i * (80/30)},${20 - ((val || 0) / 100) * 20}`).join(' ')}
+                                      fill="none" stroke="#3b82f6" strokeWidth="1.5"
+                                    />
+                                  )}
+                                </svg>
+                              )}
+                              <div style={{ width: '65px', textAlign: 'right', fontSize: '0.75rem', fontFamily: 'monospace', color: (agent.obsConnected === false) ? 'var(--danger)' : 'var(--text-muted)' }}>
+                                { agent.obsConnected === false ? 'DISCONNECTED' : ((agent.obsDb !== undefined ? agent.obsDb : ((agent.obsLevel || 0) * 0.6 - 60)).toFixed(1) + ' dB') }
                               </div>
-                            {agent.obsHistory && (
-                              <svg width="100%" height="20" viewBox="0 0 80 20" preserveAspectRatio="none" className="sparkline" style={{ flex: 1, margin: "0 10px" }}>
-                                <polyline
-                                  points={agent.obsHistory.map((val, i) => `${i * (80/30)},${20 - ((val || 0) / 100) * 20}`).join(' ')}
-                                  fill="none" stroke="#3b82f6" strokeWidth="1.5"
-                                />
-                              </svg>
-                            )}
-                            <div style={{ width: '65px', textAlign: 'right', fontSize: '0.75rem', fontFamily: 'monospace', color: 'var(--text-muted)' }}>{ (agent.obsDb !== undefined ? agent.obsDb : ((agent.obsLevel || 0) * 0.6 - 60)).toFixed(1) + ' dB' }</div>
-                          </div>
+                            </div>
                     </div>
 
                     <div className="card-footer">
