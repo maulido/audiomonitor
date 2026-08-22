@@ -37,6 +37,7 @@ function App() {
   const [obsDb, setObsDb] = useState(-100);
   const [status, setStatus] = useState('AMAN');
   const [obsConnected, setObsConnected] = useState(false);
+  const [isObsMutedBtn, setIsObsMutedBtn] = useState(false);
     const [obsError, setObsError] = useState('');
     const [isConnectingOBS, setIsConnectingOBS] = useState(false);
   const [serverConnected, setServerConnected] = useState(false);
@@ -102,6 +103,8 @@ function App() {
         if (obsClient.current) {
           obsClient.current.getDetailedSources().then(sources => {
             setObsSources(sources);
+              const currentSource = sources.find(s => s.name === obsSourceNameRef.current);
+              if (currentSource) setIsObsMutedBtn(currentSource.muted);
           }).catch(console.error);
         }
       };
@@ -149,7 +152,7 @@ function App() {
       clearInterval(streamTimer);
       clearInterval(sourcesTimer);
     };
-  }, [obsConnected]);
+  }, [obsConnected, isObsMutedBtn]);
   const [autoStart, setAutoStart] = useState(false);
   const [obsSyncStreaming, setObsSyncStreaming] = useState(() => localStorage.getItem('obsSyncStreaming') === 'true');
   const obsSyncStreamingRef = useRef(obsSyncStreaming);
@@ -206,7 +209,7 @@ function App() {
     localStorage.setItem('deadMicTimeoutSec', deadMicTimeoutSec.toString());
     localStorage.setItem('clippingThreshold', clippingThreshold.toString());
     localStorage.setItem('clippingDurationSec', clippingDurationSec.toString());
-  }, [agentName, serverIp, obsIp, obsPassword, obsSourceName, selectedMicId, noiseGate, silenceTimeoutSec, deadMicTimeoutSec, clippingThreshold, clippingDurationSec, obsConnected]);
+  }, [agentName, serverIp, obsIp, obsPassword, obsSourceName, selectedMicId, noiseGate, silenceTimeoutSec, deadMicTimeoutSec, clippingThreshold, clippingDurationSec, obsConnected, isObsMutedBtn]);
 
   // Core Instances (useRef to persist across renders without triggering re-renders)
   const audioProcessor = useRef(null);
@@ -301,6 +304,11 @@ function App() {
         obsClient.current.onSceneChange = (sceneName) => {
            setCurrentScene(sceneName);
         };
+      obsClient.current.onMuteStateChange = (inputName, isMuted) => {
+        if (inputName === obsSourceNameRef.current) {
+          setIsObsMutedBtn(isMuted);
+        }
+      };
       },
       () => () => { setObsConnected(false); if (window.electronAPI && window.electronAPI.writeLog) window.electronAPI.writeLog('WARN', 'OBS Terputus'); },
       (inputs) => {
@@ -394,7 +402,7 @@ function App() {
       setObsLevel(0);
       setObsDb(-100);
     }
-    }, [obsConnected]);
+    }, [obsConnected, isObsMutedBtn]);
 
   // Hybrid Monitoring Logic
   useEffect(() => {
@@ -498,7 +506,7 @@ function App() {
         lastNotificationTime.current = now;
       }
     }
-  }, [obsConnected, status, silenceTimeoutSec, deadMicTimeoutSec, isMonitoringActive, tick, clippingThreshold, clippingDurationSec, obsConnected]);
+  }, [obsConnected, status, silenceTimeoutSec, deadMicTimeoutSec, isMonitoringActive, tick, clippingThreshold, clippingDurationSec, obsConnected, isObsMutedBtn]);
 
   // Refs to hold latest values for telemetry throttling
   
@@ -530,6 +538,7 @@ function App() {
       rawMicLevel, micDb, micClipping, obsSources, noiseGate, obsLevel,
       obsDb,
         obsConnected,
+        isObsMutedBtn,
         status,
       cpuUsage: hardwareUsage.cpuUsage,
       ramUsage: hardwareUsage.ramUsage,
@@ -546,7 +555,7 @@ function App() {
         clippingDurationSec,
         audioDevices: audioDevicesRef.current.map(d => d.label || 'Default Microphone')
       };
-  }, [micLevel, rawMicLevel, micDb, micClipping, obsSources, noiseGate, obsLevel, obsDb, status, hardwareUsage, uuid, agentName, micDriverName, obsSourceName, isMonitoringActive, isStreaming, streamTimecode, streamBitrate, streamDroppedFrames, streamTotalFrames, currentScene, silenceTimeoutSec, deadMicTimeoutSec, clippingThreshold, clippingDurationSec, obsConnected]);
+  }, [micLevel, rawMicLevel, micDb, micClipping, obsSources, noiseGate, obsLevel, obsDb, status, hardwareUsage, uuid, agentName, micDriverName, obsSourceName, isMonitoringActive, isStreaming, streamTimecode, streamBitrate, streamDroppedFrames, streamTotalFrames, currentScene, silenceTimeoutSec, deadMicTimeoutSec, clippingThreshold, clippingDurationSec, obsConnected, isObsMutedBtn]);
 
   // Telemetry Sender (Throttled to 500ms)
   useEffect(() => {

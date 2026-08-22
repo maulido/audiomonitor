@@ -68,6 +68,12 @@ class OBSClient {
         this.onSceneChange(data.sceneName);
       }
     });
+    // Menangkap perubahan status Mute
+    this.obs.on('InputMuteStateChanged', (data) => {
+      if (this.onMuteStateChange) {
+        this.onMuteStateChange(data.inputName, data.inputMuted);
+      }
+    });
   }
 
   /**
