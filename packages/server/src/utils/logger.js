@@ -22,7 +22,8 @@ function writeLog(level, ...args) {
   const timeString = now.toTimeString().split(' ')[0]; // HH:MM:SS
   
   // Format the arguments into a single string
-  const message = args.map(a => typeof a === 'object' ? JSON.stringify(a) : a).join(' ');
+  const util = require('util');
+  const message = util.format(...args);
   const logLine = `[${timeString}] [${level}] ${message}\n`;
   
   if (level === 'ERROR' || level === 'WARN') {
