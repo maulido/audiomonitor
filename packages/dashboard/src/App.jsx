@@ -684,7 +684,7 @@ function App() {
                 <h3 style={{ margin: 0 }}><i className="fa-solid fa-terminal"></i> System Audit Logs</h3>
                 <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Real-time server logs for debugging</div>
               </div>
-              <button className="close-btn" onClick={() => setShowSystemLogs(false)}>✖</button>
+              <button className="close-btn" onClick={() => setShowSystemLogs(false)}><i className="fa-solid fa-times"></i></button>
             </div>
             <div className="modal-body" style={{ padding: '0' }}>
               <pre style={{ 
