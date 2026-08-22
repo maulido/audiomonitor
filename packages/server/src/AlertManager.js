@@ -88,19 +88,23 @@ class AlertManager {
     const safeStatus = this.escapeHtml(data.status.replace(/_/g, ' '));
     
     if (isDanger) {
-      const lastAlertTime = this.lastAlertState[data.uuid] || 0;
+      const state = this.lastAlertState[data.uuid] || { time: 0, status: null };
       const now = Date.now();
       
       // Batas waktu jeda (throttle) didapatkan dari konfigurasi interval di UI Dashboard
       const throttleMs = (this.configManager.getTelegramConfig().interval ?? 60) * 1000;
       
-      if (now - lastAlertTime > throttleMs) {
+      const isNewDanger = state.status !== data.status;
+      
+      if (isNewDanger || now - state.time > throttleMs) {
         this.sendTelegramAlert(
           `[ALERT] <b>AUDIO ISSUE</b>\n<b>${safePcName}</b> mengalami masalah: <b>${safeStatus}</b>`
         );
-        // Catat kejadian bahaya ke dalam Log / SQLite DB
-        if (this.dbManager) this.dbManager.logIncident(data.uuid, pcName, data.status, 'Audio/OBS Issue Detected');
-        this.lastAlertState[data.uuid] = now;
+        // Catat kejadian bahaya ke dalam Log / SQLite DB HANYA jika ini bahaya baru (jangan spam db tiap menit)
+        if (isNewDanger && this.dbManager) {
+          this.dbManager.logIncident(data.uuid, pcName, data.status, 'Audio/OBS Issue Detected');
+        }
+        this.lastAlertState[data.uuid] = { time: now, status: data.status };
       }
     } else if (data.status === 'AMAN' && this.lastAlertState[data.uuid]) {
       // Jika statusnya membaik menjadi AMAN, kirimkan notifikasi Recovery

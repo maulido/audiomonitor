@@ -510,11 +510,16 @@ function App() {
 
   // Refs to hold latest values for telemetry throttling
   
-  const lastAlertStatus = useRef('');
+  const lastAlertState = useRef({ status: '', time: 0 });
+  
   useEffect(() => {
     if (status.startsWith('BAHAYA') && !serverConnected && telegramConfig && telegramConfig.token && telegramConfig.chatId) {
-      if (lastAlertStatus.current !== status) {
-        lastAlertStatus.current = status;
+      const now = Date.now();
+      const throttleMs = (telegramConfig.interval || 60) * 1000;
+      const isNewStatus = lastAlertState.current.status !== status;
+      
+      if (isNewStatus || now - lastAlertState.current.time > throttleMs) {
+        lastAlertState.current = { status, time: now };
         const msg = `⚠️ <b>[OFFLINE ALERT]</b> AUDIO ISSUE\nPC <b>${agentName}</b> mengalami masalah: <b>${status}</b>\n<i>(Pesan ini dikirim otomatis oleh Agent karena Server Induk sedang terputus/mati)</i>`;
         fetch(`https://api.telegram.org/bot${telegramConfig.token}/sendMessage`, {
           method: 'POST',
@@ -523,9 +528,9 @@ function App() {
         }).catch(err => console.error('Offline Telegram Error:', err));
       }
     } else if (status === 'AMAN') {
-      lastAlertStatus.current = '';
+      lastAlertState.current = { status: '', time: 0 };
     }
-  }, [status, serverConnected, telegramConfig, agentName]);
+  }, [status, serverConnected, telegramConfig, agentName, tick]);
 
   const latestTelemetryData = useRef({});
   useEffect(() => {
