@@ -1,4 +1,5 @@
 let TelegramBot = require('node-telegram-bot-api');
+const logger = require('./utils/logger');
 if (TelegramBot.default) TelegramBot = TelegramBot.default;
 
 /**
