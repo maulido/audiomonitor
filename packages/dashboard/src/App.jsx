@@ -38,6 +38,8 @@ function App() {
   // Logs View State
   const [currentView, setCurrentView] = useState('live'); // 'live', 'logs', 'settings'
   const [logs, setLogs] = useState([]);
+  const [systemLogs, setSystemLogs] = useState('');
+  const [showSystemLogs, setShowSystemLogs] = useState(false);
   
   // Settings State
   const [telegramToken, setTelegramToken] = useState('');
@@ -100,6 +102,18 @@ function App() {
       }
     } catch (e) {
       console.error('Failed to fetch config', e);
+    }
+  };
+
+  const fetchSystemLogs = async () => {
+    try {
+      const res = await apiFetch('/api/logs');
+      if (res.ok) {
+        const data = await res.json();
+        setSystemLogs(data.logs || 'No logs available.');
+      }
+    } catch(e) {
+      setSystemLogs('Failed to fetch system logs.');
     }
   };
 
@@ -661,10 +675,40 @@ function App() {
                     <div className="card-footer">
                       <span>{isOffline ? 'Terputus' : 'Tersambung via WebSocket'}</span>
                       <span>Update: {agent.timestamp ? new Date(agent.timestamp).toLocaleTimeString() : '-'}</span>
-                    </div>
-                  </div>
-                );
-              })}
+                    
+      {showSystemLogs && (
+        <div className="modal-overlay">
+          <div className="modal" style={{ width: '800px', maxWidth: '95vw', background: 'var(--bg-card)' }}>
+            <div className="modal-header">
+              <div>
+                <h3 style={{ margin: 0 }}><i className="fa-solid fa-terminal"></i> System Audit Logs</h3>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Real-time server logs for debugging</div>
+              </div>
+              <button className="close-btn" onClick={() => setShowSystemLogs(false)}>✖</button>
+            </div>
+            <div className="modal-body" style={{ padding: '0' }}>
+              <pre style={{ 
+                background: '#111', 
+                color: '#fff', 
+                padding: '16px', 
+                margin: '0',
+                borderRadius: '0 0 8px 8px',
+                height: '500px', 
+                overflowY: 'auto',
+                fontSize: '0.8rem',
+                fontFamily: 'monospace',
+                whiteSpace: 'pre-wrap'
+              }}>
+                {systemLogs}
+              </pre>
+            </div>
+          </div>
+        </div>
+      )}
+      </div>
+    </div>
+  );
+})}
               {sortedFilteredAgents.length === 0 && (
                 <div style={{ color: 'var(--text-muted)', gridColumn: '1/-1', textAlign: 'center', padding: '40px' }}>Tidak ada agen yang sesuai filter.</div>
               )}
@@ -675,7 +719,10 @@ function App() {
         {currentView === 'logs' && (
           <div className="settings-layout" style={{ maxWidth: '1000px' }}>
             <div>
-              <h1 className="settings-header">Incident Logs</h1>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <h1 className="settings-header" style={{ marginBottom: 0 }}>Incident Logs</h1>
+                  <button className="btn-primary" onClick={() => { setShowSystemLogs(true); fetchSystemLogs(); }}><i className="fa-solid fa-terminal"></i> System Logs</button>
+                </div>
               <p className="settings-desc">Rekam jejak masalah audio (Bahaya Mute/Suara Buruk) dari seluruh PC.</p>
             </div>
             

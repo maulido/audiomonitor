@@ -6,6 +6,7 @@ const ConfigManager = require('./ConfigManager');
 const DatabaseManager = require('./DatabaseManager');
 const AlertManager = require('./AlertManager');
 const TelemetryHub = require('./TelemetryHub');
+const logger = require('./utils/logger');
 
 /**
  * Class ServerApp
@@ -67,6 +68,12 @@ class ServerApp {
    * Digunakan oleh Dashboard untuk mengubah pengaturan atau mengambil data riwayat.
    */
   setupRoutes() {
+    
+    // API: Mengambil log harian dari file log
+    this.app.get('/api/logs', (req, res) => {
+      const logger = require('./utils/logger');
+      res.send({ success: true, logs: logger.getTodayLogs() });
+    });
     
     // API: Menghapus sebuah PC (Agent) dari daftar Dashboard
     this.app.delete('/api/pc/:uuid', (req, res) => {
@@ -185,10 +192,10 @@ class ServerApp {
   start(onError) {
     this.server.on('error', (e) => {
       if (onError) onError(e);
-      else console.error('Server error:', e);
+      else logger.error('Server error:', e);
     });
     this.server.listen(this.port, () => {
-      console.log(`Central Server running on port ${this.port}`);
+      logger.info(`Central Server running on port ${this.port}`);
     });
   }
 }

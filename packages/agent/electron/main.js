@@ -3,6 +3,26 @@ const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 
+// --- AGENT LOGGER ---
+const logsDir = path.join(app.getPath('userData'), 'logs');
+if (!fs.existsSync(logsDir)) { fs.mkdirSync(logsDir, { recursive: true }); }
+
+function getLogFile() {
+  const date = new Date();
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, '0');
+  const dd = String(date.getDate()).padStart(2, '0');
+  return path.join(logsDir, `agent-${yyyy}-${mm}-${dd}.log`);
+}
+
+function writeAgentLog(level, message) {
+  const now = new Date();
+  const timeString = now.toTimeString().split(' ')[0];
+  const line = `[${timeString}] [${level}] ${message}\n`;
+  try { fs.appendFileSync(getLogFile(), line); } catch(e) {}
+}
+// --------------------
+
 const isDev = process.env.NODE_ENV === 'development';
 const configPath = path.join(app.getPath('userData'), 'config.json');
 
@@ -175,6 +195,10 @@ app.on('before-quit', () => {
 // ============================================
 // IPC Handlers (Jembatan komunikasi UI ke Sistem)
 // ============================================
+
+ipcMain.on('write-log', (event, { level, message }) => {
+  writeAgentLog(level, message);
+});
 
 ipcMain.handle('get-uuid', () => {
   return getOrCreateUUID();

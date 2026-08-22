@@ -36,15 +36,15 @@ class AlertManager {
       try {
         // Polling dibuat false karena kita hanya butuh MENGIRIM pesan (bukan membalas perintah/chat masuk)
         this.bot = new TelegramBot(telegramConfig.token, { polling: false });
-        console.log('Telegram Bot initialized.');
+        logger.info('Telegram Bot initialized.');
       } catch (err) {
-        console.error('Failed to initialize Telegram Bot:', err);
+        logger.error('Failed to initialize Telegram Bot:', err);
         this.bot = null;
       }
     } else {
       // Pastikan objek bot disetel null jika tidak ada token
       this.bot = null;
-      console.log('No Telegram token found in config. Bot alerts disabled.');
+      logger.info('No Telegram token found in config. Bot alerts disabled.');
     }
   }
 
@@ -57,7 +57,7 @@ class AlertManager {
     const telegramConfig = this.configManager.getTelegramConfig();
     if (this.bot && telegramConfig.chatId) {
       this.bot.sendMessage(telegramConfig.chatId, message, { parse_mode: 'HTML' })
-        .catch(err => console.error('Telegram error:', err ? err.message : "Unknown error"));
+        .catch(err => logger.error('Telegram error:', err ? err.message : "Unknown error"));
     }
   }
 

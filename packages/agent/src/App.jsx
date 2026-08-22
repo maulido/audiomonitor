@@ -286,6 +286,7 @@ function App() {
     obsClient.current = new OBSClient(
       () => {
         setObsConnected(true);
+          if (window.electronAPI && window.electronAPI.writeLog) window.electronAPI.writeLog('INFO', 'OBS Terhubung');
         obsClient.current.getAudioInputs().then(inputs => setObsInputs(inputs)).catch(console.error);
         obsClient.current.getStreamStatus().then(status => {
            if (obsSyncStreamingRef.current) {
@@ -301,7 +302,7 @@ function App() {
            setCurrentScene(sceneName);
         };
       },
-      () => setObsConnected(false),
+      () => () => { setObsConnected(false); if (window.electronAPI && window.electronAPI.writeLog) window.electronAPI.writeLog('WARN', 'OBS Terputus'); },
       (inputs) => {
         const source = inputs.find(i => i.inputName === obsSourceNameRef.current);
         if (source && source.inputLevelsMul && source.inputLevelsMul[0] && source.inputLevelsMul[0].length > 0) {
@@ -362,6 +363,7 @@ function App() {
   const handleMicChange = async (e) => {
     const newMicId = e.target.value;
     setSelectedMicId(newMicId);
+      if (window.electronAPI && window.electronAPI.writeLog) window.electronAPI.writeLog('INFO', 'Mengganti Mic ke: ' + newMicId);
     
     const selectedDevice = audioDevices.find(d => d.deviceId === newMicId);
     if (selectedDevice) {

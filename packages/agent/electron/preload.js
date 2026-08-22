@@ -19,5 +19,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getAutostart: () => ipcRenderer.invoke('get-autostart'),
   
   // Mencentang atau menghapus centang fitur Autostart (Startup)
-  setAutostart: (enable) => ipcRenderer.send('set-autostart', enable)
+  setAutostart: (enable) => ipcRenderer.send('set-autostart', enable),
+  writeLog: (level, message) => ipcRenderer.send('write-log', { level, message })
 });

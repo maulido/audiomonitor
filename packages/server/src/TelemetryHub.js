@@ -1,4 +1,5 @@
 const { Server } = require('socket.io');
+const logger = require('./utils/logger');
 
 /**
  * Class TelemetryHub
@@ -41,7 +42,7 @@ class TelemetryHub {
    */
   setupListeners() {
     this.io.on('connection', (socket) => {
-      console.log('A client connected:', socket.id);
+      logger.debug('A client connected: ' + socket.id);
 
       // Event saat klien (Agent/Dashboard) pertama kali mengidentifikasi diri
       socket.on('register', (data) => {
@@ -129,7 +130,7 @@ class TelemetryHub {
 
       // Event saat koneksi klien terputus (Internet mati/Aplikasi ditutup)
       socket.on('disconnect', () => {
-        console.log('Client disconnected:', socket.id);
+        logger.debug('Client disconnected: ' + socket.id);
         
         // Jika yang putus adalah PC Agent (bukan Dashboard)
         if (socket.agentUuid) {
@@ -210,7 +211,7 @@ class TelemetryHub {
           this.lastKnownState.set(data.uuid, enrichedData);
       
       if (enrichedData.obsSources) {
-         console.log("OBS Sources for " + enrichedData.pcName + ":", JSON.stringify(enrichedData.obsSources, null, 2));
+         
       }
 
       // Pancarkan data terkini ini ke seluruh Dashboard agar bar Volume bergerak
