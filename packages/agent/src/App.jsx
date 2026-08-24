@@ -809,6 +809,14 @@ function App() {
 
             <div className="setting-group full">
               <label style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                <span>Sensitivitas Bicara (%)</span>
+                <span style={{ color: '#2196F3', fontWeight: 'bold' }}>{speakingThreshold}%</span>
+              </label>
+              <input type="range" className="slider-accent" min="1" max="100" value={speakingThreshold} onChange={e => setSpeakingThreshold(Number(e.target.value))} style={{ width: '100%', cursor: 'pointer' }} />
+            </div>
+
+            <div className="setting-group full">
+              <label style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
                 <span>Noise Gate (%)</span>
                 <span style={{ color: '#ff9800', fontWeight: 'bold' }}>{noiseGate}%</span>
               </label>

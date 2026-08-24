@@ -324,3 +324,6 @@ input[type=range].slider-danger::-webkit-slider-thumb {
 input[type=range].slider-warning::-webkit-slider-thumb {
   background: #ff9800 !important;
 }
+
+input[type=range].slider-accent::-webkit-slider-thumb { border: 2px solid #2196F3; }
+
