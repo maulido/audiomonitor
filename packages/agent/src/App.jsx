@@ -158,6 +158,13 @@ function App() {
   const obsSyncStreamingRef = useRef(obsSyncStreaming);
   useEffect(() => { obsSyncStreamingRef.current = obsSyncStreaming; localStorage.setItem('obsSyncStreaming', obsSyncStreaming); }, [obsSyncStreaming]);
 
+  const [telemetryInterval, setTelemetryInterval] = useState(() => {
+    const saved = localStorage.getItem('telemetryInterval');
+    return saved ? parseInt(saved, 10) : 500;
+  });
+  const telemetryIntervalRef = useRef(telemetryInterval);
+  useEffect(() => { telemetryIntervalRef.current = telemetryInterval; localStorage.setItem('telemetryInterval', telemetryInterval); }, [telemetryInterval]);
+  
   const [enableWindowsNotif, setEnableWindowsNotif] = useState(() => {
     const saved = localStorage.getItem('enableWindowsNotif');
     return saved === null ? true : saved === 'true';
@@ -569,19 +576,18 @@ function App() {
       };
   }, [micLevel, rawMicLevel, micDb, micClipping, obsSources, noiseGate, obsLevel, obsDb, status, hardwareUsage, uuid, agentName, micDriverName, obsSourceName, isMonitoringActive, isStreaming, streamTimecode, streamBitrate, streamDroppedFrames, streamTotalFrames, currentScene, silenceTimeoutSec, deadMicTimeoutSec, clippingThreshold, clippingDurationSec, obsConnected, isObsMutedBtn]);
 
-  // Telemetry Sender (Throttled to 500ms)
+  // Telemetry Sender (Dynamic Interval)
   useEffect(() => {
-    const telemetryInterval = setInterval(() => {
+    const intervalId = setInterval(() => {
       if (telemetryClient.current && latestTelemetryData.current.uuid && latestTelemetryData.current.uuid !== 'Loading...') {
         telemetryClient.current.sendTelemetry({
           ...latestTelemetryData.current,
           timestamp: Date.now()
         });
       }
-    }, 500);
-
-    return () => clearInterval(telemetryInterval);
-  }, []);
+    }, telemetryInterval);
+    return () => clearInterval(intervalId);
+  }, [telemetryInterval]);
 
   const disconnectOBS = () => {
       if (obsClient.current) {
@@ -750,6 +756,18 @@ function App() {
                         <span className="slider"></span>
                       </div>
                       Windows Notification
+                    </label>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#fff', fontSize: '12px' }}>
+                      Data Polling Rate:
+                      <select 
+                        style={{background: 'var(--bg-card)', color: '#fff', border: '1px solid #333', padding: '2px 4px', borderRadius: '4px'}}
+                        value={telemetryInterval}
+                        onChange={e => setTelemetryInterval(parseInt(e.target.value, 10))}
+                      >
+                        <option value="500">Realtime (0.5s)</option>
+                        <option value="2000">Normal (2s)</option>
+                        <option value="5000">Eco Mode (5s)</option>
+                      </select>
                     </label>
                   </div>
             </div>

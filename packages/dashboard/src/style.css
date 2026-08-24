@@ -573,3 +573,29 @@ input[type=range].range-danger::-webkit-slider-thumb {
   filter: grayscale(40%);
   border-style: solid;
 }
+
+
+/* Compact Mode */
+.agent-grid.compact {
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+}
+.agent-grid.compact .agent-card {
+  padding: 12px 16px;
+  gap: 10px;
+}
+.agent-grid.compact .meters, .agent-grid.compact .card-footer, .agent-grid.compact .hw-stats {
+  display: none;
+}
+.agent-grid.compact .status-area {
+  padding: 8px;
+  min-height: auto;
+}
+.agent-grid.compact .status-text {
+  font-size: 0.95rem;
+  margin: 0;
+}
+.agent-grid.compact .pc-id {
+  font-size: 0.65rem;
+  margin-top: 4px;
+}

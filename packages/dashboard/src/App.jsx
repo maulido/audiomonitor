@@ -33,6 +33,8 @@ function App() {
   const [editingName, setEditingName] = useState('');
 
   const [searchTerm, setSearchTerm] = useState('');
+  const [isCompactMode, setIsCompactMode] = useState(() => localStorage.getItem('isCompactMode') === 'true');
+  useEffect(() => { localStorage.setItem('isCompactMode', isCompactMode); }, [isCompactMode]);
   const [filterStatus, setFilterStatus] = useState('ALL');
 
   // Logs View State
@@ -557,14 +559,21 @@ function App() {
                 value={searchTerm}
                 onChange={e => setSearchTerm(e.target.value)}
               />
-              <select className="filter-select" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
+              <button 
+                  className={`nav-btn ${isCompactMode ? 'active' : ''}`} 
+                  onClick={() => setIsCompactMode(!isCompactMode)}
+                  title="Toggle Mode Ringkas"
+                >
+                  {isCompactMode ? 'Mode Detail' : 'Mode Ringkas'}
+                </button>
+                <select className="filter-select" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
                 <option value="ALL">Semua Status</option>
                 <option value="BAHAYA">Hanya Bahaya</option>
                 <option value="AMAN">Hanya Aman</option>
               </select>
             </div>
 
-            <div className="agent-grid">
+            <div className={`agent-grid ${isCompactMode ? 'compact' : ''}`}>
               {sortedFilteredAgents.map(agent => {
                 const isOffline = agent.status === 'OFFLINE';
                 const isDanger = agent.status && agent.status.startsWith('BAHAYA');
