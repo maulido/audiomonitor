@@ -1,4 +1,35 @@
 import React, { useState, useEffect, useRef } from 'react';
+
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null, errorInfo: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error, errorInfo) {
+    this.setState({ errorInfo });
+    console.error("ErrorBoundary caught an error", error, errorInfo);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ padding: '20px', color: 'white', background: 'red', minHeight: '100vh', fontFamily: 'monospace' }}>
+          <h2>Something went wrong in Dashboard App.jsx</h2>
+          <details style={{ whiteSpace: 'pre-wrap' }}>
+            <summary>Click for error details</summary>
+            {this.state.error && this.state.error.toString()}
+            <br />
+            {this.state.errorInfo && this.state.errorInfo.componentStack}
+          </details>
+        </div>
+      );
+    }
+    return this.props.children; 
+  }
+}
+
 import './style.css';
 import DashboardClient from './core/DashboardClient';
 
@@ -1000,7 +1031,7 @@ function App() {
                   <div className="modal-section" style={{ marginTop: '24px', borderTop: '1px dashed #333', paddingTop: '20px' }}>
                     <div className="modal-section-title" style={{ color: 'var(--success)' }}>Auto-Recovery</div>
                     <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', cursor: 'pointer' }}>
-                      <div className="switch" style={{ marginTop: '2px' }}>
+                      <div className="toggle-switch" style={{ marginTop: '2px' }}>
                         <input type="checkbox" checked={!!remoteConfig.autoRecoveryUnmute} onChange={e => setRemoteConfig({...remoteConfig, autoRecoveryUnmute: e.target.checked})} />
                         <span className="slider"></span>
                       </div>
@@ -1023,5 +1054,5 @@ function App() {
   );
 }
 
-export default App;
+export default function AppWithErrorBoundary(props) { return <ErrorBoundary><App {...props} /></ErrorBoundary>; };
 
