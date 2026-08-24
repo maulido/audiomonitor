@@ -745,7 +745,7 @@ function App() {
                                 </svg>
                               )}
                               <div style={{ width: '65px', textAlign: 'right', fontSize: '0.75rem', fontFamily: 'monospace', color: (agent.obsConnected === false) ? 'var(--danger)' : (agent.isObsMutedBtn ? 'var(--warning)' : 'var(--text-muted)') }}>
-                                { agent.obsConnected === false ? 'DISCONNECTED' : (agent.isObsMutedBtn ? 'MUTED' : ((agent.obsDb !== undefined ? agent.obsDb : ((agent.obsLevel || 0) * 0.6 - 60)).toFixed(1) + ' dB')) }
+                                { agent.obsConnected === false ? 'DISCONNECTED' : (agent.isObsMutedBtn ? 'MUTED' : Number(agent.obsDb != null ? agent.obsDb : ((agent.obsLevel || 0) * 0.6 - 60)).toFixed(1) + ' dB')) }
                               </div>
                             </div>
                     </div>
@@ -754,35 +754,7 @@ function App() {
                       <span>{isOffline ? 'Terputus' : 'Tersambung via WebSocket'}</span>
                       <span>Update: {agent.timestamp ? new Date(agent.timestamp).toLocaleTimeString() : '-'}</span>
                     
-      {showSystemLogs && (
-        <div className="modal-overlay">
-          <div className="modal" style={{ width: '800px', maxWidth: '95vw', background: 'var(--bg-card)' }}>
-            <div className="modal-header">
-              <div>
-                <h3 style={{ margin: 0 }}><i className="fa-solid fa-terminal"></i> System Audit Logs</h3>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Real-time server logs for debugging</div>
-              </div>
-              <button className="close-btn" onClick={() => setShowSystemLogs(false)}><i className="fa-solid fa-times"></i></button>
-            </div>
-            <div className="modal-body" style={{ padding: '0' }}>
-              <pre style={{ 
-                background: '#111', 
-                color: '#fff', 
-                padding: '16px', 
-                margin: '0',
-                borderRadius: '0 0 8px 8px',
-                height: '500px', 
-                overflowY: 'auto',
-                fontSize: '0.8rem',
-                fontFamily: 'monospace',
-                whiteSpace: 'pre-wrap'
-              }}>
-                {systemLogs}
-              </pre>
-            </div>
-          </div>
-        </div>
-      )}
+
       </div>
     </div>
   );
@@ -937,6 +909,35 @@ function App() {
 
       
 
+            {showSystemLogs && (
+        <div className="modal-overlay">
+          <div className="modal" style={{ width: '800px', maxWidth: '95vw', background: 'var(--bg-card)' }}>
+            <div className="modal-header">
+              <div>
+                <h3 style={{ margin: 0 }}><i className="fa-solid fa-terminal"></i> System Audit Logs</h3>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Real-time server logs for debugging</div>
+              </div>
+              <button className="close-btn" onClick={() => setShowSystemLogs(false)}><i className="fa-solid fa-times"></i></button>
+            </div>
+            <div className="modal-body" style={{ padding: '0' }}>
+              <pre style={{ 
+                background: '#111', 
+                color: '#fff', 
+                padding: '16px', 
+                margin: '0',
+                borderRadius: '0 0 8px 8px',
+                height: '500px', 
+                overflowY: 'auto',
+                fontSize: '0.8rem',
+                fontFamily: 'monospace',
+                whiteSpace: 'pre-wrap'
+              }}>
+                {systemLogs}
+              </pre>
+            </div>
+          </div>
+        </div>
+      )}
       {configModalAgent && (
         <div className="modal-overlay">
           <div className="modal">
