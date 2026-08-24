@@ -163,6 +163,20 @@ if (!gotTheLock) {
 
 // Inisialisasi utama Electron
 app.whenReady().then(() => {
+  // Setup Auto Updater
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+  
+  autoUpdater.on('update-downloaded', (info) => {
+    // Memberikan notifikasi bahwa update siap dipasang
+    new Notification({
+      title: 'Pembaruan AudioMonitor Siap!',
+      body: 'Versi terbaru telah diunduh. Aplikasi akan diperbarui otomatis saat ditutup atau PC direstart.'
+    }).show();
+  });
+  
+  // Lakukan pengecekan versi setiap kali aplikasi dinyalakan
+  autoUpdater.checkForUpdatesAndNotify().catch(err => console.error("Update check failed:", err));
   // Memberikan izin otomatis untuk permintaan perangkat keras (seperti mikrofon) 
   // tanpa memunculkan dialog popup yang mengganggu ke user
   session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
