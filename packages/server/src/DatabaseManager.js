@@ -75,12 +75,12 @@ class DatabaseManager {
    * Otomatis membuang riwayat insiden yang usianya sudah lebih dari 30 hari
    * agar aplikasi tidak kehabisan RAM/Storage dalam jangka panjang.
    */
-  autoCleanup() {
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+  autoCleanup(retentionDays = 30) {
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - retentionDays);
     
     const initialLength = this.incidents.length;
-    this.incidents = this.incidents.filter(i => new Date(i.timestamp) >= thirtyDaysAgo);
+    this.incidents = this.incidents.filter(i => new Date(i.timestamp) >= cutoffDate);
     
     if (this.incidents.length !== initialLength) {
       console.log('Auto-cleanup: Removed old incidents.');

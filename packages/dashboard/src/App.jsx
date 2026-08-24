@@ -254,7 +254,12 @@ function App() {
     try {
       const res = await apiFetch(`/api/config/telegram`, {
         method: 'POST',
-        body: JSON.stringify({ token: telegramToken, chatId: telegramChatId, interval: parseInt(telegramInterval, 10) || 60 })
+        body: JSON.stringify({ 
+          token: telegramToken, 
+          chatId: telegramChatId, 
+          interval: parseInt(telegramInterval, 10) || 60,
+          logRetentionDays: globalConfig.logRetentionDays
+        })
       });
       if (res.ok) await customAlert('Telegram Configuration Saved & Bot Reloaded!', 'Sukses');
     } catch (e) {

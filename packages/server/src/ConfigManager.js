@@ -31,7 +31,8 @@ class ConfigManager {
       pcMapping: {}, // Menyimpan kamus relasi antara UUID yang jelek -> Nama PC yang bagus
       telegram: { token: '', chatId: '', interval: 60 },
       monitoringActive: true,
-      dashboardPin: '1234'
+      dashboardPin: '1234',
+      logRetentionDays: 30
     };
     
     this.config = { ...this.defaultConfig };
@@ -58,7 +59,8 @@ class ConfigManager {
             ...(parsed.telegram || {})
           },
           monitoringActive: parsed.monitoringActive !== undefined ? parsed.monitoringActive : true,
-          dashboardPin: parsed.dashboardPin || '1234'
+          dashboardPin: parsed.dashboardPin || '1234',
+          logRetentionDays: parsed.logRetentionDays !== undefined ? parsed.logRetentionDays : 30
         };
       } catch (err) {
         console.error('Error reading config file, using defaults:', err.message);

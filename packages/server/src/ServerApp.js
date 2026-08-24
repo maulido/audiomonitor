@@ -29,6 +29,7 @@ class ServerApp {
     
     // AlertManager butuh akses ke Config (untuk token) & DB (untuk simpan log)
     this.alertManager = new AlertManager(this.configManager, this.dbManager);
+      this.dbManager.autoCleanup(this.configManager.config.logRetentionDays || 30);
     
     // TelemetryHub mengatur lalu-lintas WebSocket
     this.telemetryHub = new TelemetryHub(this.server, this.configManager, this.alertManager);
@@ -131,7 +132,11 @@ class ServerApp {
 
     // API: Menyimpan pengaturan kunci (Token & Chat ID) Telegram
     this.app.post('/api/config/telegram', (req, res) => {
-      const { token, chatId, interval } = req.body || {};
+      const { token, chatId, interval, logRetentionDays } = req.body || {};
+      if (logRetentionDays !== undefined) {
+        this.configManager.config.logRetentionDays = parseInt(logRetentionDays, 10) || 30;
+        this.dbManager.autoCleanup(this.configManager.config.logRetentionDays);
+      }
       if (token !== undefined) this.configManager.config.telegram.token = token;
       if (chatId !== undefined) this.configManager.config.telegram.chatId = chatId;
       if (interval !== undefined) {
