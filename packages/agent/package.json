@@ -52,7 +52,7 @@
     "nsis": {
       "oneClick": true,
       "perMachine": false,
-      "artifactName": "AudioMonitor_Agent_Installer_v1.0.1.exe",
+      "artifactName": "AudioMonitor_Agent_Installer_v${version}.exe",
       "uninstallDisplayName": "Audio Monitor Agent"
     },
     "publish": {
