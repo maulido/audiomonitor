@@ -515,21 +515,29 @@ function App() {
         {currentView === 'live' && (
           <>
             <div className="summary-grid">
-              <div className="summary-card total">
-                <div className="summary-value">{Object.keys(agents).length}</div>
-                <div className="summary-label">PC Terhubung</div>
+                <div className="summary-card total">
+                  <div className="summary-value">{Object.values(agents).filter(a => a.status !== 'OFFLINE').length}</div>
+                  <div className="summary-label">PC Terhubung</div>
+                </div>
+                <div className="summary-card danger">
+                  <div className="summary-value" style={{color: 'var(--danger)'}}>{Object.values(agents).filter(a => a.status !== 'OFFLINE' && a.status && a.status.startsWith('BAHAYA')).length}</div>
+                  <div className="summary-label">Bahaya / Mute</div>
+                </div>
+                <div className="summary-card standby">
+                  <div className="summary-value" style={{color: 'var(--warning)'}}>{Object.values(agents).filter(a => a.status !== 'OFFLINE' && (!a.status || !a.status.startsWith('BAHAYA'))).length}</div>
+                  <div className="summary-label">Aman / Standby</div>
+                </div>
+                <div className="summary-card monitoring">
+                  <div className="summary-value">
+                    <span style={{color: 'var(--success)'}}>{Object.values(agents).filter(a => a.status !== 'OFFLINE' && a.isMonitoringActive !== false).length}</span>
+                    <span style={{fontSize: '1.2rem', color: '#444', margin: '0 8px'}}>/</span>
+                    <span style={{color: 'var(--text-muted)'}}>{Object.values(agents).filter(a => a.status !== 'OFFLINE' && a.isMonitoringActive === false).length}</span>
+                  </div>
+                  <div className="summary-label">Monitor ON / OFF</div>
+                </div>
               </div>
-              <div className="summary-card danger">
-                <div className="summary-value" style={{color: 'var(--danger)'}}>{Object.values(agents).filter(a => a.status && a.status.startsWith('BAHAYA')).length}</div>
-                <div className="summary-label">Bahaya / Mute</div>
-              </div>
-              <div className="summary-card standby">
-                <div className="summary-value" style={{color: 'var(--warning)'}}>{Object.values(agents).filter(a => !a.status || !a.status.startsWith('BAHAYA')).length}</div>
-                <div className="summary-label">Aman / Standby</div>
-              </div>
-            </div>
-
-            <div className="toolbar">
+  
+              <div className="toolbar">
               <input 
                 type="text" 
                 className="search-input" 
