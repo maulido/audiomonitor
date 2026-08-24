@@ -158,6 +158,13 @@ function App() {
   const obsSyncStreamingRef = useRef(obsSyncStreaming);
   useEffect(() => { obsSyncStreamingRef.current = obsSyncStreaming; localStorage.setItem('obsSyncStreaming', obsSyncStreaming); }, [obsSyncStreaming]);
 
+  const [enableWindowsNotif, setEnableWindowsNotif] = useState(() => {
+    const saved = localStorage.getItem('enableWindowsNotif');
+    return saved === null ? true : saved === 'true';
+  });
+  const enableWindowsNotifRef = useRef(enableWindowsNotif);
+  useEffect(() => { enableWindowsNotifRef.current = enableWindowsNotif; localStorage.setItem('enableWindowsNotif', enableWindowsNotif); }, [enableWindowsNotif]);
+
   const [telegramConfig, setTelegramConfig] = useState(() => {
     try { return JSON.parse(localStorage.getItem('telegramConfig')) || null; } catch(e){ return null; }
   });
@@ -480,7 +487,7 @@ function App() {
     // Telemetry/Desktop Notification Throttle
     if (nextStatus === 'BAHAYA_OBS_MUTE' && window.electronAPI) {
       const now = Date.now();
-      if (now - lastNotificationTime.current > 10000) { // 10 seconds throttle
+      if (now - lastNotificationTime.current > 10000 && enableWindowsNotifRef.current) { // 10 seconds throttle
         window.electronAPI.showNotification(
           'Bahaya Audio!',
           'Suara masuk ke Mic, tapi tidak masuk ke OBS. Periksa mute di OBS!'
@@ -489,7 +496,7 @@ function App() {
       }
     } else if (nextStatus === 'BAHAYA_AUDIO_PECAH' && window.electronAPI) {
       const now = Date.now();
-      if (now - lastNotificationTime.current > 10000) {
+      if (now - lastNotificationTime.current > 10000 && enableWindowsNotifRef.current) {
         window.electronAPI.showNotification(
           'Suara Pecah / Clipping!',
           'Volume mikrofon terlalu keras dan berisiko pecah di siaran!'
@@ -498,7 +505,7 @@ function App() {
       }
     } else if (nextStatus === 'BAHAYA_MIC_MATI' && window.electronAPI) {
       const now = Date.now();
-      if (now - lastNotificationTime.current > 10000) {
+      if (now - lastNotificationTime.current > 10000 && enableWindowsNotifRef.current) {
         window.electronAPI.showNotification(
           'Hardware Mic Mati!',
           'Tidak ada suara fisik yang masuk ke mikrofon selama beberapa waktu. Cek mute fisik atau kabel!'
@@ -718,7 +725,7 @@ function App() {
             
             <div className="setting-group full" style={{ marginTop: '5px', paddingTop: '10px', borderTop: '1px dashed #333' }}>
               <label>System Settings</label>
-              <div style={{ display: 'flex', gap: '20px', marginTop: '5px', color: '#ccc', fontSize: '12px' }}>
+              <div style={{ display: 'flex', gap: '20px', marginTop: '5px', color: '#ccc', fontSize: '12px', flexWrap: 'wrap' }}>
                   <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', color: '#fff', fontSize: '12px' }}>
                     <div className="switch">
                       <input type="checkbox" checked={autoStart} onChange={e => {
@@ -736,8 +743,15 @@ function App() {
                       <span className="slider"></span>
                     </div>
                     Auto-Monitor on OBS Live
-                  </label>
-                </div>
+                    </label>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', color: '#fff', fontSize: '12px' }}>
+                      <div className="switch">
+                        <input type="checkbox" checked={enableWindowsNotif} onChange={e => setEnableWindowsNotif(e.target.checked)} />
+                        <span className="slider"></span>
+                      </div>
+                      Windows Notification
+                    </label>
+                  </div>
             </div>
 
             <div className="setting-group full" style={{ marginTop: '5px', paddingTop: '10px', borderTop: '1px dashed #333' }}>
