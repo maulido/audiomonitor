@@ -183,6 +183,17 @@ class OBSClient {
    * @returns {Promise<Array>} Array berisi objek sumber audio yang lengkap dengan status mute dan db.
    */
   
+  
+  async setMute(inputName, muted) {
+    if (!this.obs) return;
+    try {
+      await this.obs.call('SetInputMute', { inputName, inputMuted: muted });
+      console.log(`[OBS] ${muted ? 'Muted' : 'Unmuted'} ${inputName}`);
+    } catch (err) {
+      console.error('[OBS] Failed to set mute:', err.message);
+    }
+  }
+
   async getWindowsAudioDevices() {
     if (process.platform !== 'win32') return {};
     try {

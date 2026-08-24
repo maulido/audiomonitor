@@ -68,9 +68,21 @@ function App() {
     return saved !== null ? Number(saved) : 95;
   });
   const [clippingDurationSec, setClippingDurationSec] = useState(() => {
-    const saved = localStorage.getItem('clippingDurationSec');
-    return saved !== null ? Number(saved) : 3;
-  });
+      const saved = localStorage.getItem('clippingDurationSec');
+      return saved !== null ? Number(saved) : 3;
+    });
+    const [speakingThreshold, setSpeakingThreshold] = useState(() => {
+      const saved = localStorage.getItem('speakingThreshold');
+      return saved !== null ? Number(saved) : 10;
+    });
+    const [obsMuteTimeoutSec, setObsMuteTimeoutSec] = useState(() => {
+      const saved = localStorage.getItem('obsMuteTimeoutSec');
+      return saved !== null ? Number(saved) : 3;
+    });
+    const [autoRecoveryUnmute, setAutoRecoveryUnmute] = useState(() => {
+      const saved = localStorage.getItem('autoRecoveryUnmute');
+      return saved === 'true';
+    });
   const [audioDevices, setAudioDevices] = useState([]);
   const audioDevicesRef = useRef([]);
   useEffect(() => { audioDevicesRef.current = audioDevices; }, [audioDevices]);
@@ -189,6 +201,9 @@ function App() {
     if (config.deadMicTimeoutSec !== undefined) setDeadMicTimeoutSec(config.deadMicTimeoutSec);
     if (config.clippingThreshold !== undefined) setClippingThreshold(config.clippingThreshold);
     if (config.clippingDurationSec !== undefined) setClippingDurationSec(config.clippingDurationSec);
+      if (config.speakingThreshold !== undefined) setSpeakingThreshold(config.speakingThreshold);
+      if (config.obsMuteTimeoutSec !== undefined) setObsMuteTimeoutSec(config.obsMuteTimeoutSec);
+      if (config.autoRecoveryUnmute !== undefined) setAutoRecoveryUnmute(config.autoRecoveryUnmute);
     if (config.obsSourceName !== undefined) setObsSourceName(config.obsSourceName);
     if (config.micDriverName !== undefined) {
       const devices = audioDevicesRef.current;
@@ -223,7 +238,7 @@ function App() {
     localStorage.setItem('deadMicTimeoutSec', deadMicTimeoutSec.toString());
     localStorage.setItem('clippingThreshold', clippingThreshold.toString());
     localStorage.setItem('clippingDurationSec', clippingDurationSec.toString());
-  }, [agentName, serverIp, obsIp, obsPassword, obsSourceName, selectedMicId, noiseGate, silenceTimeoutSec, deadMicTimeoutSec, clippingThreshold, clippingDurationSec, obsConnected, isObsMutedBtn]);
+  }, [agentName, serverIp, obsIp, obsPassword, obsSourceName, selectedMicId, noiseGate, silenceTimeoutSec, deadMicTimeoutSec, clippingThreshold, clippingDurationSec, speakingThreshold, obsMuteTimeoutSec, autoRecoveryUnmute, obsConnected, isObsMutedBtn]);
 
   // Core Instances (useRef to persist across renders without triggering re-renders)
   const audioProcessor = useRef(null);
@@ -432,7 +447,7 @@ function App() {
     }
 
     let nextStatus = status;
-    const isTalking = currentMicLevel.current > 10;
+    const isTalking = currentMicLevel.current > speakingThreshold;
     const isObsMuted = currentObsLevel.current < 0.5;
 
     // Clipping Logic (build score if rawMicLevel exceeds threshold)
@@ -449,8 +464,14 @@ function App() {
       dangerScore.current = Math.max(0, dangerScore.current - 100); // Drains twice as fast during pauses
     }
 
-    if (dangerScore.current >= 3000) { // 3 seconds of "mostly" talking while muted
-      nextStatus = 'BAHAYA_OBS_MUTE';
+    if (dangerScore.current >= (obsMuteTimeoutSec * 1000)) { // dynamic timeout of "mostly" talking while muted
+      if (autoRecoveryUnmute && obsClient.current) {
+          obsClient.current.setMute(obsSourceNameRef.current, false);
+          dangerScore.current = 0; // reset
+          nextStatus = 'AMAN';
+        } else {
+          nextStatus = 'BAHAYA_OBS_MUTE';
+        }
     } else if (clippingScore.current >= clippingDurationSec * 1000) {
       nextStatus = 'BAHAYA_AUDIO_PECAH';
     } else if (dangerScore.current === 0 && clippingScore.current === 0 && (status === 'BAHAYA_OBS_MUTE' || status === 'BAHAYA_AUDIO_PECAH')) {
@@ -572,9 +593,12 @@ function App() {
         deadMicTimeoutSec,
         clippingThreshold,
         clippingDurationSec,
-        audioDevices: audioDevicesRef.current.map(d => d.label || 'Default Microphone')
+          speakingThreshold,
+          obsMuteTimeoutSec,
+          autoRecoveryUnmute,
+          audioDevices: audioDevicesRef.current.map(d => d.label || 'Default Microphone')
       };
-  }, [micLevel, rawMicLevel, micDb, micClipping, obsSources, noiseGate, obsLevel, obsDb, status, hardwareUsage, uuid, agentName, micDriverName, obsSourceName, isMonitoringActive, isStreaming, streamTimecode, streamBitrate, streamDroppedFrames, streamTotalFrames, currentScene, silenceTimeoutSec, deadMicTimeoutSec, clippingThreshold, clippingDurationSec, obsConnected, isObsMutedBtn]);
+  }, [micLevel, rawMicLevel, micDb, micClipping, obsSources, noiseGate, obsLevel, obsDb, status, hardwareUsage, uuid, agentName, micDriverName, obsSourceName, isMonitoringActive, isStreaming, streamTimecode, streamBitrate, streamDroppedFrames, streamTotalFrames, currentScene, silenceTimeoutSec, deadMicTimeoutSec, clippingThreshold, clippingDurationSec, speakingThreshold, obsMuteTimeoutSec, autoRecoveryUnmute, obsConnected, isObsMutedBtn]);
 
   // Telemetry Sender (Dynamic Interval)
   useEffect(() => {

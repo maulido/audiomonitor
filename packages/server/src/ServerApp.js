@@ -134,7 +134,9 @@ class ServerApp {
     this.app.post('/api/config/telegram', (req, res) => {
       const { token, chatId, interval, logRetentionDays } = req.body || {};
       if (logRetentionDays !== undefined) {
-        this.configManager.config.logRetentionDays = parseInt(logRetentionDays, 10) || 30;
+        let parsedRetention = parseInt(logRetentionDays, 10);
+        if (isNaN(parsedRetention) || parsedRetention <= 0) parsedRetention = 30;
+        this.configManager.config.logRetentionDays = parsedRetention;
         this.dbManager.autoCleanup(this.configManager.config.logRetentionDays);
       }
       if (token !== undefined) this.configManager.config.telegram.token = token;
@@ -147,7 +149,11 @@ class ServerApp {
       }
       this.configManager.saveConfig();
       
-      this.alertManager.initBot(); // Muat ulang bot dengan token baru
+      try {
+          this.alertManager.initBot(); 
+        } catch (err) {
+          console.error('Failed to init bot:', err);
+        }
       
       // Sebarkan kunci Telegram yang baru ke semua PC Agent sebagai cadangan darurat (Fallback Offline)
       this.telemetryHub.io.to('agents').emit('telegram-config', this.configManager.getTelegramConfig());

@@ -47,6 +47,7 @@ function App() {
   const [telegramToken, setTelegramToken] = useState('');
   const [telegramChatId, setTelegramChatId] = useState('');
   const [telegramInterval, setTelegramInterval] = useState(60);
+  const [logRetentionDays, setLogRetentionDays] = useState(30);
   const [newPinInput, setNewPinInput] = useState('');
   const [isMonitoringActive, setIsMonitoringActive] = useState(true);
   const [enableBeep, setEnableBeep] = useState(() => {
@@ -91,7 +92,8 @@ function App() {
       setTelegramToken(data.telegram.token || '');
       setTelegramChatId(data.telegram.chatId || '');
         setTelegramInterval(data.telegram.interval || 60);
-    }
+      }
+      if (data.logRetentionDays) setLogRetentionDays(data.logRetentionDays);
   };
 
   const fetchConfig = async () => {
@@ -258,7 +260,7 @@ function App() {
           token: telegramToken, 
           chatId: telegramChatId, 
           interval: parseInt(telegramInterval, 10) || 60,
-          logRetentionDays: globalConfig.logRetentionDays
+          logRetentionDays: logRetentionDays
         })
       });
       if (res.ok) await customAlert('Telegram Configuration Saved & Bot Reloaded!', 'Sukses');
@@ -631,6 +633,9 @@ function App() {
       deadMicTimeoutSec: agent.deadMicTimeoutSec ?? 60,
       clippingThreshold: agent.clippingThreshold ?? 95,
       clippingDurationSec: agent.clippingDurationSec ?? 3,
+        speakingThreshold: agent.speakingThreshold ?? 10,
+        obsMuteTimeoutSec: agent.obsMuteTimeoutSec ?? 3,
+        autoRecoveryUnmute: agent.autoRecoveryUnmute ?? false,
       obsSourceName: agent.obsSourceName || 'Mic/Aux'
     }); 
   }}><i className="fa-solid fa-gear"></i></button>
@@ -899,6 +904,8 @@ function App() {
 
       
 
+      
+
       {configModalAgent && (
         <div className="modal-overlay">
           <div className="modal">
@@ -939,9 +946,8 @@ function App() {
                         <input className="form-input" value={remoteConfig.obsSourceName} onChange={e => setRemoteConfig({...remoteConfig, obsSourceName: e.target.value})} />
                       )}
                     </div>
-                  </div>
 
-                  <div className="modal-section">
+                    <div className="modal-section">
                     <div className="modal-section-title">Volume Thresholds</div>
                     <div className="setting-group">
                       <label style={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -972,13 +978,33 @@ function App() {
                         <input className="form-input" type="number" value={remoteConfig.deadMicTimeoutSec} onChange={e => setRemoteConfig({...remoteConfig, deadMicTimeoutSec: Number(e.target.value)})} min="1" />
                       </div>
                       <div className="setting-group" style={{ marginBottom: 0 }}>
-                        <label>Pecah (s)</label>
+                          <label>Mute OBS (s)</label>
+                          <input className="form-input" type="number" value={remoteConfig.obsMuteTimeoutSec} onChange={e => setRemoteConfig({...remoteConfig, obsMuteTimeoutSec: Number(e.target.value)})} min="1" />
+                        </div>
+                        <div className="setting-group" style={{ marginBottom: 0 }}>
+                          <label>Pecah (s)</label>
                         <input className="form-input" type="number" value={remoteConfig.clippingDurationSec} onChange={e => setRemoteConfig({...remoteConfig, clippingDurationSec: Number(e.target.value)})} min="1" />
                       </div>
                     </div>
                   </div>
   
-                  <button type="submit" className="btn-primary">Save & Sync to Agent</button>
+                  </div>
+                    
+                    <div className="modal-section" style={{ marginTop: '24px', borderTop: '1px dashed #333', paddingTop: '20px' }}>
+                      <div className="modal-section-title" style={{ color: 'var(--success)' }}>Auto-Recovery</div>
+                      <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', cursor: 'pointer' }}>
+                        <div className="switch" style={{ marginTop: '2px' }}>
+                          <input type="checkbox" checked={remoteConfig.autoRecoveryUnmute} onChange={e => setRemoteConfig({...remoteConfig, autoRecoveryUnmute: e.target.checked})} />
+                          <span className="slider"></span>
+                        </div>
+                        <div>
+                          <div style={{ color: '#fff', fontSize: '13px', fontWeight: 'bold' }}>Auto-Unmute OBS</div>
+                          <div style={{ color: 'var(--text-muted)', fontSize: '11px', marginTop: '4px' }}>Jika fitur ini nyala, Agent tidak akan memunculkan peringatan BAHAYA MUTE, melainkan langsung memaksa klik "Unmute" di OBS secara otomatis ketika streamer mulai berbicara.</div>
+                        </div>
+                      </label>
+                    </div>
+
+                    <button type="submit" className="btn-primary" style={{ marginTop: '24px' }}>Save & Sync to Agent</button>
                 </form>
               </div>
           </div>

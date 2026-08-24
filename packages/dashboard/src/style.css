@@ -196,7 +196,7 @@ body {
 }
 
 .modal {
-  background-color: var(--card-bg);
+  background-color: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: 8px;
   width: 90%;
@@ -414,7 +414,7 @@ input[type=range].range-danger::-webkit-slider-thumb {
 
 .timeout-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 12px;
 }
 

@@ -49,7 +49,7 @@ class DatabaseManager {
         this.incidents = [];
       }
     }
-    this.autoCleanup(); // Segera bersihkan data kadaluarsa saat startup
+    // autoCleanup dipanggil oleh ServerApp setelah config dimuat
   }
 
   /**
@@ -76,6 +76,7 @@ class DatabaseManager {
    * agar aplikasi tidak kehabisan RAM/Storage dalam jangka panjang.
    */
   autoCleanup(retentionDays = 30) {
+    if (retentionDays <= 0 || isNaN(retentionDays)) retentionDays = 30;
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - retentionDays);
     
