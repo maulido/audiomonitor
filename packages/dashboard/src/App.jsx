@@ -524,11 +524,19 @@ function App() {
                   <div className="summary-label">PC Online / Offline</div>
                 </div>
                 <div className="summary-card danger">
-                  <div className="summary-value" style={{color: 'var(--danger)'}}>{Object.values(agents).filter(a => a.status !== 'OFFLINE' && a.status && a.status.startsWith('BAHAYA')).length}</div>
+                  <div className="summary-value">
+                    <span style={{color: 'var(--danger)'}}>{Object.values(agents).filter(a => a.status !== 'OFFLINE' && a.status && (a.status === 'BAHAYA_MIC_MATI' || a.status === 'BAHAYA_AUDIO_PECAH')).length}</span>
+                    <span style={{fontSize: '1.2rem', color: '#444', margin: '0 8px'}}>/</span>
+                    <span style={{color: 'var(--warning)'}}>{Object.values(agents).filter(a => a.status !== 'OFFLINE' && a.status === 'BAHAYA_OBS_MUTE').length}</span>
+                  </div>
                   <div className="summary-label">Bahaya / Mute</div>
                 </div>
                 <div className="summary-card standby">
-                  <div className="summary-value" style={{color: 'var(--warning)'}}>{Object.values(agents).filter(a => a.status !== 'OFFLINE' && (!a.status || !a.status.startsWith('BAHAYA'))).length}</div>
+                  <div className="summary-value">
+                    <span style={{color: 'var(--success)'}}>{Object.values(agents).filter(a => a.status !== 'OFFLINE' && a.status === 'AMAN').length}</span>
+                    <span style={{fontSize: '1.2rem', color: '#444', margin: '0 8px'}}>/</span>
+                    <span style={{color: 'var(--text-main)'}}>{Object.values(agents).filter(a => a.status !== 'OFFLINE' && (!a.status || a.status === 'STANDBY_DIAM')).length}</span>
+                  </div>
                   <div className="summary-label">Aman / Standby</div>
                 </div>
                 <div className="summary-card monitoring">
