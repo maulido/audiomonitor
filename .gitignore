@@ -5,3 +5,7 @@ dist-electron/
 .DS_Store
 *.log
 config.json
+packages/agent/out/
+packages/server/dashboard-dist/
+packages/server/logs/
+audio_monitor.db
