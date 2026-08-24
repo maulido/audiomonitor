@@ -731,7 +731,7 @@ function App() {
             
             <div className="setting-group full" style={{ marginTop: '5px', paddingTop: '10px', borderTop: '1px dashed #333' }}>
               <label>System Settings</label>
-              <div style={{ display: 'flex', gap: '20px', marginTop: '5px', color: '#ccc', fontSize: '12px', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '8px', color: '#ccc', fontSize: '12px' }}>
                   <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', color: '#fff', fontSize: '12px' }}>
                     <div className="switch">
                       <input type="checkbox" checked={autoStart} onChange={e => {
@@ -757,7 +757,7 @@ function App() {
                       </div>
                       Windows Notification
                     </label>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#fff', fontSize: '12px' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#fff', fontSize: '12px', whiteSpace: 'nowrap' }}>
                       Data Polling Rate:
                       <select 
                         style={{background: 'var(--bg-card)', color: '#fff', border: '1px solid #333', padding: '2px 4px', borderRadius: '4px'}}
