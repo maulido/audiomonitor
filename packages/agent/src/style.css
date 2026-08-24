@@ -327,3 +327,6 @@ input[type=range].slider-warning::-webkit-slider-thumb {
 
 input[type=range].slider-accent::-webkit-slider-thumb { border: 2px solid #2196F3; }
 
+
+option { background-color: #2b2d31; color: #fff; }
+

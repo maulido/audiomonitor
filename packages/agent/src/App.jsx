@@ -238,6 +238,9 @@ function App() {
     localStorage.setItem('deadMicTimeoutSec', deadMicTimeoutSec.toString());
     localStorage.setItem('clippingThreshold', clippingThreshold.toString());
     localStorage.setItem('clippingDurationSec', clippingDurationSec.toString());
+    localStorage.setItem('speakingThreshold', speakingThreshold.toString());
+    localStorage.setItem('obsMuteTimeoutSec', obsMuteTimeoutSec.toString());
+    localStorage.setItem('autoRecoveryUnmute', autoRecoveryUnmute.toString());
   }, [agentName, serverIp, obsIp, obsPassword, obsSourceName, selectedMicId, noiseGate, silenceTimeoutSec, deadMicTimeoutSec, clippingThreshold, clippingDurationSec, speakingThreshold, obsMuteTimeoutSec, autoRecoveryUnmute, obsConnected, isObsMutedBtn]);
 
   // Core Instances (useRef to persist across renders without triggering re-renders)
