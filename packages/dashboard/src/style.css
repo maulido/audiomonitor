@@ -602,3 +602,10 @@ input[type=range].range-danger::-webkit-slider-thumb {
 
 .range-accent::-webkit-slider-thumb { background: var(--accent); }
 .range-accent::-moz-range-thumb { background: var(--accent); }
+
+/* Scrollbar Styling */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: rgba(0,0,0,0.2); border-radius: 4px; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.4); }
+* { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.2) rgba(0,0,0,0.2); }
