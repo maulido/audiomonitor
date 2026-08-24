@@ -516,8 +516,12 @@ function App() {
           <>
             <div className="summary-grid">
                 <div className="summary-card total">
-                  <div className="summary-value">{Object.values(agents).filter(a => a.status !== 'OFFLINE').length}</div>
-                  <div className="summary-label">PC Terhubung</div>
+                  <div className="summary-value">
+                    <span style={{color: '#fff'}}>{Object.values(agents).filter(a => a.status !== 'OFFLINE').length}</span>
+                    <span style={{fontSize: '1.2rem', color: '#444', margin: '0 8px'}}>/</span>
+                    <span style={{color: 'var(--text-muted)'}}>{Object.values(agents).filter(a => a.status === 'OFFLINE').length}</span>
+                  </div>
+                  <div className="summary-label">PC Online / Offline</div>
                 </div>
                 <div className="summary-card danger">
                   <div className="summary-value" style={{color: 'var(--danger)'}}>{Object.values(agents).filter(a => a.status !== 'OFFLINE' && a.status && a.status.startsWith('BAHAYA')).length}</div>
