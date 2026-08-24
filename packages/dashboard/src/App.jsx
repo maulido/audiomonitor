@@ -1031,7 +1031,7 @@ function App() {
                   <div className="modal-section" style={{ marginTop: '24px', borderTop: '1px dashed #333', paddingTop: '20px' }}>
                     <div className="modal-section-title" style={{ color: 'var(--success)' }}>Auto-Recovery</div>
                     <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', cursor: 'pointer' }}>
-                      <div className="toggle-switch" style={{ marginTop: '2px' }}>
+                      <div className="toggle-switch" style={{ marginTop: '2px', flexShrink: 0 }}>
                         <input type="checkbox" checked={!!remoteConfig.autoRecoveryUnmute} onChange={e => setRemoteConfig({...remoteConfig, autoRecoveryUnmute: e.target.checked})} />
                         <span className="slider"></span>
                       </div>
