@@ -745,7 +745,7 @@ function App() {
                                 </svg>
                               )}
                               <div style={{ width: '65px', textAlign: 'right', fontSize: '0.75rem', fontFamily: 'monospace', color: (agent.obsConnected === false) ? 'var(--danger)' : (agent.isObsMutedBtn ? 'var(--warning)' : 'var(--text-muted)') }}>
-                                { agent.obsConnected === false ? 'DISCONNECTED' : (agent.isObsMutedBtn ? 'MUTED' : Number(agent.obsDb != null ? agent.obsDb : ((agent.obsLevel || 0) * 0.6 - 60)).toFixed(1) + ' dB')) }
+                                { agent.obsConnected === false ? 'DISCONNECTED' : (agent.isObsMutedBtn ? 'MUTED' : Number(agent.obsDb != null ? agent.obsDb : ((agent.obsLevel || 0) * 0.6 - 60)).toFixed(1) + ' dB') }
                               </div>
                             </div>
                     </div>
