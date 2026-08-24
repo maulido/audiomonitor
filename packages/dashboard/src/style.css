@@ -599,3 +599,6 @@ input[type=range].range-danger::-webkit-slider-thumb {
   font-size: 0.65rem;
   margin-top: 4px;
 }
+
+.range-accent::-webkit-slider-thumb { background: var(--accent); }
+.range-accent::-moz-range-thumb { background: var(--accent); }
