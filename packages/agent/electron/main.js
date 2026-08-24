@@ -1,4 +1,5 @@
 const { app, BrowserWindow, ipcMain, Notification, Tray, Menu, nativeImage, screen, session } = require('electron');
+const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
