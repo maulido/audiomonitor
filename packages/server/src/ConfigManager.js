@@ -32,7 +32,8 @@ class ConfigManager {
       telegram: { token: '', chatId: '', interval: 60 },
       monitoringActive: true,
       dashboardPin: '1234',
-      logRetentionDays: 30
+      logRetentionDays: 30,
+      recordDir: ''
     };
     
     this.config = { ...this.defaultConfig };
@@ -60,7 +61,8 @@ class ConfigManager {
           },
           monitoringActive: parsed.monitoringActive !== undefined ? parsed.monitoringActive : true,
           dashboardPin: parsed.dashboardPin || '1234',
-          logRetentionDays: parsed.logRetentionDays !== undefined ? parsed.logRetentionDays : 30
+          logRetentionDays: parsed.logRetentionDays !== undefined ? parsed.logRetentionDays : 30,
+          recordDir: parsed.recordDir || ''
         };
       } catch (err) {
         console.error('Error reading config file, using defaults:', err.message);
