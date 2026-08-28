@@ -313,6 +313,13 @@ function App() {
           if (handleConfigUpdateRef.current) handleConfigUpdateRef.current(config);
         });
 
+        telemetryClient.current.setTelegramConfigListener((config) => {
+          if (config) {
+            setTelegramConfig(config);
+            localStorage.setItem('telegramConfig', JSON.stringify(config));
+          }
+        });
+
       return () => {
         telemetryClient.current.disconnect();
       };

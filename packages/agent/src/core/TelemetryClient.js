@@ -37,11 +37,20 @@ class TelemetryClient {
             break;
         }
       });
+      
+      // Menerima pengaturan Telegram dari Server untuk fallback saat Agent offline
+      this.socket.on('telegram-config', (config) => {
+        if (this.onTelegramConfigListener) this.onTelegramConfigListener(config);
+      });
     }
   }
 
   setRecordListener(callback) {
     this.onRecordListener = callback;
+  }
+
+  setTelegramConfigListener(callback) {
+    this.onTelegramConfigListener = callback;
   }
 
   setRenameListener(callback) {
