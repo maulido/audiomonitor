@@ -45,7 +45,8 @@ app.whenReady().then(() => {
                properties: ['openDirectory']
              });
              if (result && result.length > 0) {
-               serverApp.configManager.updateConfig({ recordDir: result[0] });
+               serverApp.configManager.config.recordDir = result[0];
+               serverApp.configManager.saveConfig();
                dialog.showMessageBoxSync({ type: 'info', title: 'Berhasil', message: `Lokasi penyimpanan server berhasil diubah ke:\n${result[0]}` });
              }
           }
