@@ -94,12 +94,6 @@ class AudioProcessor {
     }
   }
 
-  /**
-   * Menghentikan seluruh proses pemantauan audio, membersihkan memory,
-   * dan mematikan perangkat mikrofon di sistem.
-   */
-  
-  
   startRecording(agentName, recordDir) {
     if (!this.stream) return false;
     if (this.mediaRecorder && this.mediaRecorder.state === 'recording') return true;
@@ -168,15 +162,6 @@ class AudioProcessor {
   }
 
   stop() {
-    this.stopRecording();
-    this.isRunning = false;
-    if (this.animationFrame) clearTimeout(this.animationFrame);
-    if (this.audioContext) this.audioContext.close();
-    if (this.stream) {
-      this.stream.getTracks().forEach(track => track.stop());
-    }
-  }
-}
     this.stopRecording();
     this.isRunning = false;
     if (this.animationFrame) clearTimeout(this.animationFrame);
