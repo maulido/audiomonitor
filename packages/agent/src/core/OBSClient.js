@@ -217,16 +217,49 @@ class OBSClient {
       for (const input of inputs) {
         try {
           const muteRes = await this.obs.call('GetInputMute', { inputName: input.inputName });
-          const volRes = await this.obs.call('GetInputVolume', { inputName: input.inputName });
-          const monRes = await this.obs.call('GetInputAudioMonitorType', { inputName: input.inputName });
+          let hardwareId = 'Unknown';
           
-                    let hardwareId = 'Unknown';
+          let paramKey = null;
+          if (input.inputName === 'Mic/Aux') paramKey = 'AuxAudioDevice1';
+          else if (input.inputName === 'Mic/Aux 2') paramKey = 'AuxAudioDevice2';
+          else if (input.inputName === 'Mic/Aux 3') paramKey = 'AuxAudioDevice3';
+          else if (input.inputName === 'Mic/Aux 4') paramKey = 'AuxAudioDevice4';
+          else if (input.inputName === 'Desktop Audio') paramKey = 'DesktopAudioDevice1';
+          else if (input.inputName === 'Desktop Audio 2') paramKey = 'DesktopAudioDevice2';
+
+          if (paramKey && window.electronAPI && window.electronAPI.getObsGlobalDevice) {
+            try {
+              const collectionRes = await this.obs.call('GetSceneCollectionList');
+              const currentCollection = collectionRes.currentSceneCollectionName;
+              if (currentCollection) {
+                const deviceId = await window.electronAPI.getObsGlobalDevice(currentCollection, paramKey);
+                if (deviceId) {
+                  let rawId = deviceId;
+                  const matches = rawId.match(/\{[a-fA-F0-9\-]+\}/g);
+                  if (matches && matches.length > 0) {
+                    const guid = matches[matches.length - 1].toLowerCase();
+                    if (!this._deviceMapping) {
+                      this._deviceMapping = await this.getWindowsAudioDevices();
+                    }
+                    if (this._deviceMapping[guid]) {
+                      rawId = this._deviceMapping[guid];
+                    }
+                  }
+                  hardwareId = rawId;
+                }
+              }
+            } catch (e) {
+              console.error("Failed GetSceneCollection global device fallback for", input.inputName, e);
+            }
+          }
+          
+          if (hardwareId === 'Unknown' || hardwareId === 'default' || hardwareId === 'Default') {
             try {
               const setRes = await this.obs.call('GetInputSettings', { inputName: input.inputName });
               let rawId = setRes.inputSettings.device_id || setRes.inputSettings.device || 'Default';
               const matches = rawId.match(/\{[a-fA-F0-9\-]+\}/g);
-                if (matches && matches.length > 0) {
-                  const guid = matches[matches.length - 1].toLowerCase();
+              if (matches && matches.length > 0) {
+                const guid = matches[matches.length - 1].toLowerCase();
                 if (!this._deviceMapping) {
                   this._deviceMapping = await this.getWindowsAudioDevices();
                 }
@@ -236,42 +269,13 @@ class OBSClient {
               }
               hardwareId = rawId;
             } catch (err) {
-              // Fallback for global audio devices
-              try {
-                let paramKey = null;
-                if (input.inputName === 'Mic/Aux') paramKey = 'AuxAudioDevice1';
-                else if (input.inputName === 'Mic/Aux 2') paramKey = 'AuxAudioDevice2';
-                else if (input.inputName === 'Mic/Aux 3') paramKey = 'AuxAudioDevice3';
-                else if (input.inputName === 'Mic/Aux 4') paramKey = 'AuxAudioDevice4';
-                else if (input.inputName === 'Desktop Audio') paramKey = 'DesktopAudioDevice1';
-                else if (input.inputName === 'Desktop Audio 2') paramKey = 'DesktopAudioDevice2';
-                
-                if (paramKey && window.electronAPI && window.electronAPI.getObsGlobalDevice) {
-                  const collectionRes = await this.obs.call('GetSceneCollectionList');
-                  const currentCollection = collectionRes.currentSceneCollectionName;
-                  if (currentCollection) {
-                    const deviceId = await window.electronAPI.getObsGlobalDevice(currentCollection, paramKey);
-                    if (deviceId) {
-                      let rawId = deviceId;
-                      const matches = rawId.match(/\{[a-fA-F0-9\-]+\}/g);
-                      if (matches && matches.length > 0) {
-                        const guid = matches[matches.length - 1].toLowerCase();
-                        if (!this._deviceMapping) {
-                          this._deviceMapping = await this.getWindowsAudioDevices();
-                        }
-                        if (this._deviceMapping[guid]) {
-                          rawId = this._deviceMapping[guid];
-                        }
-                      }
-                      hardwareId = rawId;
-                    }
-                  }
-                }
-              } catch (e) {
-                console.error("Failed GetSceneCollection global device fallback for", input.inputName, e);
-              }
+              console.error("GetInputSettings failed", err);
             }
+          }
           
+          const volRes = await this.obs.call('GetInputVolume', { inputName: input.inputName });
+          const monRes = await this.obs.call('GetInputAudioMonitorType', { inputName: input.inputName });
+
           detailed.push({
             name: input.inputName,
             muted: muteRes.inputMuted,

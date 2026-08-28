@@ -79,6 +79,11 @@ class TelemetryHub {
 
       // Event saat Agent mengirimkan data status terbarunya (Volume, dB, CPU, Status Bahaya)
       socket.on('telemetry', (data) => {
+        try {
+          if (data && data.obsSources) {
+             require('fs').writeFileSync('telemetry_dump.json', JSON.stringify(data.obsSources));
+          }
+        } catch(e){}
         if (!data || !data.uuid) return;
         if (data.uuid) {
           socket.agentUuid = data.uuid;
