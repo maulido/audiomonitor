@@ -400,14 +400,21 @@ ipcMain.on('save-audio-chunk', (event, arrayBuffer) => {
 ipcMain.on('stop-recording', (event, isRollover) => {
   if (audioWriteStream) {
     const streamToClose = audioWriteStream;
+    const capturedSessionDir = currentSessionDir;
+    const capturedAgentName = currentAgentName;
+    const capturedServerIp = currentServerIp;
+    
     audioWriteStream = null;
+    if (!isRollover) {
+      currentSessionDir = null;
+    }
     
     streamToClose.end(() => {
       // Callback ini dipanggil saat file sudah benar-benar tertutup (lock dilepas)
       const finishedFilePath = streamToClose.path;
-      let finalDirName = currentSessionDir;
+      let finalDirName = capturedSessionDir;
 
-      if (!isRollover && currentSessionDir && fs.existsSync(currentSessionDir)) {
+      if (!isRollover && capturedSessionDir && fs.existsSync(capturedSessionDir)) {
         try {
           const now = new Date();
           const endHours = String(now.getHours()).padStart(2, '0');
@@ -415,13 +422,10 @@ ipcMain.on('stop-recording', (event, isRollover) => {
           const endSeconds = String(now.getSeconds()).padStart(2, '0');
           const stopTime = `${endHours}-${endMinutes}-${endSeconds}`;
           
-          const newDirName = `${currentSessionDir}_to_${stopTime}`;
-          fs.renameSync(currentSessionDir, newDirName);
-          
+          const newDirName = `${capturedSessionDir}_to_${stopTime}`;
+          fs.renameSync(capturedSessionDir, newDirName);
           finalDirName = newDirName;
           writeAgentLog('INFO', `Perekaman audio dihentikan dan folder disimpan sebagai: ${newDirName}`);
-
-          currentSessionDir = null;
         } catch (err) {
           console.error('Gagal mengubah nama folder', err);
           writeAgentLog('ERROR', `Gagal mengubah nama folder: ${err.message}`);
@@ -434,13 +438,10 @@ ipcMain.on('stop-recording', (event, isRollover) => {
               const endMinutes = String(now.getMinutes()).padStart(2, '0');
               const endSeconds = String(now.getSeconds()).padStart(2, '0');
               const stopTime = `${endHours}-${endMinutes}-${endSeconds}`;
-              const newDirName2 = `${currentSessionDir}_to_${stopTime}`;
-              fs.renameSync(currentSessionDir, newDirName2);
-              
+              const newDirName2 = `${capturedSessionDir}_to_${stopTime}`;
+              fs.renameSync(capturedSessionDir, newDirName2);
               finalDirName = newDirName2;
               writeAgentLog('INFO', `Berhasil mengubah nama folder pada percobaan kedua.`);
-
-              currentSessionDir = null;
             } catch (err2) {
                console.error('Tetap gagal rename', err2);
             }
@@ -452,19 +453,18 @@ ipcMain.on('stop-recording', (event, isRollover) => {
 
       // Mulai proses upload
       setTimeout(() => {
+         if (!finalDirName) return;
          const sessionFolderName = path.basename(finalDirName);
-         // Karena folder mungkin direname, kita buat ulang path-nya
          const finalFilePath = path.join(finalDirName, path.basename(finishedFilePath));
          if (fs.existsSync(finalFilePath)) {
-            uploadToServer(finalFilePath, currentServerIp, currentAgentName, sessionFolderName);
+            uploadToServer(finalFilePath, capturedServerIp, capturedAgentName, sessionFolderName);
          }
-      }, 500); // Jeda aman
-
+      }, !isRollover ? 2000 : 500); // Tunggu lebih lama jika ada potensi fallback rename
     });
   }
 });
 
-// Menampilkan Pop-Up Notifikasi Windows
+  // Menampilkan Pop-Up Notifikasi Windows
 ipcMain.on('show-notification', (event, { title, body }) => {
   new Notification({ title, body }).show();
 });
