@@ -195,7 +195,6 @@ class OBSClient {
   }
 
   async getWindowsAudioDevices() {
-    if (process.platform !== 'win32') return {};
     try {
       if (window.electronAPI && window.electronAPI.getWindowsAudioDevices) {
         return await window.electronAPI.getWindowsAudioDevices();
