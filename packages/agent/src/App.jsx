@@ -756,10 +756,11 @@ function App() {
                     display: 'flex',
                     alignItems: 'center',
                     gap: '4px',
-                    fontWeight: 'bold'
-                  }}
-                >
-                  <i className="fa-solid fa-circle"></i> {isRecording ? 'Stop REC' : 'Manual REC'}
+                    fontWeight: 'bold',
+                      whiteSpace: 'nowrap'
+                    }}
+                  >
+                    <i className="fa-solid fa-circle"></i> {isRecording ? 'Stop REC' : 'Manual REC'}
               </button>
               <div className={`status-badge ${status}`} style={{ opacity: isMonitoringActive ? 1 : 0.5, margin: 0 }}>
                 {isMonitoringActive ? status.replace(/_/g, ' ') : 'PAUSED'}
@@ -767,11 +768,11 @@ function App() {
             </div>
 
             {isRecording && (
-              <div style={{ fontSize: '11px', color: '#f44336', marginTop: '6px', fontWeight: 'bold', animation: 'pulse 1.5s infinite' }}>
+              <div style={{ fontSize: '11px', color: '#f44336', fontWeight: 'bold', animation: 'pulse 1.5s infinite' }}>
 REC
               </div>
             )}
-            <div style={{ fontSize: '11px', color: isStreaming ? '#f44336' : '#666', marginTop: '6px', fontWeight: 'bold' }}>
+            <div style={{ fontSize: '11px', color: isStreaming ? '#f44336' : '#666', fontWeight: 'bold' }}>
               {isStreaming ? `LIVE - ${streamTimecode}` : 'OFFLINE'}
             </div>
           </div>

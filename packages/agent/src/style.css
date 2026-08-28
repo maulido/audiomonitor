@@ -55,7 +55,8 @@ body {
   color: #fff;
   font-size: 18px;
   font-weight: bold;
-  width: 200px;
+  width: 140px;
+    text-overflow: ellipsis;
   outline: none;
   padding: 0;
 }
