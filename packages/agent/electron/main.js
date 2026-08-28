@@ -292,7 +292,11 @@ ipcMain.handle('get-hardware-telemetry', () => {
 // ==========================================
 
 function uploadToServer(filePath, serverUrl, agentName, sessionFolder) {
-  if (!serverUrl || serverUrl.trim() === '') return;
+  writeAgentLog('INFO', `[Upload] Mencoba mengirim file ${path.basename(filePath)} ke ${serverUrl}`);
+  if (!serverUrl || serverUrl.trim() === '') {
+     writeAgentLog('ERROR', '[Upload Gagal] IP Server kosong atau tidak valid!');
+     return;
+  }
   const http = require('http');
   const https = require('https');
   const path = require('path');
