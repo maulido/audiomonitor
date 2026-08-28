@@ -909,6 +909,13 @@ REC
                     
                       <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', color: '#fff', fontSize: '12px' }}>
                         <div className="switch">
+                          <input type="checkbox" checked={autoRecoveryUnmute} onChange={e => setAutoRecoveryUnmute(e.target.checked)} />
+                          <span className="slider"></span>
+                        </div>
+                        Auto-Unmute OBS
+                      </label>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', color: '#fff', fontSize: '12px' }}>
+                        <div className="switch">
                           <input type="checkbox" checked={obsSyncRecording} onChange={e => setObsSyncRecording(e.target.checked)} />
                           <span className="slider"></span>
                         </div>
@@ -983,7 +990,11 @@ REC
                   <input type="number" min="15" max="7200" value={deadMicTimeoutSec} onChange={e => setDeadMicTimeoutSec(Number(e.target.value))} style={{ height: "28px", margin: 0 }} />
                 </div>
                 <div className="setting-group" style={{ flex: 1 }}>
-                  <label>Durasi Pecah (s)</label>
+                  <label>Mute OBS (s)</label>
+                  <input type="number" min="1" max="60" value={obsMuteTimeoutSec} onChange={e => setObsMuteTimeoutSec(Number(e.target.value))} style={{ height: "28px", margin: 0 }} />
+                </div>
+                <div className="setting-group" style={{ flex: 1 }}>
+                  <label>Pecah (s)</label>
                   <input type="number" min="1" max="10" value={clippingDurationSec} onChange={e => setClippingDurationSec(Number(e.target.value))} style={{ height: "28px", margin: 0 }} />
                 </div>
               </div>
