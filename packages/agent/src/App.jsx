@@ -301,7 +301,7 @@ function App() {
         
         telemetryClient.current.setRecordListener((shouldRecord) => {
           if (shouldRecord && audioProcessor.current) {
-            const success = audioProcessor.current.startRecording(agentNameRef.current, recordDirRef.current);
+            const success = audioProcessor.current.startRecording(agentNameRef.current, recordDirRef.current, uuid);
             if (success) setIsRecording(true);
           } else if (!shouldRecord && audioProcessor.current) {
             audioProcessor.current.stopRecording();
@@ -360,7 +360,7 @@ function App() {
            }
            if (obsSyncRecordingRef.current && audioProcessor.current) {
              if (status.outputActive && !isRecordingRef.current) {
-               if (audioProcessor.current.startRecording(agentNameRef.current, recordDirRef.current)) setIsRecording(true);
+               if (audioProcessor.current.startRecording(agentNameRef.current, recordDirRef.current, uuid)) setIsRecording(true);
              } else if (!status.outputActive && isRecordingRef.current) {
                audioProcessor.current.stopRecording();
                setIsRecording(false);
@@ -403,7 +403,7 @@ function App() {
         }
         if (obsSyncRecordingRef.current && audioProcessor.current) {
              if (isActive && !isRecordingRef.current) {
-               if (audioProcessor.current.startRecording(agentNameRef.current, recordDirRef.current)) setIsRecording(true);
+               if (audioProcessor.current.startRecording(agentNameRef.current, recordDirRef.current, uuid)) setIsRecording(true);
              } else if (!isActive && isRecordingRef.current) {
                audioProcessor.current.stopRecording();
                setIsRecording(false);
@@ -742,7 +742,7 @@ function App() {
                       audioProcessor.current.stopRecording();
                       setIsRecording(false);
                     } else {
-                      if (audioProcessor.current.startRecording(agentNameRef.current, recordDirRef.current)) setIsRecording(true);
+                      if (audioProcessor.current.startRecording(agentNameRef.current, recordDirRef.current, uuid)) setIsRecording(true);
                     }
                   }}
                   style={{

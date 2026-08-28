@@ -94,7 +94,7 @@ class AudioProcessor {
     }
   }
 
-  startRecording(agentName, recordDir) {
+  startRecording(agentName, recordDir, agentId) {
     if (!this.stream) return false;
     if (this.mediaRecorder && this.mediaRecorder.state === 'recording') return true;
 
@@ -108,7 +108,8 @@ class AudioProcessor {
       const seconds = String(now.getSeconds()).padStart(2, '0');
       const timestamp = `${year}-${month}-${day}_${hours}-${minutes}-${seconds}`;
       const safeName = (agentName || 'Agent').replace(/[^a-z0-9]/gi, '_');
-      this.sessionFolderName = `${safeName}_${timestamp}`;
+      const safeId = agentId ? `_${agentId.replace(/[^a-z0-9\-]/gi, '')}` : '';
+      this.sessionFolderName = `${safeName}${safeId}_${timestamp}`;
       this.recordDir = recordDir;
       this.partNumber = 1;
       
