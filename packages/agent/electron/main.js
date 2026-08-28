@@ -211,6 +211,8 @@ app.on('before-quit', () => {
 // IPC Handlers (Jembatan komunikasi UI ke Sistem)
 // ============================================
 
+ipcMain.on('open-logs-folder', () => { require('electron').shell.openPath(logsDir); });
+
 ipcMain.on('write-log', (event, { level, message }) => {
   writeAgentLog(level, message);
 });

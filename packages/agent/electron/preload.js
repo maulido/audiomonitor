@@ -21,6 +21,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Mencentang atau menghapus centang fitur Autostart (Startup)
   setAutostart: (enable) => ipcRenderer.send('set-autostart', enable),
   writeLog: (level, message) => ipcRenderer.send('write-log', { level, message }),
+  openLogsFolder: () => ipcRenderer.send('open-logs-folder'),
   
   selectFolder: () => ipcRenderer.invoke('select-folder'),
   startRecording: (sessionFolderName, partNumber, recordDir, agentName, serverIp) => ipcRenderer.send('start-recording', { sessionFolderName, partNumber, recordDir, agentName, serverIp }),
