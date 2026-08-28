@@ -38,6 +38,20 @@ app.whenReady().then(() => {
         },
         { type: 'separator' },
         {
+          label: 'Ubah Lokasi Penyimpanan Audio',
+          click: () => {
+             const result = dialog.showOpenDialogSync({
+               title: 'Pilih Folder Penyimpanan Rekaman (Server)',
+               properties: ['openDirectory']
+             });
+             if (result && result.length > 0) {
+               serverApp.configManager.updateConfig({ recordDir: result[0] });
+               dialog.showMessageBoxSync({ type: 'info', title: 'Berhasil', message: `Lokasi penyimpanan server berhasil diubah ke:\n${result[0]}` });
+             }
+          }
+        },
+        { type: 'separator' },
+        {
           label: isEnabled ? 'Matikan Auto-Start' : 'Hidupkan Auto-Start',
           click: () => {
             if (isEnabled) serverAutoLauncher.disable();
