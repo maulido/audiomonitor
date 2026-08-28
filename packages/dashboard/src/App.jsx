@@ -678,7 +678,7 @@ function App() {
         style={{ color: agent.isRecording ? '#f44336' : 'inherit' }}
         onClick={() => {
            if (client.current && client.current.socket) {
-             client.current.socket.emit('agent-record', { uuid: agent.uuid, shouldRecord: !agent.isRecording });
+             client.current.socket.emit('agent-record', { uuid: agent.uuid, record: !agent.isRecording });
            }
         }}>
         <i className="fa-solid fa-circle"></i>
