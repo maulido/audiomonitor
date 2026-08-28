@@ -27,5 +27,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   startRecording: (sessionFolderName, partNumber, recordDir, agentName, serverIp) => ipcRenderer.send('start-recording', { sessionFolderName, partNumber, recordDir, agentName, serverIp }),
   saveAudioChunk: (arrayBuffer) => ipcRenderer.send('save-audio-chunk', arrayBuffer),
   stopRecording: (isRollover) => ipcRenderer.send('stop-recording', isRollover),
-  getWindowsAudioDevices: () => ipcRenderer.invoke('get-windows-audio-devices')
+  getWindowsAudioDevices: () => ipcRenderer.invoke('get-windows-audio-devices'),
+  getObsGlobalDevice: (collectionName, deviceKey) => ipcRenderer.invoke('get-obs-global-device', { collectionName, deviceKey })
 });

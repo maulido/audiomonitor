@@ -238,31 +238,37 @@ class OBSClient {
             } catch (err) {
               // Fallback for global audio devices
               try {
-                let paramName = null;
-                if (input.inputName === 'Mic/Aux') paramName = 'Mic1';
-                else if (input.inputName === 'Mic/Aux 2') paramName = 'Mic2';
-                else if (input.inputName === 'Mic/Aux 3') paramName = 'Mic3';
-                else if (input.inputName === 'Mic/Aux 4') paramName = 'Mic4';
-                else if (input.inputName === 'Desktop Audio') paramName = 'Desktop1';
-                else if (input.inputName === 'Desktop Audio 2') paramName = 'Desktop2';
+                let paramKey = null;
+                if (input.inputName === 'Mic/Aux') paramKey = 'AuxAudioDevice1';
+                else if (input.inputName === 'Mic/Aux 2') paramKey = 'AuxAudioDevice2';
+                else if (input.inputName === 'Mic/Aux 3') paramKey = 'AuxAudioDevice3';
+                else if (input.inputName === 'Mic/Aux 4') paramKey = 'AuxAudioDevice4';
+                else if (input.inputName === 'Desktop Audio') paramKey = 'DesktopAudioDevice1';
+                else if (input.inputName === 'Desktop Audio 2') paramKey = 'DesktopAudioDevice2';
                 
-                if (paramName) {
-                  const profRes = await this.obs.call('GetProfileParameter', { parameterCategory: 'Audio', parameterName: paramName });
-                  let rawId = profRes.parameterValue || 'Default';
-                  const matches = rawId.match(/\{[a-fA-F0-9\-]+\}/g);
-                  if (matches && matches.length > 0) {
-                    const guid = matches[matches.length - 1].toLowerCase();
-                    if (!this._deviceMapping) {
-                      this._deviceMapping = await this.getWindowsAudioDevices();
-                    }
-                    if (this._deviceMapping[guid]) {
-                      rawId = this._deviceMapping[guid];
+                if (paramKey && window.electronAPI && window.electronAPI.getObsGlobalDevice) {
+                  const collectionRes = await this.obs.call('GetSceneCollectionList');
+                  const currentCollection = collectionRes.currentSceneCollectionName;
+                  if (currentCollection) {
+                    const deviceId = await window.electronAPI.getObsGlobalDevice(currentCollection, paramKey);
+                    if (deviceId) {
+                      let rawId = deviceId;
+                      const matches = rawId.match(/\{[a-fA-F0-9\-]+\}/g);
+                      if (matches && matches.length > 0) {
+                        const guid = matches[matches.length - 1].toLowerCase();
+                        if (!this._deviceMapping) {
+                          this._deviceMapping = await this.getWindowsAudioDevices();
+                        }
+                        if (this._deviceMapping[guid]) {
+                          rawId = this._deviceMapping[guid];
+                        }
+                      }
+                      hardwareId = rawId;
                     }
                   }
-                  hardwareId = rawId;
                 }
               } catch (e) {
-                console.error("Failed GetProfileParameter for", input.inputName, e);
+                console.error("Failed GetSceneCollection global device fallback for", input.inputName, e);
               }
             }
           

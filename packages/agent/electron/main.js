@@ -179,15 +179,36 @@ ipcMain.handle('get-windows-audio-devices', async () => {
       if (item && item.PSPath) {
         const idMatch = item.PSPath.match(/{[0-9a-fA-F-]+}/);
         if (idMatch) {
-          const id = idMatch[0];
-          const name = item['{a45c254e-df1c-4efd-8020-67d146a850e0},2'];
-          if (id && name) mapping[id] = name;
+          const id = idMatch[0].toLowerCase();
+          const part1 = item['{a45c254e-df1c-4efd-8020-67d146a850e0},2'];
+          const part2 = item['{b3f8fa53-0004-438e-9003-51a46e139bfc},6'];
+          let name = '';
+          if (part1 && part2) name = part1 + ' (' + part2 + ')';
+          else if (part1) name = part1;
+          else if (part2) name = part2;
+          if (name) mapping[id] = name;
         }
       }
     });
     return mapping;
   } catch (err) {
     return {};
+  }
+});
+
+ipcMain.handle('get-obs-global-device', async (event, { collectionName, deviceKey }) => {
+  try {
+    const fs = require('fs');
+    const path = require('path');
+    const jsonPath = path.join(process.env.APPDATA || process.env.USERPROFILE + '\\AppData\\Roaming', 'obs-studio', 'basic', 'scenes', `${collectionName}.json`);
+    if (!fs.existsSync(jsonPath)) return null;
+    const data = JSON.parse(fs.readFileSync(jsonPath, 'utf8'));
+    if (data[deviceKey] && data[deviceKey].settings && data[deviceKey].settings.device_id) {
+      return data[deviceKey].settings.device_id;
+    }
+    return null;
+  } catch (err) {
+    return null;
   }
 });
 
