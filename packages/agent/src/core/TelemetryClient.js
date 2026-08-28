@@ -27,19 +27,16 @@ class TelemetryClient {
       });
 
       // Menangani berbagai perintah tunggal dari Server Pusat
-      this.socket.on('server-command', (data) => {
-        if (!data || !data.command) return;
-        switch (data.command) {
-          case 'record':
-            if (this.onRecordListener) this.onRecordListener(data.payload);
-            break;
-          case 'rename':
-            if (this.onRenameListener) this.onRenameListener(data.payload);
-            break;
-          case 'update-config':
-            if (this.onConfigUpdateListener) this.onConfigUpdateListener(data.payload);
-            break;
-        }
+      this.socket.on('command-record', (payload) => {
+        if (this.onRecordListener) this.onRecordListener(payload);
+      });
+      
+      this.socket.on('command-rename', (payload) => {
+        if (this.onRenameListener) this.onRenameListener(payload);
+      });
+      
+      this.socket.on('update-config', (payload) => {
+        if (this.onConfigUpdateListener) this.onConfigUpdateListener(payload);
       });
       
       // Menerima pengaturan Telegram dari Server untuk fallback saat Agent offline
