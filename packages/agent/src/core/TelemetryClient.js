@@ -16,6 +16,10 @@ class TelemetryClient {
         if (this.onSetMonitoring) this.onSetMonitoring(active);
       });
       
+      this.socket.on('monitoring-status', (active) => {
+        if (this.onGlobalMonitoring) this.onGlobalMonitoring(active);
+      });
+
       this.socket.on('connect', () => {
         if (this.agentUuid) {
           this.socket.emit('register', { type: 'agent', uuid: this.agentUuid });
@@ -67,6 +71,10 @@ class TelemetryClient {
     if (this.socket && this.socket.connected) {
       this.socket.emit('register', { type: 'agent', uuid: this.agentUuid });
     }
+  }
+
+  setGlobalMonitoringListener(callback) {
+    this.onGlobalMonitoring = callback;
   }
 
   disconnect() {

@@ -41,7 +41,7 @@ function App() {
     const [obsError, setObsError] = useState('');
     const [isConnectingOBS, setIsConnectingOBS] = useState(false);
   const [serverConnected, setServerConnected] = useState(false);
-  const [isMonitoringActive, setIsMonitoringActive] = useState(true);
+  const [globalMonitoring, setGlobalMonitoring] = useState(true);\n  const [pcMonitoring, setPcMonitoring] = useState(true);\n  const isMonitoringActive = globalMonitoring && pcMonitoring;
 
   const [isRecording, setIsRecording] = useState(false);
   const isRecordingRef = useRef(isRecording);
@@ -290,9 +290,13 @@ function App() {
         socket.on('connect_error', () => setServerConnected(false));
       }
 
-      telemetryClient.current.setMonitoringListener(uuid, (active) => {
-        setIsMonitoringActive(active);
-      });
+        telemetryClient.current.setMonitoringListener(uuid, (active) => {
+          setPcMonitoring(active);
+        });
+
+        telemetryClient.current.setGlobalMonitoringListener((active) => {
+          setGlobalMonitoring(active);
+        });
 
       telemetryClient.current.setRenameListener((newName) => {
           setAgentName(newName);
@@ -363,7 +367,7 @@ function App() {
         obsClient.current.getStreamStatus().then(status => {
            
            if (obsSyncStreamingRef.current) {
-             setIsMonitoringActive(status.outputActive);
+             setPcMonitoring(status.outputActive);
            }
            if (obsSyncRecordingRef.current && audioProcessor.current) {
              if (status.outputActive && !isRecordingRef.current) {
@@ -406,7 +410,7 @@ function App() {
       (isActive) => {
         
         if (obsSyncStreamingRef.current) {
-          setIsMonitoringActive(isActive);
+          setPcMonitoring(isActive);
         }
         if (obsSyncRecordingRef.current && audioProcessor.current) {
              if (isActive && !isRecordingRef.current) {
@@ -824,8 +828,8 @@ REC
             <button 
               className="toggle-btn"
               onClick={() => {
-                const newState = !isMonitoringActive;
-                setIsMonitoringActive(newState);
+                const newState = !pcMonitoring;
+                setPcMonitoring(newState);
                 if (telemetryClient.current && telemetryClient.current.socket) {
                   telemetryClient.current.socket.emit('agent-monitoring', { uuid, active: newState });
                 }
