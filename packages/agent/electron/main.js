@@ -313,7 +313,7 @@ function uploadToServer(filePath, serverUrl, agentName, sessionFolder) {
        urlObj = new URL(`http://${serverUrl}:4000`);
     }
     
-    urlObj.pathname = '/api/upload-record';
+    urlObj.pathname = '/internal/upload-record';
     const fileName = path.basename(filePath);
     const lib = urlObj.protocol === 'https:' ? https : http;
     

@@ -47,6 +47,8 @@ class ServerApp {
     
     // Middleware Keamanan PIN khusus rute API
     // Memastikan siapa pun yang mengirim POST/DELETE/PUT ke API harus menyertakan PIN di header
+    // Middleware Keamanan PIN khusus rute /api (Dashboard)
+    // Endpoint /internal/ tidak memerlukan PIN karena digunakan untuk komunikasi mesin-ke-mesin (Agent -> Server)
     this.app.use('/api', (req, res, next) => {
       if (['POST', 'DELETE', 'PUT'].includes(req.method)) {
         const pin = req.headers['x-pin'];
@@ -55,7 +57,7 @@ class ServerApp {
           return res.status(401).json({ success: false, error: 'Unauthorized', message: 'PIN Salah' });
         }
       }
-      next(); // Jika method GET atau PIN benar, lanjutkan
+      next();
     });
     
     // Menyajikan antarmuka Dashboard (React Build) agar bisa diakses via Browser (http://localhost:4000)
@@ -71,7 +73,7 @@ class ServerApp {
   setupRoutes() {
     
     // API: Mengambil log harian dari file log
-    this.app.post('/api/upload-record', (req, res) => {
+    this.app.post('/internal/upload-record', (req, res) => {
       const agentName = req.headers['x-agent-name'] || 'UnknownAgent';
       const sessionFolder = req.headers['x-session-folder'] || 'UnknownSession';
       const fileName = req.headers['x-file-name'] || 'UnknownFile.webm';
