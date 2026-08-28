@@ -669,6 +669,7 @@ function App() {
         autoRecoveryUnmute: agent.autoRecoveryUnmute ?? false,
         obsSyncRecording: agent.obsSyncRecording ?? false,
         obsSyncStreaming: agent.obsSyncStreaming ?? false,
+        telemetryInterval: agent.telemetryInterval ?? 500,
         obsSourceName: agent.obsSourceName || 'Mic/Aux'
     }); 
   }}><i className="fa-solid fa-gear"></i></button>
@@ -1071,7 +1072,7 @@ function App() {
                     </label>
 
                     <div className="modal-section-title" style={{ color: 'var(--success)' }}>Auto-Recovery</div>
-                    <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', cursor: 'pointer' }}>
+                    <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', cursor: 'pointer', marginBottom: '15px' }}>
                       <div className="toggle-switch" style={{ marginTop: '2px', flexShrink: 0 }}>
                         <input type="checkbox" checked={!!remoteConfig.autoRecoveryUnmute} onChange={e => setRemoteConfig({...remoteConfig, autoRecoveryUnmute: e.target.checked})} />
                         <span className="slider"></span>
@@ -1081,6 +1082,20 @@ function App() {
                         <div style={{ color: 'var(--text-muted)', fontSize: '11px', marginTop: '4px' }}>Jika fitur ini nyala, Agent tidak akan memunculkan peringatan BAHAYA MUTE, melainkan langsung memaksa klik "Unmute" di OBS secara otomatis ketika streamer mulai berbicara.</div>
                       </div>
                     </label>
+
+                    <div className="modal-section-title" style={{ color: '#9e9e9e', marginTop: '20px' }}>System Settings</div>
+                    <div className="setting-group" style={{ marginBottom: 0 }}>
+                      <label>Data Polling Rate</label>
+                      <select 
+                        className="form-input" 
+                        value={remoteConfig.telemetryInterval || 500} 
+                        onChange={e => setRemoteConfig({...remoteConfig, telemetryInterval: Number(e.target.value)})}
+                      >
+                        <option value="500">Realtime (0.5s)</option>
+                        <option value="2000">Normal (2s)</option>
+                        <option value="5000">Eco Mode (5s)</option>
+                      </select>
+                    </div>
                   </div>
 
                   <button type="submit" className="btn-primary" style={{ marginTop: '24px' }}>Save & Sync to Agent</button>

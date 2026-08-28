@@ -226,6 +226,7 @@ function App() {
       if (config.autoRecoveryUnmute !== undefined) setAutoRecoveryUnmute(config.autoRecoveryUnmute);
       if (config.obsSyncRecording !== undefined) setObsSyncRecording(config.obsSyncRecording);
       if (config.obsSyncStreaming !== undefined) setObsSyncStreaming(config.obsSyncStreaming);
+      if (config.telemetryInterval !== undefined) setTelemetryInterval(config.telemetryInterval);
       if (config.obsSourceName !== undefined) setObsSourceName(config.obsSourceName);
     if (config.micDriverName !== undefined) {
       const devices = audioDevicesRef.current;
@@ -669,9 +670,10 @@ function App() {
           autoRecoveryUnmute,
           obsSyncRecording,
           obsSyncStreaming,
+          telemetryInterval,
           audioDevices: audioDevicesRef.current.map(d => d.label || 'Default Microphone')
       };
-  }, [micLevel, rawMicLevel, micDb, micClipping, obsSources, noiseGate, obsLevel, obsDb, status, hardwareUsage, uuid, agentName, micDriverName, obsSourceName, isMonitoringActive, isStreaming, streamTimecode, streamBitrate, streamDroppedFrames, streamTotalFrames, currentScene, silenceTimeoutSec, deadMicTimeoutSec, clippingThreshold, clippingDurationSec, speakingThreshold, obsMuteTimeoutSec, autoRecoveryUnmute, obsSyncRecording, obsSyncStreaming, obsConnected, isObsMutedBtn]);
+  }, [micLevel, rawMicLevel, micDb, micClipping, obsSources, noiseGate, obsLevel, obsDb, status, hardwareUsage, uuid, agentName, micDriverName, obsSourceName, isMonitoringActive, isStreaming, streamTimecode, streamBitrate, streamDroppedFrames, streamTotalFrames, currentScene, silenceTimeoutSec, deadMicTimeoutSec, clippingThreshold, clippingDurationSec, speakingThreshold, obsMuteTimeoutSec, autoRecoveryUnmute, obsSyncRecording, obsSyncStreaming, telemetryInterval, obsConnected, isObsMutedBtn]);
 
   // Telemetry Sender (Dynamic Interval)
   useEffect(() => {
