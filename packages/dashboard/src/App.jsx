@@ -767,9 +767,11 @@ function App() {
                             <div className="meter-info" style={{ width: '145px', flexShrink: 0 }}>
                               <span className="meter-title">OBS Output</span>
                                   <span className="meter-device" style={{ whiteSpace: 'normal', wordBreak: 'break-word', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', lineHeight: '1.2' }}>{agent.obsConnected === false ? 'Terputus dari OBS' : (agent.obsSourceName || 'System / Desktop')}
-                                    {agent.obsConnected !== false && agent.obsSources && agent.obsSources.find(s => s.name === agent.obsSourceName) && (
-                                        <span style={{ color: '#888' }}> - {agent.obsSources.find(s => s.name === agent.obsSourceName).hardwareId === 'Unknown' ? (agent.micDriverName ? agent.micDriverName : 'Unknown') : agent.obsSources.find(s => s.name === agent.obsSourceName).hardwareId}</span>
-                                      )}
+                                    {agent.obsConnected !== false && agent.obsSources && agent.obsSources.find(s => s.name === agent.obsSourceName) && (() => {
+                                          const hw = agent.obsSources.find(s => s.name === agent.obsSourceName).hardwareId;
+                                          const displayHw = (hw === 'Unknown' || hw === 'default' || hw === 'Default') ? (agent.micDriverName ? agent.micDriverName : hw) : hw;
+                                          return <span style={{ color: '#888' }}> - {displayHw}</span>;
+                                      })()}
                                   </span>
                                 </div>
                               {agent.obsHistory && (
