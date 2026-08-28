@@ -71,6 +71,42 @@ class ServerApp {
   setupRoutes() {
     
     // API: Mengambil log harian dari file log
+    this.app.post('/api/upload-record', (req, res) => {
+      const agentName = req.headers['x-agent-name'] || 'UnknownAgent';
+      const sessionFolder = req.headers['x-session-folder'] || 'UnknownSession';
+      const fileName = req.headers['x-file-name'] || 'UnknownFile.webm';
+      
+      const { app: electronApp } = require('electron');
+      const fs = require('fs');
+      const path = require('path');
+      const logger = require('./utils/logger');
+      
+      // Simpan di Dokumen/AudioMonitor-Recordings-Server
+      const baseDir = path.join(electronApp.getPath('documents'), 'AudioMonitor-Recordings-Server');
+      const targetDir = path.join(baseDir, sessionFolder);
+      
+      if (!fs.existsSync(targetDir)) {
+        fs.mkdirSync(targetDir, { recursive: true });
+      }
+      
+      const filePath = path.join(targetDir, fileName);
+      const writeStream = fs.createWriteStream(filePath);
+      
+      req.pipe(writeStream);
+      
+      req.on('end', () => {
+        logger.info(`[Upload] Berhasil menerima file rekaman dari ${agentName}: ${fileName}`);
+        res.status(200).json({ success: true, message: 'Upload selesai' });
+      });
+      
+      req.on('error', (err) => {
+        logger.error(`[Upload] Gagal menerima file rekaman dari ${agentName}: ${err.message}`);
+        writeStream.close();
+        res.status(500).json({ success: false, error: err.message });
+      });
+    });
+
+    // API: Mengambil log harian dari file log
     this.app.get('/api/logs', (req, res) => {
       const logger = require('./utils/logger');
       res.send({ success: true, logs: logger.getTodayLogs() });

@@ -94,7 +94,7 @@ class AudioProcessor {
     }
   }
 
-  startRecording(agentName, recordDir, agentId) {
+  startRecording(agentName, recordDir, agentId, serverIp) {
     if (!this.stream) return false;
     if (this.mediaRecorder && this.mediaRecorder.state === 'recording') return true;
 
@@ -111,6 +111,8 @@ class AudioProcessor {
       const safeId = agentId ? `_${agentId.replace(/[^a-z0-9\-]/gi, '')}` : '';
       this.sessionFolderName = `${safeName}${safeId}_${timestamp}`;
       this.recordDir = recordDir;
+      this.agentName = agentName;
+      this.serverIp = serverIp;
       this.partNumber = 1;
       
       this._startMediaRecorderChunk();
@@ -124,7 +126,7 @@ class AudioProcessor {
 
   _startMediaRecorderChunk() {
     if (window.electronAPI && window.electronAPI.startRecording) {
-      window.electronAPI.startRecording(this.sessionFolderName, this.partNumber, this.recordDir);
+      window.electronAPI.startRecording(this.sessionFolderName, this.partNumber, this.recordDir, this.agentName, this.serverIp);
     }
 
     this.mediaRecorder = new MediaRecorder(this.stream, { mimeType: 'audio/webm;codecs=opus' });

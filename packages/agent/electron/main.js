@@ -290,6 +290,63 @@ ipcMain.handle('get-hardware-telemetry', () => {
 // ==========================================
 // AUDIO RECORDING LOGIC
 // ==========================================
+
+function uploadToServer(filePath, serverUrl, agentName, sessionFolder) {
+  if (!serverUrl || serverUrl.trim() === '') return;
+  const http = require('http');
+  const https = require('https');
+  const path = require('path');
+  const fs = require('fs');
+  const { URL } = require('url');
+  
+  try {
+    let urlObj;
+    try {
+       urlObj = new URL(serverUrl);
+    } catch(e) {
+       urlObj = new URL(`http://${serverUrl}:4000`);
+    }
+    
+    urlObj.pathname = '/api/upload-record';
+    const fileName = path.basename(filePath);
+    const lib = urlObj.protocol === 'https:' ? https : http;
+    
+    const stats = fs.statSync(filePath);
+    const options = {
+      method: 'POST',
+      headers: {
+        'x-agent-name': agentName || 'UnknownAgent',
+        'x-session-folder': sessionFolder,
+        'x-file-name': fileName,
+        'Content-Type': 'application/octet-stream',
+        'Content-Length': stats.size
+      }
+    };
+    
+    const req = lib.request(urlObj, options, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          writeAgentLog('INFO', `[Upload Sukses] ${fileName} ke Server`);
+        } else {
+          writeAgentLog('ERROR', `[Upload Gagal] Server membalas: ${res.statusCode} ${data}`);
+        }
+      });
+    });
+    
+    req.on('error', (err) => {
+      writeAgentLog('ERROR', `[Upload Gagal] Tidak dapat menghubungi server: ${err.message}`);
+    });
+    
+    const fileStream = fs.createReadStream(filePath);
+    fileStream.pipe(req);
+    
+  } catch (err) {
+    writeAgentLog('ERROR', `[Upload Gagal] Kesalahan sistem: ${err.message}`);
+  }
+}
+
 let audioWriteStream = null;
 
 
@@ -305,7 +362,11 @@ ipcMain.handle('select-folder', async () => {
 
 
 let currentSessionDir = null;
-ipcMain.on('start-recording', (event, { sessionFolderName, partNumber, recordDir }) => {
+let currentAgentName = null;
+let currentServerIp = null;
+ipcMain.on('start-recording', (event, { sessionFolderName, partNumber, recordDir, agentName, serverIp }) => {
+    currentAgentName = agentName;
+    currentServerIp = serverIp;
   try {
     if (audioWriteStream) {
       audioWriteStream.end();
@@ -343,6 +404,9 @@ ipcMain.on('stop-recording', (event, isRollover) => {
     
     streamToClose.end(() => {
       // Callback ini dipanggil saat file sudah benar-benar tertutup (lock dilepas)
+      const finishedFilePath = streamToClose.path;
+      let finalDirName = currentSessionDir;
+
       if (!isRollover && currentSessionDir && fs.existsSync(currentSessionDir)) {
         try {
           const now = new Date();
@@ -353,7 +417,10 @@ ipcMain.on('stop-recording', (event, isRollover) => {
           
           const newDirName = `${currentSessionDir}_to_${stopTime}`;
           fs.renameSync(currentSessionDir, newDirName);
+          
+          finalDirName = newDirName;
           writeAgentLog('INFO', `Perekaman audio dihentikan dan folder disimpan sebagai: ${newDirName}`);
+
           currentSessionDir = null;
         } catch (err) {
           console.error('Gagal mengubah nama folder', err);
@@ -369,7 +436,10 @@ ipcMain.on('stop-recording', (event, isRollover) => {
               const stopTime = `${endHours}-${endMinutes}-${endSeconds}`;
               const newDirName2 = `${currentSessionDir}_to_${stopTime}`;
               fs.renameSync(currentSessionDir, newDirName2);
+              
+              finalDirName = newDirName2;
               writeAgentLog('INFO', `Berhasil mengubah nama folder pada percobaan kedua.`);
+
               currentSessionDir = null;
             } catch (err2) {
                console.error('Tetap gagal rename', err2);
@@ -379,6 +449,17 @@ ipcMain.on('stop-recording', (event, isRollover) => {
       } else {
         writeAgentLog('INFO', 'Perekaman chunk audio dihentikan.');
       }
+
+      // Mulai proses upload
+      setTimeout(() => {
+         const sessionFolderName = path.basename(finalDirName);
+         // Karena folder mungkin direname, kita buat ulang path-nya
+         const finalFilePath = path.join(finalDirName, path.basename(finishedFilePath));
+         if (fs.existsSync(finalFilePath)) {
+            uploadToServer(finalFilePath, currentServerIp, currentAgentName, sessionFolderName);
+         }
+      }, 500); // Jeda aman
+
     });
   }
 });
