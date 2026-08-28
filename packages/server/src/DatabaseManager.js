@@ -119,6 +119,44 @@ class DatabaseManager {
   }
 
   /**
+   * Mengambil insiden dengan filter tanggal, nama PC, dan tipe status.
+   * @param {Object} filters - { startDate, endDate, pcName, status, limit }
+   * @param {Function} callback - Callback dengan hasil array insiden.
+   */
+  getFilteredIncidents(filters, callback) {
+    let result = [...this.incidents];
+
+    if (filters.startDate) {
+      const start = new Date(filters.startDate);
+      result = result.filter(i => new Date(i.timestamp) >= start);
+    }
+    if (filters.endDate) {
+      const end = new Date(filters.endDate);
+      end.setHours(23, 59, 59, 999);
+      result = result.filter(i => new Date(i.timestamp) <= end);
+    }
+    if (filters.pcName) {
+      result = result.filter(i => i.pcName === filters.pcName);
+    }
+    if (filters.status) {
+      const s = filters.status.toUpperCase();
+      result = result.filter(i => (i.incidentType || '').toUpperCase().includes(s));
+    }
+
+    result.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+    const limit = parseInt(filters.limit) || 500;
+    callback(result.slice(0, limit));
+  }
+
+  /**
+   * Mengambil daftar unik nama PC yang pernah tercatat insiden.
+   */
+  getUniquePcNames() {
+    const names = new Set(this.incidents.map(i => i.pcName).filter(Boolean));
+    return [...names].sort();
+  }
+
+  /**
    * Menghapus seluruh memori insiden secara total (Reset dari Dashboard).
    */
   clearIncidents(callback) {

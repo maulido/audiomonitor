@@ -73,6 +73,14 @@ function App() {
   const [logs, setLogs] = useState([]);
   const [systemLogs, setSystemLogs] = useState('');
   const [showSystemLogs, setShowSystemLogs] = useState(false);
+
+  // Incident Filter State
+  const getDefaultStartDate = () => { const d = new Date(); d.setDate(d.getDate() - 7); return d.toISOString().slice(0, 10); };
+  const [incidentStartDate, setIncidentStartDate] = useState(getDefaultStartDate());
+  const [incidentEndDate, setIncidentEndDate] = useState(new Date().toISOString().slice(0, 10));
+  const [incidentPcFilter, setIncidentPcFilter] = useState('');
+  const [incidentStatusFilter, setIncidentStatusFilter] = useState('');
+  const [incidentPcNames, setIncidentPcNames] = useState([]);
   
   // Settings State
   const [telegramToken, setTelegramToken] = useState('');
@@ -152,9 +160,15 @@ function App() {
     }
   };
 
-  const fetchLogs = async () => {
+  const fetchLogs = async (filters = {}) => {
     try {
-      const res = await apiFetch('/api/incidents');
+      const params = new URLSearchParams();
+      if (filters.startDate) params.set('startDate', filters.startDate);
+      if (filters.endDate) params.set('endDate', filters.endDate);
+      if (filters.pcName) params.set('pcName', filters.pcName);
+      if (filters.status) params.set('status', filters.status);
+      params.set('limit', '500');
+      const res = await apiFetch(`/api/incidents?${params.toString()}`);
       if (res.ok) {
         setLogs(await res.json());
       }
@@ -163,13 +177,40 @@ function App() {
     }
   };
 
+  const fetchPcNames = async () => {
+    try {
+      const res = await apiFetch('/api/incidents/pc-names');
+      if (res.ok) setIncidentPcNames(await res.json());
+    } catch (e) { /* ignore */ }
+  };
+
+  const applyIncidentFilters = () => {
+    fetchLogs({
+      startDate: incidentStartDate || undefined,
+      endDate: incidentEndDate || undefined,
+      pcName: incidentPcFilter || undefined,
+      status: incidentStatusFilter || undefined
+    });
+  };
+
+  const resetIncidentFilters = () => {
+    const start = getDefaultStartDate();
+    const end = new Date().toISOString().slice(0, 10);
+    setIncidentStartDate(start);
+    setIncidentEndDate(end);
+    setIncidentPcFilter('');
+    setIncidentStatusFilter('');
+    fetchLogs({ startDate: start, endDate: end });
+  };
+
   useEffect(() => {
     fetchConfig();
   }, []);
 
   useEffect(() => {
     if (isAuthenticated && currentView === 'logs') {
-      fetchLogs();
+      fetchLogs({ startDate: incidentStartDate, endDate: incidentEndDate });
+      fetchPcNames();
     } else if (isAuthenticated && currentView === 'settings') {
       fetchConfig();
     }
@@ -399,7 +440,7 @@ function App() {
         const res = await apiFetch(`/api/incidents`, { method: 'DELETE' });
         if (res.ok) {
           await customAlert('Database cleared!', 'Sukses');
-          if (currentView === 'logs') fetchLogs();
+          if (currentView === 'logs') applyIncidentFilters();
         }
       } catch (e) {
         await customAlert('Failed to clear database', 'Error');
@@ -810,8 +851,25 @@ function App() {
           </>
         )}
 
-        {currentView === 'logs' && (
-          <div className="settings-layout" style={{ maxWidth: '1000px' }}>
+        {currentView === 'logs' && (() => {
+          // Hitung statistik ringkasan dari data logs yang sudah terfilter
+          const totalIncidents = logs.length;
+          const pcCounts = {};
+          const typeCounts = {};
+          const dayCounts = {};
+          logs.forEach(log => {
+            if (log.pcName) pcCounts[log.pcName] = (pcCounts[log.pcName] || 0) + 1;
+            const t = (log.incidentType || log.status || 'UNKNOWN').toUpperCase();
+            if (t !== 'RECOVERY' && t !== 'AMAN') typeCounts[t] = (typeCounts[t] || 0) + 1;
+            const day = (log.timestamp || '').substring(0, 10);
+            if (day) dayCounts[day] = (dayCounts[day] || 0) + 1;
+          });
+          const affectedPcs = Object.keys(pcCounts);
+          const topType = Object.entries(typeCounts).sort((a, b) => b[1] - a[1])[0];
+          const worstDay = Object.entries(dayCounts).sort((a, b) => b[1] - a[1])[0];
+
+          return (
+          <div className="settings-layout" style={{ maxWidth: '1100px' }}>
             <div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <h1 className="settings-header" style={{ marginBottom: 0 }}>Incident Logs</h1>
@@ -819,7 +877,69 @@ function App() {
                 </div>
               <p className="settings-desc">Rekam jejak masalah audio (Bahaya Mute/Suara Buruk) dari seluruh PC.</p>
             </div>
+
+            {/* Filter Bar */}
+            <div className="settings-card">
+              <div className="settings-card-accent blue"></div>
+              <div className="settings-card-content" style={{ padding: '0' }}>
+                <div className="incident-filter-bar">
+                  <div className="incident-filter-group">
+                    <label>Tanggal Mulai</label>
+                    <input type="date" className="incident-filter-input" value={incidentStartDate} onChange={e => setIncidentStartDate(e.target.value)} />
+                  </div>
+                  <div className="incident-filter-group">
+                    <label>Tanggal Akhir</label>
+                    <input type="date" className="incident-filter-input" value={incidentEndDate} onChange={e => setIncidentEndDate(e.target.value)} />
+                  </div>
+                  <div className="incident-filter-group">
+                    <label>Nama PC</label>
+                    <select className="incident-filter-input" value={incidentPcFilter} onChange={e => setIncidentPcFilter(e.target.value)}>
+                      <option value="">Semua PC</option>
+                      {incidentPcNames.map(name => <option key={name} value={name}>{name}</option>)}
+                    </select>
+                  </div>
+                  <div className="incident-filter-group">
+                    <label>Status</label>
+                    <select className="incident-filter-input" value={incidentStatusFilter} onChange={e => setIncidentStatusFilter(e.target.value)}>
+                      <option value="">Semua Status</option>
+                      <option value="BAHAYA">BAHAYA</option>
+                      <option value="OFFLINE">OFFLINE</option>
+                      <option value="RECOVERY">RECOVERY</option>
+                    </select>
+                  </div>
+                  <div className="incident-filter-actions">
+                    <button className="btn-filter primary" onClick={applyIncidentFilters}><i className="fa-solid fa-search"></i> Terapkan</button>
+                    <button className="btn-filter secondary" onClick={resetIncidentFilters}><i className="fa-solid fa-rotate-left"></i> Reset</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Summary Cards */}
+            <div className="incident-summary-grid">
+              <div className="incident-summary-card">
+                <div className="summary-icon"><i className="fa-solid fa-list"></i> Total Insiden</div>
+                <div className="summary-value">{totalIncidents}</div>
+                <div className="summary-label">kejadian tercatat</div>
+              </div>
+              <div className="incident-summary-card red">
+                <div className="summary-icon"><i className="fa-solid fa-desktop"></i> PC Terkena</div>
+                <div className="summary-value">{affectedPcs.length}</div>
+                <div className="summary-detail">{affectedPcs.length > 0 ? affectedPcs.map(pc => `${pc} (${pcCounts[pc]})`).join(', ') : '-'}</div>
+              </div>
+              <div className="incident-summary-card orange">
+                <div className="summary-icon"><i className="fa-solid fa-triangle-exclamation"></i> Tipe Terbanyak</div>
+                <div className="summary-value" style={{ fontSize: topType ? '1.1rem' : '1.8rem' }}>{topType ? topType[0].replace(/_/g, ' ') : '-'}</div>
+                <div className="summary-detail">{topType ? `${topType[1]} kejadian` : 'Belum ada data'}</div>
+              </div>
+              <div className="incident-summary-card purple">
+                <div className="summary-icon"><i className="fa-solid fa-calendar-xmark"></i> Hari Terburuk</div>
+                <div className="summary-value" style={{ fontSize: worstDay ? '1.2rem' : '1.8rem' }}>{worstDay ? new Date(worstDay[0]).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) : '-'}</div>
+                <div className="summary-detail">{worstDay ? `${worstDay[1]} insiden di hari itu` : 'Belum ada data'}</div>
+              </div>
+            </div>
             
+            {/* Tabel Insiden */}
             <div className="settings-card">
               <div className="settings-card-accent orange"></div>
               <div className="settings-card-content" style={{ padding: '0' }}>
@@ -840,14 +960,15 @@ function App() {
                       </tr>
                     ))}
                     {logs.length === 0 && (
-                      <tr><td colSpan="3" style={{textAlign: 'center', color: 'var(--text-muted)'}}>Belum ada insiden tercatat.</td></tr>
+                      <tr><td colSpan="3" style={{textAlign: 'center', color: 'var(--text-muted)'}}>Belum ada insiden tercatat dalam rentang waktu ini.</td></tr>
                     )}
                   </tbody>
                 </table>
               </div>
             </div>
           </div>
-        )}
+          );
+        })()}
 
         {currentView === 'settings' && (
           <div className="settings-layout">

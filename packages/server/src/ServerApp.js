@@ -155,12 +155,25 @@ class ServerApp {
       res.send(this.configManager.config);
     });
 
-    // API: Mengambil riwayat insiden (Log Error) dari database SQLite
+    // API: Mengambil riwayat insiden dengan filter opsional (tanggal, PC, status)
     this.app.get('/api/incidents', (req, res) => {
-      const limit = parseInt(req.query.limit) || 100;
-      this.dbManager.getRecentIncidents(limit, (rows) => {
-        res.send(rows);
-      });
+      const { startDate, endDate, pcName, status, limit } = req.query;
+      const hasFilters = startDate || endDate || pcName || status;
+      
+      if (hasFilters) {
+        this.dbManager.getFilteredIncidents({ startDate, endDate, pcName, status, limit }, (rows) => {
+          res.send(rows);
+        });
+      } else {
+        this.dbManager.getRecentIncidents(parseInt(limit) || 500, (rows) => {
+          res.send(rows);
+        });
+      }
+    });
+
+    // API: Mengambil daftar unik nama PC yang pernah tercatat insiden
+    this.app.get('/api/incidents/pc-names', (req, res) => {
+      res.send(this.dbManager.getUniquePcNames());
     });
 
     // API: Menghapus seluruh riwayat insiden
