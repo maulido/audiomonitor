@@ -587,6 +587,7 @@ function App() {
         status,
       cpuUsage: hardwareUsage.cpuUsage,
       ramUsage: hardwareUsage.ramUsage,
+      localIp: hardwareUsage.localIp,
       isMonitoringActive,
       isStreaming,
       streamTimecode,

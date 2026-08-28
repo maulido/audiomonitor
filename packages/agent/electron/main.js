@@ -266,9 +266,23 @@ ipcMain.handle('get-hardware-telemetry', () => {
   const cpuUsage = totalDelta === 0 ? 0 : Math.round(((totalDelta - idleDelta) / totalDelta) * 100);
   previousCpus = cpus;
   
+  // Get local IP address
+  const interfaces = os.networkInterfaces();
+  let localIp = 'Unknown IP';
+  for (const name of Object.keys(interfaces)) {
+    for (const iface of interfaces[name]) {
+      if (iface.family === 'IPv4' && !iface.internal) {
+        localIp = iface.address;
+        break;
+      }
+    }
+    if (localIp !== 'Unknown IP') break;
+  }
+
   return {
     ramUsage,
-    cpuUsage
+    cpuUsage,
+    localIp
   };
 });
 

@@ -677,7 +677,7 @@ function App() {
                             </>
                           )}
                         </div>
-                        <div className="pc-id">ID: {agent.uuid}</div>
+                        <div className="pc-id">ID: {agent.uuid} &bull; IP: {agent.localIp || 'Unknown'}</div>
                         {agent.currentScene && <div className="pc-id" style={{ marginTop: '2px', color: 'var(--accent)', fontWeight: 'bold' }}>Scene: {agent.currentScene}</div>}
                       </div>
                     </div>
