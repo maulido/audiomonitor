@@ -338,28 +338,48 @@ ipcMain.on('save-audio-chunk', (event, arrayBuffer) => {
 
 ipcMain.on('stop-recording', (event, isRollover) => {
   if (audioWriteStream) {
-    audioWriteStream.end();
+    const streamToClose = audioWriteStream;
     audioWriteStream = null;
     
-    if (!isRollover && currentSessionDir && fs.existsSync(currentSessionDir)) {
-      try {
-        const now = new Date();
-        const endHours = String(now.getHours()).padStart(2, '0');
-        const endMinutes = String(now.getMinutes()).padStart(2, '0');
-        const endSeconds = String(now.getSeconds()).padStart(2, '0');
-        const stopTime = `${endHours}-${endMinutes}-${endSeconds}`;
-        
-        const newDirName = `${currentSessionDir}_to_${stopTime}`;
-        fs.renameSync(currentSessionDir, newDirName);
-        writeAgentLog('INFO', `Perekaman audio dihentikan dan folder disimpan sebagai: ${newDirName}`);
-        currentSessionDir = null;
-      } catch (err) {
-        console.error('Gagal mengubah nama folder', err);
-        writeAgentLog('ERROR', `Gagal mengubah nama folder: ${err.message}`);
+    streamToClose.end(() => {
+      // Callback ini dipanggil saat file sudah benar-benar tertutup (lock dilepas)
+      if (!isRollover && currentSessionDir && fs.existsSync(currentSessionDir)) {
+        try {
+          const now = new Date();
+          const endHours = String(now.getHours()).padStart(2, '0');
+          const endMinutes = String(now.getMinutes()).padStart(2, '0');
+          const endSeconds = String(now.getSeconds()).padStart(2, '0');
+          const stopTime = `${endHours}-${endMinutes}-${endSeconds}`;
+          
+          const newDirName = `${currentSessionDir}_to_${stopTime}`;
+          fs.renameSync(currentSessionDir, newDirName);
+          writeAgentLog('INFO', `Perekaman audio dihentikan dan folder disimpan sebagai: ${newDirName}`);
+          currentSessionDir = null;
+        } catch (err) {
+          console.error('Gagal mengubah nama folder', err);
+          writeAgentLog('ERROR', `Gagal mengubah nama folder: ${err.message}`);
+          
+          // Fallback coba sekali lagi dengan setTimeout jika OS masih lambat melepas lock
+          setTimeout(() => {
+            try {
+              const now = new Date();
+              const endHours = String(now.getHours()).padStart(2, '0');
+              const endMinutes = String(now.getMinutes()).padStart(2, '0');
+              const endSeconds = String(now.getSeconds()).padStart(2, '0');
+              const stopTime = `${endHours}-${endMinutes}-${endSeconds}`;
+              const newDirName2 = `${currentSessionDir}_to_${stopTime}`;
+              fs.renameSync(currentSessionDir, newDirName2);
+              writeAgentLog('INFO', `Berhasil mengubah nama folder pada percobaan kedua.`);
+              currentSessionDir = null;
+            } catch (err2) {
+               console.error('Tetap gagal rename', err2);
+            }
+          }, 1500);
+        }
+      } else {
+        writeAgentLog('INFO', 'Perekaman chunk audio dihentikan.');
       }
-    } else {
-      writeAgentLog('INFO', 'Perekaman chunk audio dihentikan.');
-    }
+    });
   }
 });
 
