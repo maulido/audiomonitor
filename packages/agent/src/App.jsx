@@ -166,7 +166,12 @@ function App() {
     };
   }, [obsConnected]);
   const [autoStart, setAutoStart] = useState(false);
-  const [obsSyncStreaming, setObsSyncStreaming] = useState(() => localStorage.getItem('obsSyncStreaming') === 'true');
+  
+    const [obsSyncRecording, setObsSyncRecording] = useState(() => localStorage.getItem('obsSyncRecording') === 'true');
+    const obsSyncRecordingRef = useRef(obsSyncRecording);
+    useEffect(() => { obsSyncRecordingRef.current = obsSyncRecording; localStorage.setItem('obsSyncRecording', obsSyncRecording); }, [obsSyncRecording]);
+
+    const [obsSyncStreaming, setObsSyncStreaming] = useState(() => localStorage.getItem('obsSyncStreaming') === 'true');
   const obsSyncStreamingRef = useRef(obsSyncStreaming);
   useEffect(() => { obsSyncStreamingRef.current = obsSyncStreaming; localStorage.setItem('obsSyncStreaming', obsSyncStreaming); }, [obsSyncStreaming]);
 
@@ -241,7 +246,7 @@ function App() {
     localStorage.setItem('speakingThreshold', speakingThreshold.toString());
     localStorage.setItem('obsMuteTimeoutSec', obsMuteTimeoutSec.toString());
     localStorage.setItem('autoRecoveryUnmute', autoRecoveryUnmute.toString());
-  }, [agentName, serverIp, obsIp, obsPassword, obsSourceName, selectedMicId, noiseGate, silenceTimeoutSec, deadMicTimeoutSec, clippingThreshold, clippingDurationSec, speakingThreshold, obsMuteTimeoutSec, autoRecoveryUnmute, obsConnected, isObsMutedBtn, isRecording]);
+  }, [agentName, serverIp, obsIp, obsPassword, obsSourceName, selectedMicId, noiseGate, silenceTimeoutSec, deadMicTimeoutSec, clippingThreshold, clippingDurationSec, speakingThreshold, obsMuteTimeoutSec, autoRecoveryUnmute, obsSyncRecording, obsConnected, isObsMutedBtn, isRecording]);
 
   // Core Instances (useRef to persist across renders without triggering re-renders)
   const audioProcessor = useRef(null);
@@ -335,9 +340,19 @@ function App() {
           if (window.electronAPI && window.electronAPI.writeLog) window.electronAPI.writeLog('INFO', 'OBS Terhubung');
         obsClient.current.getAudioInputs().then(inputs => setObsInputs(inputs)).catch(console.error);
         obsClient.current.getStreamStatus().then(status => {
+           
            if (obsSyncStreamingRef.current) {
              setIsMonitoringActive(status.outputActive);
            }
+           if (obsSyncRecordingRef.current && audioProcessor.current) {
+             if (status.outputActive && !isRecordingRef.current) {
+               if (audioProcessor.current.startRecording(agentNameRef.current)) setIsRecording(true);
+             } else if (!status.outputActive && isRecordingRef.current) {
+               audioProcessor.current.stopRecording();
+               setIsRecording(false);
+             }
+           }
+
         }).catch(console.error);
         
         obsClient.current.obs.call('GetCurrentProgramScene').then(res => {
@@ -368,9 +383,19 @@ function App() {
         }
       },
       (isActive) => {
+        
         if (obsSyncStreamingRef.current) {
           setIsMonitoringActive(isActive);
         }
+        if (obsSyncRecordingRef.current && audioProcessor.current) {
+             if (isActive && !isRecordingRef.current) {
+               if (audioProcessor.current.startRecording(agentNameRef.current)) setIsRecording(true);
+             } else if (!isActive && isRecordingRef.current) {
+               audioProcessor.current.stopRecording();
+               setIsRecording(false);
+             }
+        }
+
       }
     );
 
@@ -798,9 +823,18 @@ function App() {
                     </div>
                     Auto-Monitor on OBS Live
                     </label>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', color: '#fff', fontSize: '12px' }}>
-                      <div className="switch">
-                        <input type="checkbox" checked={enableWindowsNotif} onChange={e => setEnableWindowsNotif(e.target.checked)} />
+                    
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', color: '#fff', fontSize: '12px' }}>
+                        <div className="switch">
+                          <input type="checkbox" checked={obsSyncRecording} onChange={e => setObsSyncRecording(e.target.checked)} />
+                          <span className="slider"></span>
+                        </div>
+                        Auto-Record on OBS Live
+                      </label>
+
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', color: '#fff', fontSize: '12px' }}>
+                        <div className="switch">
+                          <input type="checkbox" checked={enableWindowsNotif} onChange={e => setEnableWindowsNotif(e.target.checked)} />
                         <span className="slider"></span>
                       </div>
                       Windows Notification

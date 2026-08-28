@@ -667,6 +667,7 @@ function App() {
         speakingThreshold: agent.speakingThreshold ?? 10,
         obsMuteTimeoutSec: agent.obsMuteTimeoutSec ?? 3,
         autoRecoveryUnmute: agent.autoRecoveryUnmute ?? false,
+          obsSyncRecording: agent.obsSyncRecording ?? false,
       obsSourceName: agent.obsSourceName || 'Mic/Aux'
     }); 
   }}><i className="fa-solid fa-gear"></i></button>
