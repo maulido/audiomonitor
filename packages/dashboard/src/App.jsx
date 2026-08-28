@@ -671,6 +671,19 @@ function App() {
       obsSourceName: agent.obsSourceName || 'Mic/Aux'
     }); 
   }}><i className="fa-solid fa-gear"></i></button>
+
+      <button 
+        className="icon-btn" 
+        title={agent.isRecording ? 'Stop Recording (Manual)' : 'Start Recording (Manual)'} 
+        style={{ color: agent.isRecording ? '#f44336' : 'inherit' }}
+        onClick={() => {
+           if (client.current && client.current.socket) {
+             client.current.socket.emit('agent-record', { uuid: agent.uuid, shouldRecord: !agent.isRecording });
+           }
+        }}>
+        <i className="fa-solid fa-circle"></i>
+      </button>
+
                                 <button className="icon-btn" title="Delete PC" onClick={() => handleDeletePC(agent.uuid)}>
                                     <i className="fa-solid fa-trash"></i>
                                   </button>
