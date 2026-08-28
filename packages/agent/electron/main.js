@@ -301,7 +301,6 @@ function uploadToServer(filePath, serverUrl, agentName, sessionFolder) {
   }
   const http = require('http');
   const https = require('https');
-  const path = require('path');
   const fs = require('fs');
   const { URL } = require('url');
   
