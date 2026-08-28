@@ -25,5 +25,5 @@ contextBridge.exposeInMainWorld('electronAPI', {
   selectFolder: () => ipcRenderer.invoke('select-folder'),
   startRecording: (sessionFolderName, partNumber, recordDir) => ipcRenderer.send('start-recording', { sessionFolderName, partNumber, recordDir }),
   saveAudioChunk: (arrayBuffer) => ipcRenderer.send('save-audio-chunk', arrayBuffer),
-  stopRecording: () => ipcRenderer.send('stop-recording')
+  stopRecording: (isRollover) => ipcRenderer.send('stop-recording', isRollover)
 });

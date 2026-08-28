@@ -141,9 +141,7 @@ class AudioProcessor {
     this.chunkTimer = setTimeout(() => {
       if (this.mediaRecorder && this.mediaRecorder.state === 'recording') {
         this.mediaRecorder.onstop = () => {
-          if (window.electronAPI && window.electronAPI.stopRecording) {
-            window.electronAPI.stopRecording();
-          }
+          if (window.electronAPI && window.electronAPI.stopRecording) { window.electronAPI.stopRecording(true); }
           this.partNumber++;
           this._startMediaRecorderChunk();
         };
@@ -160,9 +158,7 @@ class AudioProcessor {
 
     if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
       this.mediaRecorder.onstop = () => {
-        if (window.electronAPI && window.electronAPI.stopRecording) {
-          window.electronAPI.stopRecording();
-        }
+        if (window.electronAPI && window.electronAPI.stopRecording) { window.electronAPI.stopRecording(false); }
       }; // prevent starting the next chunk
       this.mediaRecorder.stop();
     }

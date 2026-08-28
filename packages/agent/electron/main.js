@@ -304,6 +304,7 @@ ipcMain.handle('select-folder', async () => {
 
 
 
+let currentSessionDir = null;
 ipcMain.on('start-recording', (event, { sessionFolderName, partNumber, recordDir }) => {
   try {
     if (audioWriteStream) {
@@ -313,7 +314,7 @@ ipcMain.on('start-recording', (event, { sessionFolderName, partNumber, recordDir
 
     const baseDir = recordDir && recordDir.trim() !== '' ? recordDir : path.join(app.getPath('documents'), 'AudioMonitor-Recordings');
     const sessionDir = path.join(baseDir, sessionFolderName || 'UnknownSession');
-    
+    currentSessionDir = sessionDir;
     if (!fs.existsSync(sessionDir)) {
       fs.mkdirSync(sessionDir, { recursive: true });
     }
@@ -335,11 +336,30 @@ ipcMain.on('save-audio-chunk', (event, arrayBuffer) => {
   }
 });
 
-ipcMain.on('stop-recording', (event) => {
+ipcMain.on('stop-recording', (event, isRollover) => {
   if (audioWriteStream) {
     audioWriteStream.end();
     audioWriteStream = null;
-    writeAgentLog('INFO', 'Perekaman audio dihentikan dan disimpan.');
+    
+    if (!isRollover && currentSessionDir && fs.existsSync(currentSessionDir)) {
+      try {
+        const now = new Date();
+        const endHours = String(now.getHours()).padStart(2, '0');
+        const endMinutes = String(now.getMinutes()).padStart(2, '0');
+        const endSeconds = String(now.getSeconds()).padStart(2, '0');
+        const stopTime = `${endHours}-${endMinutes}-${endSeconds}`;
+        
+        const newDirName = `${currentSessionDir}_to_${stopTime}`;
+        fs.renameSync(currentSessionDir, newDirName);
+        writeAgentLog('INFO', `Perekaman audio dihentikan dan folder disimpan sebagai: ${newDirName}`);
+        currentSessionDir = null;
+      } catch (err) {
+        console.error('Gagal mengubah nama folder', err);
+        writeAgentLog('ERROR', `Gagal mengubah nama folder: ${err.message}`);
+      }
+    } else {
+      writeAgentLog('INFO', 'Perekaman chunk audio dihentikan.');
+    }
   }
 });
 
