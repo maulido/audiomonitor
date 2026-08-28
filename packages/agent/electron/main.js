@@ -292,18 +292,28 @@ ipcMain.handle('get-hardware-telemetry', () => {
 // ==========================================
 let audioWriteStream = null;
 
-ipcMain.on('start-recording', (event, { agentName }) => {
+
+ipcMain.handle('select-folder', async () => {
+  const { dialog } = require('electron');
+  const result = await dialog.showOpenDialog({ properties: ['openDirectory'] });
+  if (!result.canceled && result.filePaths.length > 0) {
+    return result.filePaths[0];
+  }
+  return null;
+});
+
+ipcMain.on('start-recording', (event, { agentName, recordDir }) => {
   try {
-    const docPath = app.getPath('documents');
-    const recordDir = path.join(docPath, 'AudioMonitor-Recordings');
-    if (!fs.existsSync(recordDir)) {
-      fs.mkdirSync(recordDir, { recursive: true });
+    const dir = recordDir && recordDir.trim() !== '' ? recordDir : path.join(app.getPath('documents'), 'AudioMonitor-Recordings');
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
     }
     
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     const safeName = (agentName || 'Agent').replace(/[^a-z0-9]/gi, '_');
     const filename = `${safeName}_${timestamp}.webm`;
-    const filePath = path.join(recordDir, filename);
+    const filePath = path.join(dir, filename);
+
     
     audioWriteStream = fs.createWriteStream(filePath);
     writeAgentLog('INFO', `Memulai perekaman audio ke: ${filePath}`);

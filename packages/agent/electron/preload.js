@@ -22,7 +22,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setAutostart: (enable) => ipcRenderer.send('set-autostart', enable),
   writeLog: (level, message) => ipcRenderer.send('write-log', { level, message }),
   
-  startRecording: (agentName) => ipcRenderer.send('start-recording', { agentName }),
+  selectFolder: () => ipcRenderer.invoke('select-folder'),
+  startRecording: (agentName, recordDir) => ipcRenderer.send('start-recording', { agentName, recordDir }),
   saveAudioChunk: (arrayBuffer) => ipcRenderer.send('save-audio-chunk', arrayBuffer),
   stopRecording: () => ipcRenderer.send('stop-recording')
 });

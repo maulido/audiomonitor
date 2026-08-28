@@ -169,6 +169,11 @@ function App() {
   
     const [obsSyncRecording, setObsSyncRecording] = useState(() => localStorage.getItem('obsSyncRecording') === 'true');
     const obsSyncRecordingRef = useRef(obsSyncRecording);
+
+    const [recordDir, setRecordDir] = useState(() => localStorage.getItem('recordDir') || '');
+    const recordDirRef = useRef(recordDir);
+    useEffect(() => { recordDirRef.current = recordDir; localStorage.setItem('recordDir', recordDir); }, [recordDir]);
+
     useEffect(() => { obsSyncRecordingRef.current = obsSyncRecording; localStorage.setItem('obsSyncRecording', obsSyncRecording); }, [obsSyncRecording]);
 
     const [obsSyncStreaming, setObsSyncStreaming] = useState(() => localStorage.getItem('obsSyncStreaming') === 'true');
@@ -287,7 +292,7 @@ function App() {
         
         telemetryClient.current.setRecordListener((shouldRecord) => {
           if (shouldRecord && audioProcessor.current) {
-            const success = audioProcessor.current.startRecording(agentNameRef.current);
+            const success = audioProcessor.current.startRecording(agentNameRef.current, recordDirRef.current);
             if (success) setIsRecording(true);
           } else if (!shouldRecord && audioProcessor.current) {
             audioProcessor.current.stopRecording();
@@ -346,7 +351,7 @@ function App() {
            }
            if (obsSyncRecordingRef.current && audioProcessor.current) {
              if (status.outputActive && !isRecordingRef.current) {
-               if (audioProcessor.current.startRecording(agentNameRef.current)) setIsRecording(true);
+               if (audioProcessor.current.startRecording(agentNameRef.current, recordDirRef.current)) setIsRecording(true);
              } else if (!status.outputActive && isRecordingRef.current) {
                audioProcessor.current.stopRecording();
                setIsRecording(false);
@@ -389,7 +394,7 @@ function App() {
         }
         if (obsSyncRecordingRef.current && audioProcessor.current) {
              if (isActive && !isRecordingRef.current) {
-               if (audioProcessor.current.startRecording(agentNameRef.current)) setIsRecording(true);
+               if (audioProcessor.current.startRecording(agentNameRef.current, recordDirRef.current)) setIsRecording(true);
              } else if (!isActive && isRecordingRef.current) {
                audioProcessor.current.stopRecording();
                setIsRecording(false);
@@ -802,8 +807,33 @@ function App() {
             </div>
 
             
-            <div className="setting-group full" style={{ marginTop: '5px', paddingTop: '10px', borderTop: '1px dashed #333' }}>
-              <label>System Settings</label>
+            
+              <div className="setting-group full" style={{ marginTop: '5px', paddingTop: '10px', borderTop: '1px dashed #333' }}>
+                <label>Lokasi Simpan Rekaman</label>
+                <div style={{ display: 'flex', gap: '5px' }}>
+                  <input 
+                    type="text" 
+                    value={recordDir} 
+                    onChange={e => setRecordDir(e.target.value)} 
+                    placeholder="Default: Documents/AudioMonitor-Recordings" 
+                    style={{ flex: 1 }}
+                  />
+                  <button 
+                    onClick={async () => {
+                      if (window.electronAPI && window.electronAPI.selectFolder) {
+                        const folder = await window.electronAPI.selectFolder();
+                        if (folder) setRecordDir(folder);
+                      }
+                    }}
+                    style={{ background: '#555', color: '#fff', border: 'none', padding: '5px 10px', borderRadius: '3px', cursor: 'pointer' }}
+                  >
+                    Pilih
+                  </button>
+                </div>
+              </div>
+
+              <div className="setting-group full" style={{ marginTop: '5px', paddingTop: '10px', borderTop: '1px dashed #333' }}>
+                <label>System Settings</label>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '8px', color: '#ccc', fontSize: '12px' }}>
                   <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', color: '#fff', fontSize: '12px' }}>
                     <div className="switch">

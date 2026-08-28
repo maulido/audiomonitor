@@ -99,13 +99,13 @@ class AudioProcessor {
    * dan mematikan perangkat mikrofon di sistem.
    */
   
-  startRecording(agentName) {
+  startRecording(agentName, recordDir) {
     if (!this.stream) return false;
     if (this.mediaRecorder && this.mediaRecorder.state === 'recording') return true;
 
     try {
       if (window.electronAPI && window.electronAPI.startRecording) {
-        window.electronAPI.startRecording(agentName);
+        window.electronAPI.startRecording(agentName, recordDir);
       }
 
       this.mediaRecorder = new MediaRecorder(this.stream, { mimeType: 'audio/webm;codecs=opus' });
