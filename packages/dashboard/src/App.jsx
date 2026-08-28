@@ -659,15 +659,71 @@ function App() {
     setRemoteConfig({
       agentName: agent.pcName,
       micDriverName: agent.micDriverName || '',
+                <select className="filter-select" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
+                <option value="ALL">Semua Status</option>
+                <option value="BAHAYA">Hanya Bahaya</option>
+                <option value="AMAN">Hanya Aman</option>
+              </select>
+            </div>
+
+            <div className={`agent-grid ${isCompactMode ? 'compact' : ''}`}>
+              {sortedFilteredAgents.map(agent => {
+                const isOffline = agent.status === 'OFFLINE';
+                const isDanger = agent.status && agent.status.startsWith('BAHAYA');
+                const isStandby = agent.status && agent.status.startsWith('STANDBY');
+                
+                let cardClass = 'agent-card';
+                if (isOffline) cardClass += ' offline';
+                else if (isDanger) cardClass += ' danger';
+                else if (isStandby) cardClass += ' standby';
+                
+                if (agent.isMonitoringActive === false && !isOffline) cardClass += ' monitoring-off';
+
+                let statusAreaClass = 'status-area';
+                if (isOffline) statusAreaClass += ' offline';
+                else if (isDanger) statusAreaClass += ' danger';
+
+                return (
+                  <div key={agent.uuid} className={cardClass}>
+                    <div className="card-header">
+                      <div className="pc-info">
+                        <div className="pc-name-row">
+                          {editingId === agent.uuid ? (
+                            <form onSubmit={(e) => submitInlineRename(e, agent.uuid)} style={{display: 'flex', gap: '5px', width: '100%'}}>
+                              <input autoFocus value={editingName} onChange={e => setEditingName(e.target.value)} className="form-input" style={{padding: '4px 8px'}} />
+                              <button type="submit" className="icon-btn" style={{background: 'var(--accent)', color: '#fff'}}><i className="fa-solid fa-check"></i></button>
+                              <button type="button" onClick={() => setEditingId(null)} className="icon-btn"><i className="fa-solid fa-times"></i></button>
+                            </form>
+                          ) : (
+                            <>
+                              <h2 className="pc-name">
+                                {agent.pcName}
+                                {agent.isStreaming && (
+                                  <div className="live-badge">LIVE {agent.streamTimecode || ''}</div>
+                                )}
+                              </h2>
+                              <div className="card-actions">
+                                <button 
+                                  className={`toggle-btn ${agent.isMonitoringActive ? '' : 'off'}`}
+                                  onClick={() => togglePcMonitoring(agent.uuid, !agent.isMonitoringActive)}
+                                >
+                                    {agent.isMonitoringActive ? <i className="fa-solid fa-pause" style={{marginRight: '4px'}}></i> : <i className="fa-solid fa-play" style={{marginRight: '4px'}}></i>} {agent.isMonitoringActive ? 'ON' : 'OFF'}
+                                </button>
+                                <button className="icon-btn" title="Remote Config" onClick={() => { 
+    setConfigModalAgent(agent); 
+    setRemoteConfig({
+      agentName: agent.pcName,
+      micDriverName: agent.micDriverName || '',
       noiseGate: agent.noiseGate ?? 15,
       silenceTimeoutSec: agent.silenceTimeoutSec ?? 10,
       deadMicTimeoutSec: agent.deadMicTimeoutSec ?? 60,
       clippingThreshold: agent.clippingThreshold ?? 95,
       clippingDurationSec: agent.clippingDurationSec ?? 3,
-        speakingThreshold: agent.speakingThreshold ?? 10,
-        obsMuteTimeoutSec: agent.obsMuteTimeoutSec ?? 3,
-        autoRecoveryUnmute: agent.autoRecoveryUnmute ?? false,
-          obsSyncRecording: agent.obsSyncRecording ?? false,
+      speakingThreshold: agent.speakingThreshold ?? 10,
+      obsMuteTimeoutSec: agent.obsMuteTimeoutSec ?? 3,
+      autoRecoveryUnmute: agent.autoRecoveryUnmute ?? false,
+      obsSyncRecording: agent.obsSyncRecording ?? false,
+      obsSyncStreaming: agent.obsSyncStreaming ?? false,
       obsSourceName: agent.obsSourceName || 'Mic/Aux'
     }); 
   }}><i className="fa-solid fa-gear"></i></button>
@@ -1037,27 +1093,38 @@ function App() {
                         <input className="form-input" type="number" value={remoteConfig.obsMuteTimeoutSec || 3} onChange={e => setRemoteConfig({...remoteConfig, obsMuteTimeoutSec: Number(e.target.value)})} min="1" />
                       </div>
                       <div className="setting-group" style={{ marginBottom: 0 }}>
-                        <label>Pecah (s)</label>
+                    <label>Pecah (s)</label>
                         <input className="form-input" type="number" value={remoteConfig.clippingDurationSec || 3} onChange={e => setRemoteConfig({...remoteConfig, clippingDurationSec: Number(e.target.value)})} min="1" />
                       </div>
                     </div>
                   </div>
-                    
+                  
                   <div className="modal-section" style={{ marginTop: '24px', borderTop: '1px dashed #333', paddingTop: '20px' }}>
+                    <div className="modal-section-title" style={{ color: '#4caf50' }}>OBS Automations</div>
                     
-                      <div className="modal-section-title" style={{ color: '#f44336' }}>Recording Settings</div>
-                      <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', cursor: 'pointer', marginBottom: '15px' }}>
-                        <div className="toggle-switch" style={{ marginTop: '2px', flexShrink: 0 }}>
-                          <input type="checkbox" checked={!!remoteConfig.obsSyncRecording} onChange={e => setRemoteConfig({...remoteConfig, obsSyncRecording: e.target.checked})} />
-                          <span className="slider"></span>
-                        </div>
-                        <div>
-                          <div style={{ color: '#fff', fontSize: '13px', fontWeight: 'bold' }}>Auto-Record on OBS Live</div>
-                          <div style={{ color: 'var(--text-muted)', fontSize: '11px', marginTop: '4px' }}>Otomatis merekam suara Host saat OBS Streaming/Recording. (File disimpan secara lokal di masing-masing komputer Agent).</div>
-                        </div>
-                      </label>
+                    <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', cursor: 'pointer', marginBottom: '15px' }}>
+                      <div className="toggle-switch" style={{ marginTop: '2px', flexShrink: 0 }}>
+                        <input type="checkbox" checked={!!remoteConfig.obsSyncStreaming} onChange={e => setRemoteConfig({...remoteConfig, obsSyncStreaming: e.target.checked})} />
+                        <span className="slider"></span>
+                      </div>
+                      <div>
+                        <div style={{ color: '#fff', fontSize: '13px', fontWeight: 'bold' }}>Auto-Monitor on OBS Live</div>
+                        <div style={{ color: 'var(--text-muted)', fontSize: '11px', marginTop: '4px' }}>Otomatis menyalakan/mematikan tombol hijau Monitoring Agent mengikuti status Streaming/Recording di OBS.</div>
+                      </div>
+                    </label>
 
-                      <div className="modal-section-title" style={{ color: 'var(--success)' }}>Auto-Recovery</div>
+                    <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', cursor: 'pointer', marginBottom: '15px' }}>
+                      <div className="toggle-switch" style={{ marginTop: '2px', flexShrink: 0 }}>
+                        <input type="checkbox" checked={!!remoteConfig.obsSyncRecording} onChange={e => setRemoteConfig({...remoteConfig, obsSyncRecording: e.target.checked})} />
+                        <span className="slider"></span>
+                      </div>
+                      <div>
+                        <div style={{ color: '#fff', fontSize: '13px', fontWeight: 'bold' }}>Auto-Record on OBS Live</div>
+                        <div style={{ color: 'var(--text-muted)', fontSize: '11px', marginTop: '4px' }}>Otomatis merekam suara Host saat OBS Streaming/Recording. (File disimpan secara lokal di masing-masing komputer Agent).</div>
+                      </div>
+                    </label>
+
+                    <div className="modal-section-title" style={{ color: 'var(--success)' }}>Auto-Recovery</div>
                     <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', cursor: 'pointer' }}>
                       <div className="toggle-switch" style={{ marginTop: '2px', flexShrink: 0 }}>
                         <input type="checkbox" checked={!!remoteConfig.autoRecoveryUnmute} onChange={e => setRemoteConfig({...remoteConfig, autoRecoveryUnmute: e.target.checked})} />
