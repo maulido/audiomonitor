@@ -20,5 +20,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   
   // Mencentang atau menghapus centang fitur Autostart (Startup)
   setAutostart: (enable) => ipcRenderer.send('set-autostart', enable),
-  writeLog: (level, message) => ipcRenderer.send('write-log', { level, message })
+  writeLog: (level, message) => ipcRenderer.send('write-log', { level, message }),
+  
+  startRecording: (agentName) => ipcRenderer.send('start-recording', { agentName }),
+  saveAudioChunk: (arrayBuffer) => ipcRenderer.send('save-audio-chunk', arrayBuffer),
+  stopRecording: () => ipcRenderer.send('stop-recording')
 });

@@ -286,6 +286,46 @@ ipcMain.handle('get-hardware-telemetry', () => {
   };
 });
 
+
+// ==========================================
+// AUDIO RECORDING LOGIC
+// ==========================================
+let audioWriteStream = null;
+
+ipcMain.on('start-recording', (event, { agentName }) => {
+  try {
+    const docPath = app.getPath('documents');
+    const recordDir = path.join(docPath, 'AudioMonitor-Recordings');
+    if (!fs.existsSync(recordDir)) {
+      fs.mkdirSync(recordDir, { recursive: true });
+    }
+    
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const safeName = (agentName || 'Agent').replace(/[^a-z0-9]/gi, '_');
+    const filename = `${safeName}_${timestamp}.webm`;
+    const filePath = path.join(recordDir, filename);
+    
+    audioWriteStream = fs.createWriteStream(filePath);
+    writeAgentLog('INFO', `Memulai perekaman audio ke: ${filePath}`);
+  } catch (error) {
+    writeAgentLog('ERROR', `Gagal memulai perekaman: ${error.message}`);
+  }
+});
+
+ipcMain.on('save-audio-chunk', (event, arrayBuffer) => {
+  if (audioWriteStream) {
+    audioWriteStream.write(Buffer.from(arrayBuffer));
+  }
+});
+
+ipcMain.on('stop-recording', (event) => {
+  if (audioWriteStream) {
+    audioWriteStream.end();
+    audioWriteStream = null;
+    writeAgentLog('INFO', 'Perekaman audio dihentikan dan disimpan.');
+  }
+});
+
 // Menampilkan Pop-Up Notifikasi Windows
 ipcMain.on('show-notification', (event, { title, body }) => {
   new Notification({ title, body }).show();

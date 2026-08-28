@@ -98,7 +98,48 @@ class AudioProcessor {
    * Menghentikan seluruh proses pemantauan audio, membersihkan memory,
    * dan mematikan perangkat mikrofon di sistem.
    */
+  
+  startRecording(agentName) {
+    if (!this.stream) return false;
+    if (this.mediaRecorder && this.mediaRecorder.state === 'recording') return true;
+
+    try {
+      if (window.electronAPI && window.electronAPI.startRecording) {
+        window.electronAPI.startRecording(agentName);
+      }
+
+      this.mediaRecorder = new MediaRecorder(this.stream, { mimeType: 'audio/webm;codecs=opus' });
+      
+      this.mediaRecorder.ondataavailable = async (e) => {
+        if (e.data && e.data.size > 0 && window.electronAPI && window.electronAPI.saveAudioChunk) {
+          const arrayBuffer = await e.data.arrayBuffer();
+          window.electronAPI.saveAudioChunk(arrayBuffer);
+        }
+      };
+
+      this.mediaRecorder.onstop = () => {
+        if (window.electronAPI && window.electronAPI.stopRecording) {
+          window.electronAPI.stopRecording();
+        }
+      };
+
+      // Slice the recording every 1000ms (1 second) so it streams smoothly to the disk
+      this.mediaRecorder.start(1000);
+      return true;
+    } catch (e) {
+      console.error('Failed to start MediaRecorder:', e);
+      return false;
+    }
+  }
+
+  stopRecording() {
+    if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
+      this.mediaRecorder.stop();
+    }
+  }
+
   stop() {
+    this.stopRecording();
     this.isRunning = false;
     if (this.animationFrame) clearTimeout(this.animationFrame);
     if (this.audioContext) this.audioContext.close();

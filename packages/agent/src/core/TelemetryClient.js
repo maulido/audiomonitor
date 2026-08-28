@@ -46,6 +46,12 @@ class TelemetryClient {
    * Mendaftarkan fungsi callback untuk menangani perintah 'Rename' (Ubah Nama PC) dari Dashboard.
    * @param {Function} callback - Fungsi yang dipanggil saat ada perintah ubah nama.
    */
+
+  setRecordListener(callback) {
+    if (!this.socket) return;
+    this.socket.on('command-record', callback);
+  }
+
   setRenameListener(callback) {
     if (!this.socket) return;
     this.socket.on('command-rename', callback);

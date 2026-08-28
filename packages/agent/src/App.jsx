@@ -241,7 +241,7 @@ function App() {
     localStorage.setItem('speakingThreshold', speakingThreshold.toString());
     localStorage.setItem('obsMuteTimeoutSec', obsMuteTimeoutSec.toString());
     localStorage.setItem('autoRecoveryUnmute', autoRecoveryUnmute.toString());
-  }, [agentName, serverIp, obsIp, obsPassword, obsSourceName, selectedMicId, noiseGate, silenceTimeoutSec, deadMicTimeoutSec, clippingThreshold, clippingDurationSec, speakingThreshold, obsMuteTimeoutSec, autoRecoveryUnmute, obsConnected, isObsMutedBtn]);
+  }, [agentName, serverIp, obsIp, obsPassword, obsSourceName, selectedMicId, noiseGate, silenceTimeoutSec, deadMicTimeoutSec, clippingThreshold, clippingDurationSec, speakingThreshold, obsMuteTimeoutSec, autoRecoveryUnmute, obsConnected, isObsMutedBtn, isRecording]);
 
   // Core Instances (useRef to persist across renders without triggering re-renders)
   const audioProcessor = useRef(null);
@@ -277,6 +277,17 @@ function App() {
 
       telemetryClient.current.setRenameListener((newName) => {
           setAgentName(newName);
+        });
+
+        
+        telemetryClient.current.setRecordListener((shouldRecord) => {
+          if (shouldRecord && audioProcessor.current) {
+            const success = audioProcessor.current.startRecording(agentNameRef.current);
+            if (success) setIsRecording(true);
+          } else if (!shouldRecord && audioProcessor.current) {
+            audioProcessor.current.stopRecording();
+            setIsRecording(false);
+          }
         });
 
         telemetryClient.current.setConfigUpdateListener((config) => {
@@ -588,6 +599,7 @@ function App() {
       cpuUsage: hardwareUsage.cpuUsage,
       ramUsage: hardwareUsage.ramUsage,
       localIp: hardwareUsage.localIp,
+      isRecording,
       isMonitoringActive,
       isStreaming,
       streamTimecode,
@@ -680,17 +692,23 @@ function App() {
             ID: {uuid.length > 15 ? uuid.substring(0, 8) + '...' + uuid.slice(-4) : uuid}
           </div>
         </div>
-        <div style={{ textAlign: 'right' }}>
-          <div className={`status-badge ${status}`} style={{ opacity: isMonitoringActive ? 1 : 0.5 }}>
-            {isMonitoringActive ? status.replace(/_/g, ' ') : 'PAUSED'}
-          </div>
-          <div style={{ fontSize: '11px', color: isStreaming ? '#f44336' : '#666', marginTop: '6px', fontWeight: 'bold' }}>
-            {isStreaming ? `🔴 LIVE - ${streamTimecode}` : '⚫ OFFLINE'}
+        
+          <div style={{ textAlign: 'right' }}>
+            <div className={`status-badge ${status}`} style={{ opacity: isMonitoringActive ? 1 : 0.5 }}>
+              {isMonitoringActive ? status.replace(/_/g, ' ') : 'PAUSED'}
+            </div>
+            {isRecording && (
+              <div style={{ fontSize: '11px', color: '#f44336', marginTop: '6px', fontWeight: 'bold', animation: 'pulse 1.5s infinite' }}>
+                🔴 REC
+              </div>
+            )}
+            <div style={{ fontSize: '11px', color: isStreaming ? '#f44336' : '#666', marginTop: '6px', fontWeight: 'bold' }}>
+              {isStreaming ? `📡 LIVE - ${streamTimecode}` : '🔌 OFFLINE'}
+            </div>
           </div>
         </div>
-      </div>
 
-      <div className="tabs">
+        <div className="tabs">
         <div className={`tab ${activeTab === 'monitoring' ? 'active' : ''}`} onClick={() => setActiveTab('monitoring')}>Monitoring</div>
         <div className={`tab ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => setActiveTab('settings')}>Settings</div>
       </div>

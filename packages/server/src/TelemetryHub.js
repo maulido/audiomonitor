@@ -121,7 +121,16 @@ class TelemetryHub {
           }
       });
 
-      // Event usang (Legacy) via socket untuk toggle monitoring PC
+      
+        socket.on('agent-record', (data) => {
+          if (!data || !data.uuid) return;
+          const agentSocketId = this.agentSockets.get(data.uuid);
+          if (agentSocketId) {
+            this.io.to(agentSocketId).emit('command-record', !!data.record);
+          }
+        });
+
+        // Event usang (Legacy) via socket untuk toggle monitoring PC
       socket.on('agent-monitoring', (data) => { if (!data) return;
         if (data.uuid && data.active !== undefined) {
           this.setPcMonitoring(data.uuid, data.active);
