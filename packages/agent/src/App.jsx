@@ -631,15 +631,18 @@ function App() {
       const now = Date.now();
       const throttleMs = (telegramConfig.interval || 60) * 1000;
       const isNewStatus = lastAlertState.current.status !== status;
+      const canSendAlert = now - lastAlertState.current.time > throttleMs;
       
-      if (isNewStatus || now - lastAlertState.current.time > throttleMs) {
+      if (canSendAlert) {
         lastAlertState.current = { status, time: now };
-        const msg = `[OFFLINE ALERT] <b>AUDIO ISSUE</b> AUDIO ISSUE\nPC <b>${agentName}</b> mengalami masalah: <b>${status}</b>\n<i>(Pesan ini dikirim otomatis oleh Agent karena Server Induk sedang terputus/mati)</i>`;
+        const msg = `[OFFLINE ALERT] <b>AUDIO ISSUE</b>\nPC <b>${agentName}</b> mengalami masalah: <b>${status}</b>\n<i>(Pesan ini dikirim otomatis oleh Agent karena Server Induk sedang terputus/mati)</i>`;
         fetch(`https://api.telegram.org/bot${telegramConfig.token}/sendMessage`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ chat_id: telegramConfig.chatId, text: msg, parse_mode: 'HTML' })
         }).catch(err => console.error('Offline Telegram Error:', err));
+      } else if (isNewStatus) {
+        lastAlertState.current.status = status;
       }
     } else if (status === 'AMAN') {
       lastAlertState.current = { status: '', time: 0 };
