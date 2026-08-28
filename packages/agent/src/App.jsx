@@ -164,7 +164,7 @@ function App() {
       clearInterval(streamTimer);
       clearInterval(sourcesTimer);
     };
-  }, [obsConnected, isObsMutedBtn]);
+  }, [obsConnected]);
   const [autoStart, setAutoStart] = useState(false);
   const [obsSyncStreaming, setObsSyncStreaming] = useState(() => localStorage.getItem('obsSyncStreaming') === 'true');
   const obsSyncStreamingRef = useRef(obsSyncStreaming);
@@ -434,7 +434,7 @@ function App() {
       setObsLevel(0);
       setObsDb(-100);
     }
-    }, [obsConnected, isObsMutedBtn]);
+    }, [obsConnected]);
 
   // Hybrid Monitoring Logic
   useEffect(() => {
@@ -461,16 +461,18 @@ function App() {
     }
 
     // Build up danger score if talking while OBS is muted. Drain it if not.
-    if (isTalking && isObsMuted && obsConnected) {
+    // NOTE: isObsMuted is based on the meter level (< 0.5) OR the physical mute button.
+    const isActuallyMuted = isObsMutedBtn || isObsMuted;
+    if (isTalking && isActuallyMuted && obsConnected) {
       dangerScore.current += 100;
     } else {
-      dangerScore.current = Math.max(0, dangerScore.current - 100); // Drains twice as fast during pauses
+      dangerScore.current = Math.max(-1000, dangerScore.current - 200); // Drains twice as fast during pauses
     }
 
     if (dangerScore.current >= (obsMuteTimeoutSec * 1000)) { // dynamic timeout of "mostly" talking while muted
       if (autoRecoveryUnmute && obsClient.current) {
           obsClient.current.setMute(obsSourceNameRef.current, false);
-          dangerScore.current = 0; // reset
+          dangerScore.current = -2000; // grace period of 2 seconds to allow meter to recover
           nextStatus = 'AMAN';
         } else {
           nextStatus = 'BAHAYA_OBS_MUTE';
