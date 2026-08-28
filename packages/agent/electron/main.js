@@ -164,6 +164,33 @@ if (!gotTheLock) {
 }
 
 // Inisialisasi utama Electron
+ipcMain.handle('get-windows-audio-devices', async () => {
+  if (process.platform !== 'win32') return {};
+  try {
+    const { exec } = require('child_process');
+    const util = require('util');
+    const execAsync = util.promisify(exec);
+    const cmd = `powershell -NoProfile -Command "Get-ItemProperty 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\MMDevices\\Audio\\Capture\\*\\Properties' | Select-Object PSPath, '{a45c254e-df1c-4efd-8020-67d146a850e0},2', '{b3f8fa53-0004-438e-9003-51a46e139bfc},6' | ConvertTo-Json"`;
+    const { stdout } = await execAsync(cmd);
+    const data = JSON.parse(stdout || '[]');
+    const mapping = {};
+    const items = Array.isArray(data) ? data : [data];
+    items.forEach(item => {
+      if (item && item.PSPath) {
+        const idMatch = item.PSPath.match(/{[0-9a-fA-F-]+}/);
+        if (idMatch) {
+          const id = idMatch[0];
+          const name = item['{a45c254e-df1c-4efd-8020-67d146a850e0},2'];
+          if (id && name) mapping[id] = name;
+        }
+      }
+    });
+    return mapping;
+  } catch (err) {
+    return {};
+  }
+});
+
 app.whenReady().then(() => {
   // Setup Auto Updater
   autoUpdater.autoDownload = true;

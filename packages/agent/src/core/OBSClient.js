@@ -197,30 +197,10 @@ class OBSClient {
   async getWindowsAudioDevices() {
     if (process.platform !== 'win32') return {};
     try {
-      const { exec } = require('child_process');
-      const util = require('util');
-      const execAsync = util.promisify(exec);
-      const cmd = `powershell -NoProfile -Command "Get-ItemProperty 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\MMDevices\\Audio\\Capture\\*\\Properties' | Select-Object PSPath, '{a45c254e-df1c-4efd-8020-67d146a850e0},2', '{b3f8fa53-0004-438e-9003-51a46e139bfc},6' | ConvertTo-Json"`;
-      const { stdout } = await execAsync(cmd);
-      const data = JSON.parse(stdout || '[]');
-      const mapping = {};
-      const items = Array.isArray(data) ? data : [data];
-      for (const item of items) {
-        if (!item.PSPath) continue;
-        const match = item.PSPath.match(/\{([a-fA-F0-9\-]+)\}/);
-        if (match) {
-          const guid = '{' + match[1].toLowerCase() + '}';
-          const part1 = item['{a45c254e-df1c-4efd-8020-67d146a850e0},2'];
-          const part2 = item['{b3f8fa53-0004-438e-9003-51a46e139bfc},6'];
-          let name = '';
-          if (part1 && part2) name = part1 + ' (' + part2 + ')';
-          else if (part1) name = part1;
-          else if (part2) name = part2;
-          
-          if (name) mapping[guid] = name;
-        }
+      if (window.electronAPI && window.electronAPI.getWindowsAudioDevices) {
+        return await window.electronAPI.getWindowsAudioDevices();
       }
-      return mapping;
+      return {};
     } catch (err) {
       console.error("Failed to map audio devices:", err);
       return {};
