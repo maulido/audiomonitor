@@ -302,7 +302,6 @@ function uploadToServer(filePath, serverUrl, agentName, sessionFolder) {
   }
   const http = require('http');
   const https = require('https');
-  const fs = require('fs');
   const { URL } = require('url');
   
   try {
@@ -434,7 +433,6 @@ ipcMain.on('stop-recording', (event, isRollover) => {
           finalDirName = newDirName;
           writeAgentLog('INFO', `Perekaman audio dihentikan dan folder disimpan sebagai: ${newDirName}`);
         } catch (err) {
-          console.error('Gagal mengubah nama folder', err);
           writeAgentLog('ERROR', `Gagal mengubah nama folder: ${err.message}`);
           
           // Fallback coba sekali lagi dengan setTimeout jika OS masih lambat melepas lock
@@ -450,7 +448,7 @@ ipcMain.on('stop-recording', (event, isRollover) => {
               finalDirName = newDirName2;
               writeAgentLog('INFO', `Berhasil mengubah nama folder pada percobaan kedua.`);
             } catch (err2) {
-               console.error('Tetap gagal rename', err2);
+               writeAgentLog('ERROR', `Tetap gagal rename pada percobaan kedua: ${err2.message}`);
             }
           }, 1500);
         }
@@ -471,7 +469,7 @@ ipcMain.on('stop-recording', (event, isRollover) => {
   }
 });
 
-  // Menampilkan Pop-Up Notifikasi Windows
+// Menampilkan Pop-Up Notifikasi Windows
 ipcMain.on('show-notification', (event, { title, body }) => {
   new Notification({ title, body }).show();
 });

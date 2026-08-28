@@ -45,8 +45,6 @@ class ServerApp {
     this.app.use(cors());
     this.app.use(express.json());
     
-    // Middleware Keamanan PIN khusus rute API
-    // Memastikan siapa pun yang mengirim POST/DELETE/PUT ke API harus menyertakan PIN di header
     // Middleware Keamanan PIN khusus rute /api (Dashboard)
     // Endpoint /internal/ tidak memerlukan PIN karena digunakan untuk komunikasi mesin-ke-mesin (Agent -> Server)
     this.app.use('/api', (req, res, next) => {
@@ -72,7 +70,7 @@ class ServerApp {
    */
   setupRoutes() {
     
-    // API: Mengambil log harian dari file log
+    // Internal API: Menerima file rekaman audio dari Agent
     this.app.post('/internal/upload-record', (req, res) => {
       const agentName = req.headers['x-agent-name'] || 'UnknownAgent';
       const sessionFolder = req.headers['x-session-folder'] || 'UnknownSession';
@@ -81,7 +79,6 @@ class ServerApp {
       const fs = require('fs');
       const path = require('path');
       const os = require('os');
-      const logger = require('./utils/logger');
       
       // Gunakan recordDir dari config jika ada, jika tidak fallback ke Documents
       const baseDir = this.configManager.config.recordDir 
