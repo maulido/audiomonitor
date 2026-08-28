@@ -127,6 +127,7 @@ function createTray() {
 
   const contextMenu = Menu.buildFromTemplate([
     { label: 'Show App', click: () => mainWindow.show() },
+      { label: 'Buka Folder Log', click: () => { require('electron').shell.openPath(logsDir); } },
     { type: 'separator' },
     { 
       label: 'Quit', 
