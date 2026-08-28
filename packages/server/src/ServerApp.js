@@ -78,13 +78,14 @@ class ServerApp {
       const sessionFolder = req.headers['x-session-folder'] || 'UnknownSession';
       const fileName = req.headers['x-file-name'] || 'UnknownFile.webm';
       
-      const { app: electronApp } = require('electron');
       const fs = require('fs');
       const path = require('path');
+      const os = require('os');
       const logger = require('./utils/logger');
       
-      // Simpan di Dokumen/AudioMonitor-Recordings-Server
-      const baseDir = path.join(electronApp.getPath('documents'), 'AudioMonitor-Recordings-Server');
+      // Gunakan recordDir dari config jika ada, jika tidak fallback ke Documents
+      const baseDir = this.configManager.config.recordDir 
+        || path.join(os.homedir(), 'Documents', 'AudioMonitor-Recordings-Server');
       const targetDir = path.join(baseDir, sessionFolder);
       
       if (!fs.existsSync(targetDir)) {
@@ -96,9 +97,14 @@ class ServerApp {
       
       req.pipe(writeStream);
       
-      req.on('end', () => {
-        logger.info(`[Upload] Berhasil menerima file rekaman dari ${agentName}: ${fileName}`);
-        res.status(200).json({ success: true, message: 'Upload selesai' });
+      writeStream.on('finish', () => {
+        logger.info(`[Upload] Berhasil menerima file rekaman dari ${agentName}: ${fileName} -> ${filePath}`);
+        res.status(200).json({ success: true, message: 'Upload selesai', path: filePath });
+      });
+      
+      writeStream.on('error', (err) => {
+        logger.error(`[Upload] Gagal menulis file rekaman dari ${agentName}: ${err.message}`);
+        res.status(500).json({ success: false, error: err.message });
       });
       
       req.on('error', (err) => {
