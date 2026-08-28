@@ -96,7 +96,9 @@ class AlertManager {
       
       const isNewDanger = state.status !== data.status;
       
-      if (isNewDanger || now - state.time > throttleMs) {
+      const canSendAlert = now - state.time > throttleMs;
+
+      if (canSendAlert) {
         this.sendTelegramAlert(
           `[ALERT] <b>AUDIO ISSUE</b>\n<b>${safePcName}</b> mengalami masalah: <b>${safeStatus}</b>`
         );
@@ -105,15 +107,20 @@ class AlertManager {
           this.dbManager.logIncident(data.uuid, pcName, data.status, 'Audio/OBS Issue Detected');
         }
         this.lastAlertState[data.uuid] = { time: now, status: data.status };
+      } else if (isNewDanger) {
+         // Jika bahaya berubah tapi masih dalam masa cooldown, cukup catat status terbarunya di memori 
+         this.lastAlertState[data.uuid].status = data.status;
       }
-    } else if (data.status === 'AMAN' && this.lastAlertState[data.uuid]) {
+    } else if (data.status === 'AMAN' && this.lastAlertState[data.uuid] && this.lastAlertState[data.uuid].status !== 'AMAN') {
       // Jika statusnya membaik menjadi AMAN, kirimkan notifikasi Recovery
       this.sendTelegramAlert(`[OK] <b>${safePcName}</b> audio sudah kembali AMAN.`);
       if (this.dbManager) this.dbManager.logIncident(data.uuid, pcName, 'RECOVERY', 'Audio kembali AMAN');
-      delete this.lastAlertState[data.uuid];
-    } else if (!isDanger && data.status !== 'AMAN' && this.lastAlertState[data.uuid]) {
+      
+      // Jangan hapus state sepenuhnya agar cooldown tetap berlaku jika PC langsung rusak lagi dalam hitungan detik
+      this.lastAlertState[data.uuid].status = 'AMAN';
+    } else if (!isDanger && data.status !== 'AMAN' && this.lastAlertState[data.uuid] && this.lastAlertState[data.uuid].status !== 'STANDBY') {
       // Jika statusnya tidak bahaya dan bukan AMAN (contohnya STANDBY/DIAM), hapus timer penahan notifikasi
-      delete this.lastAlertState[data.uuid];
+      this.lastAlertState[data.uuid].status = 'STANDBY';
     }
 
     // Pengecekan Perangkat Keras CPU/RAM

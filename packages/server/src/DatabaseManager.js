@@ -58,8 +58,9 @@ class DatabaseManager {
    * jika terjadi banyak insiden secara bersamaan.
    */
   saveDb() {
-    if (this._saveTimeout) clearTimeout(this._saveTimeout);
+    if (this._saveTimeout) return;
     this._saveTimeout = setTimeout(() => {
+      this._saveTimeout = null;
       try {
         // Tulis ke file temp lalu rename (Atomic Write) mencegah file corrupt kalau lampu mati di tengah proses
         const tempPath = this.dbPath + '.tmp';

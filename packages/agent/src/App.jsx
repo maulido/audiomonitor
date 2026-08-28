@@ -477,7 +477,11 @@ function App() {
 
     if (audioProcessor.current) {
       audioProcessor.current.stop();
-      await audioProcessor.current.start(newMicId);
+      try {
+        await audioProcessor.current.start(newMicId);
+      } catch (err) {
+        console.error("Failed to start new microphone:", err);
+      }
     }
   };
 
@@ -611,7 +615,12 @@ function App() {
         lastNotificationTime.current = now;
       }
     }
-  }, [obsConnected, status, silenceTimeoutSec, deadMicTimeoutSec, isMonitoringActive, tick, clippingThreshold, clippingDurationSec, obsConnected, isObsMutedBtn]);
+
+    return () => {
+      if (silenceTimeout.current) clearTimeout(silenceTimeout.current);
+      if (deadMicTimeout.current) clearTimeout(deadMicTimeout.current);
+    };
+  }, [obsConnected, status, silenceTimeoutSec, deadMicTimeoutSec, isMonitoringActive, tick, clippingThreshold, clippingDurationSec, isObsMutedBtn, speakingThreshold, obsMuteTimeoutSec, autoRecoveryUnmute]);
 
   // Refs to hold latest values for telemetry throttling
   
@@ -673,7 +682,7 @@ function App() {
           telemetryInterval,
           audioDevices: audioDevicesRef.current.map(d => d.label || 'Default Microphone')
       };
-  }, [micLevel, rawMicLevel, micDb, micClipping, obsSources, noiseGate, obsLevel, obsDb, status, hardwareUsage, uuid, agentName, micDriverName, obsSourceName, isMonitoringActive, isStreaming, streamTimecode, streamBitrate, streamDroppedFrames, streamTotalFrames, currentScene, silenceTimeoutSec, deadMicTimeoutSec, clippingThreshold, clippingDurationSec, speakingThreshold, obsMuteTimeoutSec, autoRecoveryUnmute, obsSyncRecording, obsSyncStreaming, telemetryInterval, obsConnected, isObsMutedBtn]);
+  }, [micLevel, rawMicLevel, micDb, micClipping, obsSources, noiseGate, obsLevel, obsDb, status, hardwareUsage, uuid, agentName, micDriverName, obsSourceName, isMonitoringActive, isStreaming, streamTimecode, streamBitrate, streamDroppedFrames, streamTotalFrames, currentScene, silenceTimeoutSec, deadMicTimeoutSec, clippingThreshold, clippingDurationSec, speakingThreshold, obsMuteTimeoutSec, autoRecoveryUnmute, obsSyncRecording, obsSyncStreaming, telemetryInterval, obsConnected, isObsMutedBtn, isRecording]);
 
   // Telemetry Sender (Dynamic Interval)
   useEffect(() => {

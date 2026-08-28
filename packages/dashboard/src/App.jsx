@@ -183,31 +183,63 @@ function App() {
 
   useEffect(() => {
 
-    client.current = new DashboardClient(
-      SERVER_URL,
-      (connected) => setIsConnected(connected),
-      (data) => {
-        setAgents((prev) => {
-          const prevData = prev[data.uuid] || {};
-          const isOffline = data.status === 'OFFLINE';
-          const mic = isOffline ? 0 : (data.micLevel !== undefined ? data.micLevel : prevData.micLevel || 0);
-          const obs = isOffline ? 0 : (data.obsLevel !== undefined ? data.obsLevel : prevData.obsLevel || 0);
-            const updatedObsSources = isOffline ? [] : (data.obsSources || prevData.obsSources);
+    let agentBuffer = [];
+    let fullStateBuffer = [];
 
-          return {
-            ...prev,
-            [data.uuid]: {
+    const flushBuffer = setInterval(() => {
+      setAgents((prev) => {
+        let hasChanges = false;
+        const next = { ...prev };
+        
+        if (fullStateBuffer.length > 0) {
+          const dataArray = fullStateBuffer.pop();
+          fullStateBuffer = [];
+          for (const d of dataArray) {
+             const existing = next[d.uuid] || {};
+             next[d.uuid] = {
+               ...existing,
+               ...d,
+               micHistory: (d.micHistory || existing.micHistory || []).slice(-30),
+               obsHistory: (d.obsHistory || existing.obsHistory || []).slice(-30)
+             };
+          }
+          hasChanges = true;
+        }
+
+        if (agentBuffer.length > 0) {
+          const toProcess = agentBuffer;
+          agentBuffer = [];
+          
+          for (const data of toProcess) {
+            const prevData = next[data.uuid] || {};
+            const isOffline = data.status === 'OFFLINE';
+            const mic = isOffline ? 0 : (data.micLevel !== undefined ? data.micLevel : prevData.micLevel || 0);
+            const obs = isOffline ? 0 : (data.obsLevel !== undefined ? data.obsLevel : prevData.obsLevel || 0);
+            const updatedObsSources = isOffline ? [] : (data.obsSources || prevData.obsSources);
+            
+            next[data.uuid] = {
               ...prevData,
               ...data,
               timestamp: Date.now(),
-                obsSources: updatedObsSources,
+              obsSources: updatedObsSources,
               micLevel: mic,
               obsLevel: obs,
               micHistory: [...(prevData.micHistory || Array(30).fill(0)), mic].slice(-30),
               obsHistory: [...(prevData.obsHistory || Array(30).fill(0)), obs].slice(-30)
-            }
-          };
-        });
+            };
+          }
+          hasChanges = true;
+        }
+        
+        return hasChanges ? next : prev;
+      });
+    }, 500);
+
+    client.current = new DashboardClient(
+      SERVER_URL,
+      (connected) => setIsConnected(connected),
+      (data) => {
+        agentBuffer.push(data);
       },
       (status) => setIsMonitoringActive(status),
       ({ uuid, active }) => {
@@ -230,14 +262,7 @@ function App() {
         });
       },
       (dataArray) => {
-        setAgents(prev => {
-          const next = { ...prev };
-          for (const d of dataArray) {
-            if (!next[d.uuid]) next[d.uuid] = d;
-            else next[d.uuid] = { ...next[d.uuid], ...d };
-          }
-          return next;
-        });
+        fullStateBuffer.push(dataArray);
       },
       (uuid) => {
         setAgents(prev => {
@@ -251,6 +276,7 @@ function App() {
     client.current.connect();
 
     return () => {
+      clearInterval(flushBuffer);
       if (client.current) client.current.disconnect();
     };
   }, []);
@@ -430,7 +456,7 @@ function App() {
   };
 
   const sortedFilteredAgents = agentsArray
-    .filter(agent => filterStatus === 'ALL' || agent.status === filterStatus)
+    .filter(agent => filterStatus === 'ALL' || (filterStatus === 'BAHAYA' ? agent.status?.startsWith('BAHAYA') : agent.status === filterStatus))
     .filter(agent => !searchTerm || (agent.pcName && agent.pcName.toLowerCase().includes(searchTerm.toLowerCase())))
     .sort((a, b) => {
       const pA = statusPriority[a.status] || 99;
