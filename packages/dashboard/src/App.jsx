@@ -925,7 +925,12 @@ function App() {
               <div className="incident-summary-card red">
                 <div className="summary-icon"><i className="fa-solid fa-desktop"></i> PC Terkena</div>
                 <div className="summary-value">{affectedPcs.length}</div>
-                <div className="summary-detail">{affectedPcs.length > 0 ? affectedPcs.map(pc => `${pc} (${pcCounts[pc]})`).join(', ') : '-'}</div>
+                <div className="summary-detail">{affectedPcs.length > 0 ? (() => {
+                  const sorted = affectedPcs.sort((a, b) => pcCounts[b] - pcCounts[a]);
+                  const top3 = sorted.slice(0, 3).map(pc => `${pc} (${pcCounts[pc]})`).join(', ');
+                  const rest = sorted.length - 3;
+                  return rest > 0 ? `${top3}, +${rest} lainnya` : top3;
+                })() : '-'}</div>
               </div>
               <div className="incident-summary-card orange">
                 <div className="summary-icon"><i className="fa-solid fa-triangle-exclamation"></i> Tipe Terbanyak</div>
