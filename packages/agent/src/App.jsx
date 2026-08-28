@@ -41,7 +41,9 @@ function App() {
     const [obsError, setObsError] = useState('');
     const [isConnectingOBS, setIsConnectingOBS] = useState(false);
   const [serverConnected, setServerConnected] = useState(false);
-  const [globalMonitoring, setGlobalMonitoring] = useState(true);\n  const [pcMonitoring, setPcMonitoring] = useState(true);\n  const isMonitoringActive = globalMonitoring && pcMonitoring;
+  const [globalMonitoring, setGlobalMonitoring] = useState(true);
+  const [pcMonitoring, setPcMonitoring] = useState(true);
+  const isMonitoringActive = globalMonitoring && pcMonitoring;
 
   const [isRecording, setIsRecording] = useState(false);
   const isRecordingRef = useRef(isRecording);
