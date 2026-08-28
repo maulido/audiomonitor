@@ -409,8 +409,9 @@ ipcMain.on('stop-recording', (event, isRollover) => {
       currentSessionDir = null;
     }
     
-    streamToClose.end(() => {
-      // Callback ini dipanggil saat file sudah benar-benar tertutup (lock dilepas)
+    streamToClose.end();
+    streamToClose.on('close', () => {
+      // Event close menjamin file descriptor sudah sepenuhnya dilepas oleh sistem operasi
       const finishedFilePath = streamToClose.path;
       let finalDirName = capturedSessionDir;
 
