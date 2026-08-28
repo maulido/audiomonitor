@@ -225,7 +225,8 @@ function App() {
       if (config.obsMuteTimeoutSec !== undefined) setObsMuteTimeoutSec(config.obsMuteTimeoutSec);
       if (config.autoRecoveryUnmute !== undefined) setAutoRecoveryUnmute(config.autoRecoveryUnmute);
       if (config.obsSyncRecording !== undefined) setObsSyncRecording(config.obsSyncRecording);
-    if (config.obsSourceName !== undefined) setObsSourceName(config.obsSourceName);
+      if (config.obsSyncStreaming !== undefined) setObsSyncStreaming(config.obsSyncStreaming);
+      if (config.obsSourceName !== undefined) setObsSourceName(config.obsSourceName);
     if (config.micDriverName !== undefined) {
       const devices = audioDevicesRef.current;
       const targetDevice = devices.find(d => d.label === config.micDriverName || (d.label || 'Default Microphone') === config.micDriverName);
@@ -667,9 +668,10 @@ function App() {
           obsMuteTimeoutSec,
           autoRecoveryUnmute,
           obsSyncRecording,
+          obsSyncStreaming,
           audioDevices: audioDevicesRef.current.map(d => d.label || 'Default Microphone')
       };
-  }, [micLevel, rawMicLevel, micDb, micClipping, obsSources, noiseGate, obsLevel, obsDb, status, hardwareUsage, uuid, agentName, micDriverName, obsSourceName, isMonitoringActive, isStreaming, streamTimecode, streamBitrate, streamDroppedFrames, streamTotalFrames, currentScene, silenceTimeoutSec, deadMicTimeoutSec, clippingThreshold, clippingDurationSec, speakingThreshold, obsMuteTimeoutSec, autoRecoveryUnmute, obsConnected, isObsMutedBtn]);
+  }, [micLevel, rawMicLevel, micDb, micClipping, obsSources, noiseGate, obsLevel, obsDb, status, hardwareUsage, uuid, agentName, micDriverName, obsSourceName, isMonitoringActive, isStreaming, streamTimecode, streamBitrate, streamDroppedFrames, streamTotalFrames, currentScene, silenceTimeoutSec, deadMicTimeoutSec, clippingThreshold, clippingDurationSec, speakingThreshold, obsMuteTimeoutSec, autoRecoveryUnmute, obsSyncRecording, obsSyncStreaming, obsConnected, isObsMutedBtn]);
 
   // Telemetry Sender (Dynamic Interval)
   useEffect(() => {
