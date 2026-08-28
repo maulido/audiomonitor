@@ -1031,7 +1031,20 @@ function App() {
                   </div>
                     
                   <div className="modal-section" style={{ marginTop: '24px', borderTop: '1px dashed #333', paddingTop: '20px' }}>
-                    <div className="modal-section-title" style={{ color: 'var(--success)' }}>Auto-Recovery</div>
+                    
+                      <div className="modal-section-title" style={{ color: '#f44336' }}>Recording Settings</div>
+                      <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', cursor: 'pointer', marginBottom: '15px' }}>
+                        <div className="toggle-switch" style={{ marginTop: '2px', flexShrink: 0 }}>
+                          <input type="checkbox" checked={!!remoteConfig.obsSyncRecording} onChange={e => setRemoteConfig({...remoteConfig, obsSyncRecording: e.target.checked})} />
+                          <span className="slider"></span>
+                        </div>
+                        <div>
+                          <div style={{ color: '#fff', fontSize: '13px', fontWeight: 'bold' }}>Auto-Record on OBS Live</div>
+                          <div style={{ color: 'var(--text-muted)', fontSize: '11px', marginTop: '4px' }}>Otomatis merekam suara Host saat OBS Streaming/Recording. (File disimpan secara lokal di masing-masing komputer Agent).</div>
+                        </div>
+                      </label>
+
+                      <div className="modal-section-title" style={{ color: 'var(--success)' }}>Auto-Recovery</div>
                     <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', cursor: 'pointer' }}>
                       <div className="toggle-switch" style={{ marginTop: '2px', flexShrink: 0 }}>
                         <input type="checkbox" checked={!!remoteConfig.autoRecoveryUnmute} onChange={e => setRemoteConfig({...remoteConfig, autoRecoveryUnmute: e.target.checked})} />

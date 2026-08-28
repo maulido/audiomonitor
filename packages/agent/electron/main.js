@@ -302,22 +302,29 @@ ipcMain.handle('select-folder', async () => {
   return null;
 });
 
-ipcMain.on('start-recording', (event, { agentName, recordDir }) => {
+
+
+ipcMain.on('start-recording', (event, { sessionFolderName, partNumber, recordDir }) => {
   try {
-    const dir = recordDir && recordDir.trim() !== '' ? recordDir : path.join(app.getPath('documents'), 'AudioMonitor-Recordings');
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
+    if (audioWriteStream) {
+      audioWriteStream.end();
+      audioWriteStream = null;
+    }
+
+    const baseDir = recordDir && recordDir.trim() !== '' ? recordDir : path.join(app.getPath('documents'), 'AudioMonitor-Recordings');
+    const sessionDir = path.join(baseDir, sessionFolderName || 'UnknownSession');
+    
+    if (!fs.existsSync(sessionDir)) {
+      fs.mkdirSync(sessionDir, { recursive: true });
     }
     
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const safeName = (agentName || 'Agent').replace(/[^a-z0-9]/gi, '_');
-    const filename = `${safeName}_${timestamp}.webm`;
-    const filePath = path.join(dir, filename);
+    const filename = `Part_${(partNumber || 1).toString().padStart(3, '0')}.webm`;
+    const filePath = path.join(sessionDir, filename);
 
-    
     audioWriteStream = fs.createWriteStream(filePath);
     writeAgentLog('INFO', `Memulai perekaman audio ke: ${filePath}`);
   } catch (error) {
+
     writeAgentLog('ERROR', `Gagal memulai perekaman: ${error.message}`);
   }
 });

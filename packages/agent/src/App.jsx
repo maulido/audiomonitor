@@ -43,8 +43,16 @@ function App() {
   const [serverConnected, setServerConnected] = useState(false);
   const [isMonitoringActive, setIsMonitoringActive] = useState(true);
 
+  const [isRecording, setIsRecording] = useState(false);
+  const isRecordingRef = useRef(isRecording);
+  useEffect(() => { isRecordingRef.current = isRecording; }, [isRecording]);
+
+
   // Settings state (Persisted to localStorage)
   const [agentName, setAgentName] = useState(() => localStorage.getItem('agentName') || 'PC-Studio-1');
+  const agentNameRef = useRef(agentName);
+  useEffect(() => { agentNameRef.current = agentName; }, [agentName]);
+
   const [serverIp, setServerIp] = useState(() => localStorage.getItem('serverIp') || 'http://localhost:4000');
   const [committedServerIp, setCommittedServerIp] = useState(serverIp);
   const [obsIp, setObsIp] = useState(() => localStorage.getItem('obsIp') || 'localhost:4455');
@@ -214,6 +222,7 @@ function App() {
       if (config.speakingThreshold !== undefined) setSpeakingThreshold(config.speakingThreshold);
       if (config.obsMuteTimeoutSec !== undefined) setObsMuteTimeoutSec(config.obsMuteTimeoutSec);
       if (config.autoRecoveryUnmute !== undefined) setAutoRecoveryUnmute(config.autoRecoveryUnmute);
+      if (config.obsSyncRecording !== undefined) setObsSyncRecording(config.obsSyncRecording);
     if (config.obsSourceName !== undefined) setObsSourceName(config.obsSourceName);
     if (config.micDriverName !== undefined) {
       const devices = audioDevicesRef.current;
@@ -601,7 +610,7 @@ function App() {
       
       if (isNewStatus || now - lastAlertState.current.time > throttleMs) {
         lastAlertState.current = { status, time: now };
-        const msg = `⚠️ <b>[OFFLINE ALERT]</b> AUDIO ISSUE\nPC <b>${agentName}</b> mengalami masalah: <b>${status}</b>\n<i>(Pesan ini dikirim otomatis oleh Agent karena Server Induk sedang terputus/mati)</i>`;
+        const msg = `[OFFLINE ALERT] <b>AUDIO ISSUE</b> AUDIO ISSUE\nPC <b>${agentName}</b> mengalami masalah: <b>${status}</b>\n<i>(Pesan ini dikirim otomatis oleh Agent karena Server Induk sedang terputus/mati)</i>`;
         fetch(`https://api.telegram.org/bot${telegramConfig.token}/sendMessage`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -644,6 +653,7 @@ function App() {
           speakingThreshold,
           obsMuteTimeoutSec,
           autoRecoveryUnmute,
+          obsSyncRecording,
           audioDevices: audioDevicesRef.current.map(d => d.label || 'Default Microphone')
       };
   }, [micLevel, rawMicLevel, micDb, micClipping, obsSources, noiseGate, obsLevel, obsDb, status, hardwareUsage, uuid, agentName, micDriverName, obsSourceName, isMonitoringActive, isStreaming, streamTimecode, streamBitrate, streamDroppedFrames, streamTotalFrames, currentScene, silenceTimeoutSec, deadMicTimeoutSec, clippingThreshold, clippingDurationSec, speakingThreshold, obsMuteTimeoutSec, autoRecoveryUnmute, obsConnected, isObsMutedBtn]);
@@ -723,17 +733,46 @@ function App() {
           </div>
         </div>
         
-          <div style={{ textAlign: 'right' }}>
-            <div className={`status-badge ${status}`} style={{ opacity: isMonitoringActive ? 1 : 0.5 }}>
-              {isMonitoringActive ? status.replace(/_/g, ' ') : 'PAUSED'}
+
+          <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px' }}>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <button 
+                  onClick={() => {
+                    if (isRecording) {
+                      audioProcessor.current.stopRecording();
+                      setIsRecording(false);
+                    } else {
+                      if (audioProcessor.current.startRecording(agentNameRef.current, recordDirRef.current)) setIsRecording(true);
+                    }
+                  }}
+                  style={{
+                    background: isRecording ? '#f44336' : '#333',
+                    color: '#fff',
+                    border: 'none',
+                    padding: '4px 8px',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontSize: '11px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    fontWeight: 'bold'
+                  }}
+                >
+                  <i className="fa-solid fa-circle"></i> {isRecording ? 'Stop REC' : 'Manual REC'}
+              </button>
+              <div className={`status-badge ${status}`} style={{ opacity: isMonitoringActive ? 1 : 0.5, margin: 0 }}>
+                {isMonitoringActive ? status.replace(/_/g, ' ') : 'PAUSED'}
+              </div>
             </div>
+
             {isRecording && (
               <div style={{ fontSize: '11px', color: '#f44336', marginTop: '6px', fontWeight: 'bold', animation: 'pulse 1.5s infinite' }}>
-                🔴 REC
+REC
               </div>
             )}
             <div style={{ fontSize: '11px', color: isStreaming ? '#f44336' : '#666', marginTop: '6px', fontWeight: 'bold' }}>
-              {isStreaming ? `📡 LIVE - ${streamTimecode}` : '🔌 OFFLINE'}
+              {isStreaming ? `LIVE - ${streamTimecode}` : 'OFFLINE'}
             </div>
           </div>
         </div>

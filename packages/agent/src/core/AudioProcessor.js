@@ -99,46 +99,84 @@ class AudioProcessor {
    * dan mematikan perangkat mikrofon di sistem.
    */
   
+  
   startRecording(agentName, recordDir) {
     if (!this.stream) return false;
     if (this.mediaRecorder && this.mediaRecorder.state === 'recording') return true;
 
     try {
-      if (window.electronAPI && window.electronAPI.startRecording) {
-        window.electronAPI.startRecording(agentName, recordDir);
-      }
-
-      this.mediaRecorder = new MediaRecorder(this.stream, { mimeType: 'audio/webm;codecs=opus' });
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const safeName = (agentName || 'Agent').replace(/[^a-z0-9]/gi, '_');
+      this.sessionFolderName = `${safeName}_${timestamp}`;
+      this.recordDir = recordDir;
+      this.partNumber = 1;
       
-      this.mediaRecorder.ondataavailable = async (e) => {
-        if (e.data && e.data.size > 0 && window.electronAPI && window.electronAPI.saveAudioChunk) {
-          const arrayBuffer = await e.data.arrayBuffer();
-          window.electronAPI.saveAudioChunk(arrayBuffer);
-        }
-      };
-
-      this.mediaRecorder.onstop = () => {
-        if (window.electronAPI && window.electronAPI.stopRecording) {
-          window.electronAPI.stopRecording();
-        }
-      };
-
-      // Slice the recording every 1000ms (1 second) so it streams smoothly to the disk
-      this.mediaRecorder.start(1000);
+      this._startMediaRecorderChunk();
+      
       return true;
     } catch (e) {
-      console.error('Failed to start MediaRecorder:', e);
+      console.error('Failed to start recording:', e);
       return false;
     }
   }
 
+  _startMediaRecorderChunk() {
+    if (window.electronAPI && window.electronAPI.startRecording) {
+      window.electronAPI.startRecording(this.sessionFolderName, this.partNumber, this.recordDir);
+    }
+
+    this.mediaRecorder = new MediaRecorder(this.stream, { mimeType: 'audio/webm;codecs=opus' });
+    
+    this.mediaRecorder.ondataavailable = async (e) => {
+      if (e.data && e.data.size > 0 && window.electronAPI && window.electronAPI.saveAudioChunk) {
+        const arrayBuffer = await e.data.arrayBuffer();
+        window.electronAPI.saveAudioChunk(arrayBuffer);
+      }
+    };
+
+    this.mediaRecorder.start(1000);
+
+    // Split every 10 minutes (600,000 ms)
+    this.chunkTimer = setTimeout(() => {
+      if (this.mediaRecorder && this.mediaRecorder.state === 'recording') {
+        this.mediaRecorder.onstop = () => {
+          if (window.electronAPI && window.electronAPI.stopRecording) {
+            window.electronAPI.stopRecording();
+          }
+          this.partNumber++;
+          this._startMediaRecorderChunk();
+        };
+        this.mediaRecorder.stop();
+      }
+    }, 10 * 60 * 1000);
+  }
+
   stopRecording() {
+    if (this.chunkTimer) {
+      clearTimeout(this.chunkTimer);
+      this.chunkTimer = null;
+    }
+
     if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
+      this.mediaRecorder.onstop = () => {
+        if (window.electronAPI && window.electronAPI.stopRecording) {
+          window.electronAPI.stopRecording();
+        }
+      }; // prevent starting the next chunk
       this.mediaRecorder.stop();
     }
   }
 
   stop() {
+    this.stopRecording();
+    this.isRunning = false;
+    if (this.animationFrame) clearTimeout(this.animationFrame);
+    if (this.audioContext) this.audioContext.close();
+    if (this.stream) {
+      this.stream.getTracks().forEach(track => track.stop());
+    }
+  }
+}
     this.stopRecording();
     this.isRunning = false;
     if (this.animationFrame) clearTimeout(this.animationFrame);

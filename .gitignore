@@ -9,3 +9,4 @@ packages/agent/out/
 packages/server/dashboard-dist/
 packages/server/logs/
 audio_monitor.db
+packages/server/out/
