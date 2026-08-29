@@ -109,8 +109,12 @@ class TelemetryHub {
           this.io.to('dashboards').emit('dashboard-update', existing);
         }
 
-        // Teruskan data setelan baru ini langsung ke ruang khusus PC tersebut
+        // Teruskan data setelan baru ini ke ruang khusus PC dan direct socket ID
         this.io.to('agent-' + data.uuid).emit('update-config', data.config);
+        const agentSocketId = this.agentSockets.get(data.uuid);
+        if (agentSocketId) {
+          this.io.to(agentSocketId).emit('update-config', data.config);
+        }
       });
 
       // Event usang (Legacy) saat Dashboard sekadar mengubah nama PC
@@ -208,8 +212,12 @@ class TelemetryHub {
   setPcMonitoring(uuid, active) {
     this.pcMonitoringState[uuid] = active;
     
-    // Beri tahu Agent agar berhenti berkedip/menganalisa jika OFF
+    // Beri tahu Agent via room dan direct socket ID agar berhenti berkedip/menganalisa jika OFF
     this.io.to(`agent-${uuid}`).emit('set-monitoring', active);
+    const agentSocketId = this.agentSockets.get(uuid);
+    if (agentSocketId) {
+      this.io.to(agentSocketId).emit('set-monitoring', active);
+    }
     
     // Beri tahu Dashboard agar warna tombolnya berubah merah/hijau
     this.io.to('dashboards').emit('pc-monitoring-update', { uuid, active });
@@ -221,10 +229,14 @@ class TelemetryHub {
   handleTelemetry(data) {
     const pcName = this.configManager.getPcName(data.uuid) || data.name || data.uuid;
     
-    // Suntikkan status pengawasan terkini dari memori (karena Server adalah penentu kebenarannya)
+    // Inisialisasi atau sinkronisasi status pengawasan per-PC
+    if (this.pcMonitoringState[data.uuid] === undefined && data.isMonitoringActive !== undefined) {
+      this.pcMonitoringState[data.uuid] = data.isMonitoringActive;
+    }
+
     const isMonitoringActive = this.pcMonitoringState[data.uuid] !== undefined 
       ? this.pcMonitoringState[data.uuid] 
-      : true;
+      : (data.isMonitoringActive !== undefined ? data.isMonitoringActive : true);
     
     const enrichedData = { ...data, pcName, isMonitoringActive, lastSeen: Date.now() };
     

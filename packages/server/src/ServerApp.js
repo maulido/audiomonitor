@@ -569,6 +569,29 @@ class ServerApp {
       res.send({ success: true, active });
     });
 
+    // API: Mengubah pengaturan remote config PC tertentu
+    this.app.post('/api/pc/:uuid/config', (req, res) => {
+      const { uuid } = req.params;
+      const config = req.body;
+      if (!uuid || !config) return res.status(400).json({ error: 'Bad request' });
+
+      if (config.agentName) {
+        this.configManager.setPcName(uuid, config.agentName);
+        const existing = this.telemetryHub.lastKnownState.get(uuid) || {};
+        existing.pcName = config.agentName;
+        this.telemetryHub.lastKnownState.set(uuid, existing);
+        this.telemetryHub.io.to('dashboards').emit('dashboard-update', existing);
+      }
+
+      this.telemetryHub.io.to('agent-' + uuid).emit('update-config', config);
+      const agentSocketId = this.telemetryHub.agentSockets.get(uuid);
+      if (agentSocketId) {
+        this.telemetryHub.io.to(agentSocketId).emit('update-config', config);
+      }
+
+      res.json({ success: true, config });
+    });
+
     // API: Mengirim pesan percobaan Telegram ("Ping!")
     this.app.post('/api/telegram/test', (req, res) => {
       this.alertManager.sendTelegramAlert('[TEST] <b>Ping!</b> Ini adalah pesan percobaan dari AudioMonitor Server.');

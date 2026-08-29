@@ -850,14 +850,25 @@ function App() {
   };
 
   
-  const handleRemoteConfigSave = (e) => {
+  const handleRemoteConfigSave = async (e) => {
     e.preventDefault();
-    if (!configModalAgent || !client.current || !client.current.socket) return;
+    if (!configModalAgent) return;
     
-    client.current.socket.emit('agent-config-update', {
-      uuid: configModalAgent.uuid,
-      config: remoteConfig
-    });
+    if (client.current && client.current.socket) {
+      client.current.socket.emit('agent-config-update', {
+        uuid: configModalAgent.uuid,
+        config: remoteConfig
+      });
+    }
+
+    try {
+      await apiFetch(`/api/pc/${configModalAgent.uuid}/config`, {
+        method: 'POST',
+        body: JSON.stringify(remoteConfig)
+      });
+    } catch (err) {
+      console.warn('REST config sync fallback notice:', err.message);
+    }
 
     setAgents(prev => {
       if (prev[configModalAgent.uuid]) {

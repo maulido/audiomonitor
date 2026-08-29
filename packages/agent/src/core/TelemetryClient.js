@@ -1,8 +1,9 @@
 import { io } from 'socket.io-client';
 
 class TelemetryClient {
-  constructor(serverUrl) {
+  constructor(serverUrl, agentUuid = null) {
     this.serverUrl = serverUrl;
+    this.agentUuid = agentUuid;
     this.socket = null;
     this.lastSendTime = 0;
     this.THROTTLE_MS = 100;

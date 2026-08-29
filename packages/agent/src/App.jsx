@@ -299,7 +299,7 @@ function App() {
   // Initialize Telemetry Client when UUID is ready
   useEffect(() => {
     if (uuid !== 'Loading...') {
-      telemetryClient.current = new TelemetryClient(committedServerIp);
+      telemetryClient.current = new TelemetryClient(committedServerIp, uuid);
       telemetryClient.current.connect();
       
       const socket = telemetryClient.current.socket;
