@@ -75,6 +75,12 @@ function App() {
   const [records, setRecords] = useState([]);
   const [playingSession, setPlayingSession] = useState(null); // { folderName, pcName, dateStr, timeStr, parts: [] }
   const [currentPartIndex, setCurrentPartIndex] = useState(0);
+  const [partDurations, setPartDurations] = useState([]);
+  const [localCurrentTime, setLocalCurrentTime] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [playbackRate, setPlaybackRate] = useState(1);
+  const audioRef = useRef(null);
+  const pendingSeekOffsetRef = useRef(null);
   const [recordPcFilter, setRecordPcFilter] = useState('');
   const [recordStartDate, setRecordStartDate] = useState('');
   const [recordEndDate, setRecordEndDate] = useState('');
@@ -274,6 +280,142 @@ function App() {
       console.error('Failed to fetch records', e);
     }
   };
+
+  // Probe durations whenever a session is selected
+  useEffect(() => {
+    if (!playingSession || !playingSession.parts || playingSession.parts.length === 0) {
+      setPartDurations([]);
+      setLocalCurrentTime(0);
+      setIsPlaying(false);
+      return;
+    }
+
+    setPartDurations(new Array(playingSession.parts.length).fill(0));
+    setLocalCurrentTime(0);
+    setCurrentPartIndex(0);
+    pendingSeekOffsetRef.current = 0;
+    setIsPlaying(true);
+
+    let isCancelled = false;
+    const probeAll = async () => {
+      const results = await Promise.all(
+        playingSession.parts.map(p => new Promise(resolve => {
+          const tempAudio = new Audio();
+          tempAudio.src = p.url;
+          tempAudio.onloadedmetadata = () => {
+            resolve(tempAudio.duration && !isNaN(tempAudio.duration) ? tempAudio.duration : 0);
+          };
+          tempAudio.onerror = () => resolve(0);
+        }))
+      );
+      if (!isCancelled) {
+        setPartDurations(results);
+      }
+    };
+    probeAll();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [playingSession]);
+
+  const totalSessionDuration = partDurations.reduce((acc, d) => acc + d, 0);
+
+  const startOffsets = useMemo(() => {
+    const offsets = [];
+    let currentOffset = 0;
+    for (let i = 0; i < partDurations.length; i++) {
+      offsets.push(currentOffset);
+      currentOffset += (partDurations[i] || 0);
+    }
+    return offsets;
+  }, [partDurations]);
+
+  const globalCurrentTime = (startOffsets[currentPartIndex] || 0) + localCurrentTime;
+
+  const handleGlobalSeek = (targetGlobalTime) => {
+    if (!playingSession || !playingSession.parts || playingSession.parts.length === 0) return;
+    targetGlobalTime = Math.max(0, Math.min(totalSessionDuration || targetGlobalTime, targetGlobalTime));
+
+    let accumulated = 0;
+    let targetPartIdx = 0;
+    let targetLocalOffset = 0;
+
+    for (let i = 0; i < partDurations.length; i++) {
+      const dur = partDurations[i] || 0;
+      if (targetGlobalTime < accumulated + dur || i === partDurations.length - 1) {
+        targetPartIdx = i;
+        targetLocalOffset = Math.max(0, targetGlobalTime - accumulated);
+        break;
+      }
+      accumulated += dur;
+    }
+
+    if (targetPartIdx === currentPartIndex) {
+      if (audioRef.current) {
+        audioRef.current.currentTime = targetLocalOffset;
+      }
+      setLocalCurrentTime(targetLocalOffset);
+    } else {
+      pendingSeekOffsetRef.current = targetLocalOffset;
+      setCurrentPartIndex(targetPartIdx);
+    }
+  };
+
+  const handleAudioLoadedMetadata = (e) => {
+    const audio = e.target;
+    if (audio.duration && !isNaN(audio.duration)) {
+      setPartDurations(prev => {
+        const next = [...prev];
+        next[currentPartIndex] = audio.duration;
+        return next;
+      });
+    }
+    if (pendingSeekOffsetRef.current !== null) {
+      audio.currentTime = pendingSeekOffsetRef.current;
+      setLocalCurrentTime(pendingSeekOffsetRef.current);
+      pendingSeekOffsetRef.current = null;
+    }
+    audio.playbackRate = playbackRate;
+    if (isPlaying) {
+      audio.play().catch(err => console.log('Autoplay info:', err.message));
+    }
+  };
+
+  const handleAudioTimeUpdate = (e) => {
+    setLocalCurrentTime(e.target.currentTime || 0);
+  };
+
+  const handleAudioEnded = () => {
+    if (currentPartIndex < playingSession.parts.length - 1) {
+      pendingSeekOffsetRef.current = 0;
+      setCurrentPartIndex(prev => prev + 1);
+    } else {
+      setIsPlaying(false);
+    }
+  };
+
+  const togglePlayPause = () => {
+    if (!audioRef.current) return;
+    if (isPlaying) {
+      audioRef.current.pause();
+      setIsPlaying(false);
+    } else {
+      audioRef.current.play().then(() => setIsPlaying(true)).catch(console.error);
+    }
+  };
+
+  const formatPlaybackTime = (sec) => {
+    if (isNaN(sec) || sec < 0) return '00:00';
+    const h = Math.floor(sec / 3600);
+    const m = Math.floor((sec % 3600) / 60);
+    const s = Math.floor(sec % 60);
+    if (h > 0) {
+      return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    }
+    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  };
+
 
   useEffect(() => {
     if (isAuthenticated && currentView === 'logs') {
@@ -1244,69 +1386,138 @@ function App() {
               </div>
             </div>
             
-            {/* Smart Audio Playlist Player */}
+            {/* Unified Continuous Timeline Audio Player */}
             {playingSession && playingSession.parts && playingSession.parts[currentPartIndex] && (
-              <div className="settings-card playlist-player-card" style={{ marginBottom: '20px', background: 'rgba(59, 130, 246, 0.08)', borderColor: 'rgba(59, 130, 246, 0.35)' }}>
-                <div className="settings-card-content" style={{ display: 'flex', flexDirection: 'column', gap: '14px', padding: '18px 24px' }}>
+              <div className="settings-card unified-player-card" style={{ marginBottom: '24px', background: 'rgba(59, 130, 246, 0.08)', borderColor: 'rgba(59, 130, 246, 0.35)' }}>
+                <div className="settings-card-content" style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                  {/* Hidden underlying audio element */}
+                  <audio 
+                    ref={audioRef}
+                    key={playingSession.parts[currentPartIndex].url}
+                    src={playingSession.parts[currentPartIndex].url}
+                    onLoadedMetadata={handleAudioLoadedMetadata}
+                    onTimeUpdate={handleAudioTimeUpdate}
+                    onEnded={handleAudioEnded}
+                    onPlay={() => setIsPlaying(true)}
+                    onPause={() => setIsPlaying(false)}
+                    onError={() => {
+                      customAlert('Gagal memuat file rekaman audio. File mungkin telah dipindahkan atau dihapus dari server.', 'Gagal Memutar Audio');
+                      setPlayingSession(null);
+                    }}
+                  />
+
+                  {/* Header: PC Name, Session Time, Part indicator & Close */}
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
                     <div>
-                      <div style={{ fontWeight: 700, color: 'var(--accent)', fontSize: '1rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <div style={{ fontWeight: 700, color: 'var(--accent)', fontSize: '1.05rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <i className="fa-solid fa-volume-high"></i>
                         <span>{playingSession.pcName}</span>
                         <span style={{ color: 'var(--text-muted)', fontWeight: 'normal', fontSize: '0.85rem' }}>
                           &bull; {playingSession.isParsed ? `${playingSession.dateStr} (${playingSession.timeStr})` : new Date(playingSession.createdAt).toLocaleString()}
                         </span>
                       </div>
-                      <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                        Memutar <strong>Part {currentPartIndex + 1}</strong> dari {playingSession.parts.length} ({playingSession.parts[currentPartIndex].fileName})
+                      <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '4px' }}>
+                        Memutar rekaman utuh (Sedang memuat Part {currentPartIndex + 1} dari {playingSession.parts.length}: <code>{playingSession.parts[currentPartIndex].fileName}</code>)
                       </div>
                     </div>
                     
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <button 
-                        className="btn-filter secondary" 
-                        style={{ padding: '6px 12px', fontSize: '0.8rem' }}
-                        disabled={currentPartIndex === 0}
-                        onClick={() => setCurrentPartIndex(p => Math.max(0, p - 1))}
-                        title="Part Sebelumnya"
-                      >
-                        <i className="fa-solid fa-backward-step"></i> Prev
-                      </button>
-                      <button 
-                        className="btn-filter secondary" 
-                        style={{ padding: '6px 12px', fontSize: '0.8rem' }}
-                        disabled={currentPartIndex >= playingSession.parts.length - 1}
-                        onClick={() => setCurrentPartIndex(p => Math.min(playingSession.parts.length - 1, p + 1))}
-                        title="Part Berikutnya"
-                      >
-                        Next <i className="fa-solid fa-forward-step"></i>
-                      </button>
-                      <button 
-                        className="btn-filter secondary" 
-                        style={{ padding: '6px 10px', fontSize: '0.8rem' }} 
-                        onClick={() => setPlayingSession(null)}
-                      >
-                        <i className="fa-solid fa-xmark"></i> Tutup
-                      </button>
-                    </div>
+                    <button 
+                      className="btn-filter secondary" 
+                      style={{ padding: '6px 12px', fontSize: '0.8rem' }} 
+                      onClick={() => setPlayingSession(null)}
+                    >
+                      <i className="fa-solid fa-xmark"></i> Tutup Player
+                    </button>
                   </div>
 
-                  <audio 
-                    key={playingSession.parts[currentPartIndex].url}
-                    controls 
-                    autoPlay 
-                    src={playingSession.parts[currentPartIndex].url} 
-                    style={{ width: '100%', outline: 'none' }} 
-                    onEnded={() => {
-                      if (currentPartIndex < playingSession.parts.length - 1) {
-                        setCurrentPartIndex(p => p + 1);
-                      }
-                    }}
-                    onError={() => {
-                      customAlert('Gagal memuat file rekaman audio. File mungkin telah dipindahkan atau dihapus dari server.', 'Gagal Memutar Audio');
-                      setPlayingSession(null);
-                    }}
-                  />
+                  {/* Main Timeline Slider */}
+                  <div className="unified-timeline-container">
+                    <input 
+                      type="range" 
+                      className="range-slider unified-seekbar"
+                      min="0" 
+                      max={totalSessionDuration > 0 ? totalSessionDuration : 100} 
+                      step="0.1" 
+                      value={globalCurrentTime}
+                      onChange={e => handleGlobalSeek(parseFloat(e.target.value))}
+                      style={{ width: '100%', margin: '8px 0', cursor: 'pointer' }}
+                    />
+
+                    {/* Timeline Part Markers */}
+                    {playingSession.parts.length > 1 && totalSessionDuration > 0 && (
+                      <div className="timeline-segment-markers">
+                        {playingSession.parts.map((p, idx) => {
+                          const pDur = partDurations[idx] || 0;
+                          const pPct = (pDur / totalSessionDuration) * 100;
+                          const isPartActive = currentPartIndex === idx;
+
+                          return (
+                            <div 
+                              key={p.url || idx} 
+                              className={`timeline-segment ${isPartActive ? 'active' : ''}`} 
+                              style={{ width: `${pPct}%` }}
+                              onClick={() => handleGlobalSeek(startOffsets[idx] || 0)}
+                              title={`Lompat ke Part ${idx + 1}`}
+                            >
+                              <span>Part {idx + 1}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Player Controls Bar: Play/Pause, -10s, +10s, Time Display, Speed */}
+                  <div className="player-controls-row">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <button 
+                        className="player-btn-action" 
+                        onClick={() => handleGlobalSeek(globalCurrentTime - 10)}
+                        title="Mundur 10 detik"
+                      >
+                        <i className="fa-solid fa-rotate-left"></i>
+                        <span style={{ fontSize: '0.7rem', marginLeft: '3px' }}>10s</span>
+                      </button>
+
+                      <button 
+                        className="player-btn-play" 
+                        onClick={togglePlayPause}
+                        title={isPlaying ? "Jeda (Pause)" : "Putar (Play)"}
+                      >
+                        {isPlaying ? <i className="fa-solid fa-pause"></i> : <i className="fa-solid fa-play" style={{ marginLeft: '2px' }}></i>}
+                      </button>
+
+                      <button 
+                        className="player-btn-action" 
+                        onClick={() => handleGlobalSeek(globalCurrentTime + 10)}
+                        title="Maju 10 detik"
+                      >
+                        <i className="fa-solid fa-rotate-right"></i>
+                        <span style={{ fontSize: '0.7rem', marginLeft: '3px' }}>10s</span>
+                      </button>
+
+                      {/* Time text */}
+                      <div className="player-time-display">
+                        <span className="current-time">{formatPlaybackTime(globalCurrentTime)}</span>
+                        <span className="separator">/</span>
+                        <span className="total-time">{formatPlaybackTime(totalSessionDuration)}</span>
+                      </div>
+                    </div>
+
+                    {/* Speed Controls */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Kecepatan:</span>
+                      {[1, 1.25, 1.5, 2].map(speed => (
+                        <button
+                          key={speed}
+                          className={`btn-speed ${playbackRate === speed ? 'active' : ''}`}
+                          onClick={() => handleSpeedChange(speed)}
+                        >
+                          {speed}x
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               </div>
             )}
