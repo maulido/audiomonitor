@@ -407,6 +407,7 @@ let currentSessionDir = null;
 let currentAgentName = null;
 let currentServerIp = null;
 let pendingAudioChunks = [];
+let audioWriteStream = null;
 
 
 ipcMain.handle('select-folder', async () => {
