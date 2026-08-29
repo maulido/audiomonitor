@@ -262,13 +262,14 @@ class ServerApp {
                   // Regex match folder: PC_Testing_3365df9b-62ec-46ed-8644-83db7d225868_2026-08-29_00-48-53_to_00-49-02
                   const match = pc.match(/^(.*)_([a-f0-9\-]{36})_(\d{4}-\d{2}-\d{2})_(\d{2}-\d{2}-\d{2})(?:_to_(\d{2}-\d{2}-\d{2}))?$/i);
                   let realPcName = pc;
+                  let uuid = '';
                   let isParsed = false;
                   let dateStr = '';
                   let timeStr = '';
                   
                   if (match) {
                     const pcNamePart = match[1];
-                    const uuid = match[2];
+                    uuid = match[2];
                     const datePart = match[3];
                     const startTime = match[4].replace(/-/g, ':');
                     const endTime = match[5] ? match[5].replace(/-/g, ':') : 'Berlanjut...';
@@ -282,6 +283,7 @@ class ServerApp {
                   records.push({
                     folderName: pc, // original folder name for URL construction
                     pcName: realPcName,
+                    uuid,
                     isParsed,
                     dateStr,
                     timeStr,

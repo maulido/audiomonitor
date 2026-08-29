@@ -1325,13 +1325,22 @@ function App() {
                 if (recordStartDate && dateStr < recordStartDate) return;
                 if (recordEndDate && dateStr > recordEndDate) return;
 
-                if (!pcGrouped[r.pcName]) pcGrouped[r.pcName] = {};
+                if (!pcGrouped[r.pcName]) {
+                  pcGrouped[r.pcName] = {
+                    uuid: r.uuid || '',
+                    sessions: {}
+                  };
+                }
+                if (!pcGrouped[r.pcName].uuid && r.uuid) {
+                  pcGrouped[r.pcName].uuid = r.uuid;
+                }
                 
                 const sessionKey = r.folderName;
-                if (!pcGrouped[r.pcName][sessionKey]) {
-                  pcGrouped[r.pcName][sessionKey] = {
+                if (!pcGrouped[r.pcName].sessions[sessionKey]) {
+                  pcGrouped[r.pcName].sessions[sessionKey] = {
                     folderName: r.folderName,
                     pcName: r.pcName,
+                    uuid: r.uuid,
                     isParsed: r.isParsed,
                     dateStr: r.dateStr,
                     timeStr: r.timeStr,
@@ -1340,13 +1349,13 @@ function App() {
                     parts: []
                   };
                 }
-                pcGrouped[r.pcName][sessionKey].totalSize += (r.size || 0);
-                pcGrouped[r.pcName][sessionKey].parts.push(r);
+                pcGrouped[r.pcName].sessions[sessionKey].totalSize += (r.size || 0);
+                pcGrouped[r.pcName].sessions[sessionKey].parts.push(r);
               });
 
               // Sort parts inside each session by fileName
-              Object.values(pcGrouped).forEach(sessions => {
-                Object.values(sessions).forEach(sess => {
+              Object.values(pcGrouped).forEach(pcData => {
+                Object.values(pcData.sessions).forEach(sess => {
                   sess.parts.sort((a, b) => (a.fileName || '').localeCompare(b.fileName || ''));
                 });
               });
@@ -1366,21 +1375,29 @@ function App() {
               }
 
               return pcNames.map(pc => {
-                const sessions = Object.values(pcGrouped[pc]).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+                const pcData = pcGrouped[pc];
+                const sessions = Object.values(pcData.sessions).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
                 const totalPcParts = sessions.reduce((acc, s) => acc + s.parts.length, 0);
 
                 return (
                   <div className="settings-card" key={pc} style={{ marginBottom: '24px' }}>
                     <div className="settings-card-accent purple"></div>
                     <div className="settings-card-content" style={{ padding: '0' }}>
-                      <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', backgroundColor: 'rgba(255,255,255,0.02)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <h3 style={{ margin: 0, display: 'flex', alignItems: 'center' }}>
-                          <i className="fa-solid fa-desktop" style={{ marginRight: '8px', color: 'var(--accent)' }}></i> 
-                          {pc} 
-                          <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: 'normal', marginLeft: '12px' }}>
-                            ({sessions.length} Sesi Kejadian &bull; {totalPcParts} Total Potongan)
-                          </span>
-                        </h3>
+                      <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', backgroundColor: 'rgba(255,255,255,0.02)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <h3 style={{ margin: 0, display: 'flex', alignItems: 'center' }}>
+                            <i className="fa-solid fa-desktop" style={{ marginRight: '8px', color: 'var(--accent)' }}></i> 
+                            {pc} 
+                            <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: 'normal', marginLeft: '12px' }}>
+                              ({sessions.length} Sesi Kejadian &bull; {totalPcParts} Total Potongan)
+                            </span>
+                          </h3>
+                        </div>
+                        {pcData.uuid && (
+                          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontFamily: 'monospace', marginTop: '4px', marginLeft: '24px' }}>
+                            ID: {pcData.uuid}
+                          </div>
+                        )}
                       </div>
 
                       <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
