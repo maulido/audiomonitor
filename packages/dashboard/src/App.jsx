@@ -1397,7 +1397,14 @@ function App() {
                         <div className="meter-info">
                           <span className="meter-title">OBS Output</span>
                           {!isCompactMode && (
-                            <span className="meter-device">{agent.obsConnected === false ? 'Terputus dari OBS' : (agent.obsSourceName || 'Mic/Aux')}</span>
+                            <span className="meter-device">
+                              {agent.obsConnected === false ? 'Terputus dari OBS' : (agent.obsSourceName || 'Mic/Aux')}
+                              {agent.obsConnected !== false && agent.obsSources && agent.obsSources.find(s => s.name === agent.obsSourceName) && (() => {
+                                const hw = agent.obsSources.find(s => s.name === agent.obsSourceName).hardwareId;
+                                const displayHw = (hw === 'Unknown' || hw === 'default' || hw === 'Default') ? (agent.micDriverName ? agent.micDriverName : hw) : hw;
+                                return <span style={{ color: '#888' }}> - {displayHw}</span>;
+                              })()}
+                            </span>
                           )}
                         </div>
                         {agent.obsHistory && (

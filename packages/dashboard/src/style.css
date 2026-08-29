@@ -117,9 +117,9 @@ body {
 
 .meters { display: flex; flex-direction: column; gap: 10px; }
 .meter-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
-.meter-info { display: flex; flex-direction: column; width: 85px; min-width: 85px; flex-shrink: 0; }
-.meter-title { font-size: 0.78rem; font-weight: 600; color: var(--text-main); white-space: nowrap; }
-.meter-device { font-size: 0.65rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
+.meter-info { display: flex; flex-direction: column; width: 145px; min-width: 145px; flex-shrink: 0; }
+.meter-title { font-size: 0.8rem; font-weight: 600; color: var(--text-main); white-space: nowrap; }
+.meter-device { font-size: 0.68rem; color: var(--text-muted); white-space: normal; word-break: break-word; line-height: 1.25; margin-top: 2px; }
 .meter-bar-container { flex: 1; height: 8px; background: #000; border-radius: 4px; overflow: hidden; display: flex; }
 .meter-fill { height: 100%; width: 0%; transition: width 0.5s linear; }
 .meter-fill.mic { background: linear-gradient(90deg, #10b981 0%, #10b981 70%, #f59e0b 85%, #ef4444 100%); }
