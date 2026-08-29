@@ -538,3 +538,98 @@ ipcMain.on('stop-recording', (event, isRollover) => {
 ipcMain.on('show-notification', (event, { title, body }) => {
   new Notification({ title, body }).show();
 });
+
+// Mengambil Versi Aplikasi
+ipcMain.handle('get-app-version', () => {
+  return app.getVersion();
+});
+
+// Mengunduh dan Menginstal Pembaruan dari Server LAN
+ipcMain.handle('install-update', async (event, downloadUrl) => {
+  const http = require('http');
+  const https = require('https');
+  const { spawn } = require('child_process');
+  
+  if (!downloadUrl) return { success: false, error: 'URL pembaruan kosong' };
+
+  try {
+    writeAgentLog('INFO', `Menerima perintah pembaruan aplikasi dari: ${downloadUrl}`);
+    const destPath = path.join(app.getPath('temp'), 'AudioMonitor_Agent_Update.exe');
+    
+    // Hapus file temporary sebelumnya jika ada
+    if (fs.existsSync(destPath)) {
+      try { fs.unlinkSync(destPath); } catch (e) {}
+    }
+
+    const urlObj = new URL(downloadUrl);
+    const lib = urlObj.protocol === 'https:' ? https : http;
+
+    return new Promise((resolve) => {
+      const fileStream = fs.createWriteStream(destPath);
+      
+      const req = lib.get(urlObj, (res) => {
+        if (res.statusCode !== 200) {
+          writeAgentLog('ERROR', `Gagal mengunduh update. HTTP ${res.statusCode}`);
+          fileStream.close();
+          try { fs.unlinkSync(destPath); } catch(e) {}
+          return resolve({ success: false, error: `HTTP ${res.statusCode}` });
+        }
+
+        const totalBytes = parseInt(res.headers['content-length'] || '0', 10);
+        let receivedBytes = 0;
+
+        res.on('data', (chunk) => {
+          receivedBytes += chunk.length;
+          fileStream.write(chunk);
+          if (totalBytes > 0) {
+            const percent = Math.round((receivedBytes / totalBytes) * 100);
+            event.sender.send('update-progress', { progress: percent, status: 'downloading' });
+          }
+        });
+
+        res.on('end', () => {
+          fileStream.end();
+        });
+      });
+
+      fileStream.on('finish', () => {
+        writeAgentLog('INFO', 'Unduhan installer update selesai. Menjalankan silent install...');
+        event.sender.send('update-progress', { progress: 100, status: 'installing' });
+
+        try {
+          // Eksekusi installer NSIS dengan flag /S (Silent install)
+          const child = spawn(destPath, ['/S'], {
+            detached: true,
+            stdio: 'ignore'
+          });
+          child.unref();
+
+          // Beri jeda 1 detik lalu tutup aplikasi agar installer dapat menimpa binary
+          setTimeout(() => {
+            app.quit();
+          }, 1000);
+
+          resolve({ success: true });
+        } catch (execErr) {
+          writeAgentLog('ERROR', `Gagal mengeksekusi installer update: ${execErr.message}`);
+          resolve({ success: false, error: execErr.message });
+        }
+      });
+
+      fileStream.on('error', (err) => {
+        writeAgentLog('ERROR', `Gagal menulis file update: ${err.message}`);
+        resolve({ success: false, error: err.message });
+      });
+
+      req.on('error', (err) => {
+        writeAgentLog('ERROR', `Koneksi gagal saat mengunduh update: ${err.message}`);
+        fileStream.close();
+        try { fs.unlinkSync(destPath); } catch(e) {}
+        resolve({ success: false, error: err.message });
+      });
+    });
+  } catch (err) {
+    writeAgentLog('ERROR', `Error fungsi install-update: ${err.message}`);
+    return { success: false, error: err.message };
+  }
+});

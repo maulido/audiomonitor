@@ -118,6 +118,11 @@ function App() {
     return saved !== null ? saved === 'true' : true; // Default true
   });
 
+  // Update Management State
+  const [agentUpdateProgress, setAgentUpdateProgress] = useState({});
+  const [serverUpdateInfo, setServerUpdateInfo] = useState(null);
+  const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
+
   // Auth State
   const [pin, setPin] = useState(sessionStorage.getItem('dashboardPin') || '');
   const [isAuthenticated, setIsAuthenticated] = useState(null); // null = checking
@@ -273,8 +278,54 @@ function App() {
     document.body.removeChild(link);
   };
 
+  const checkServerUpdates = async () => {
+    setIsCheckingUpdate(true);
+    try {
+      const res = await apiFetch('/updates/agent/info');
+      if (res.ok) {
+        const data = await res.json();
+        setServerUpdateInfo(data);
+      }
+    } catch (e) {
+      console.error('Failed to check updates', e);
+    } finally {
+      setIsCheckingUpdate(false);
+    }
+  };
+
+  const triggerAgentUpdate = async (targetUuid = 'all') => {
+    if (!serverUpdateInfo || !serverUpdateInfo.hasUpdate) {
+      await customAlert('Tidak ada file update Agent yang tersedia di Server.\nLetakkan file AudioMonitor_Agent_Installer_vX.Y.Z.exe di folder Server: Documents/AudioMonitor-Updates/agent/', 'Pembaruan Tidak Ditemukan');
+      return;
+    }
+
+    const targetDesc = targetUuid === 'all' ? 'seluruh PC Agent yang terhubung' : `PC Agent (${targetUuid})`;
+    const confirmed = await customConfirm(
+      `Apakah Anda yakin ingin memicu pembaruan otomatis ke versi v${serverUpdateInfo.version} untuk ${targetDesc}?`,
+      'Konfirmasi Pembaruan'
+    );
+    if (!confirmed) return;
+
+    try {
+      const res = await apiFetch('/api/updates/trigger-agent', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targetUuid, downloadUrl: serverUpdateInfo.downloadUrl })
+      });
+      if (res.ok) {
+        await customAlert(`Perintah pembaruan ke versi v${serverUpdateInfo.version} berhasil disiarkan!`, 'Sukses');
+      } else {
+        const err = await res.json();
+        await customAlert(`Gagal memicu pembaruan: ${err.error || 'Server error'}`, 'Gagal');
+      }
+    } catch (e) {
+      await customAlert(`Koneksi gagal: ${e.message}`, 'Error');
+    }
+  };
+
   useEffect(() => {
     fetchConfig();
+    checkServerUpdates();
   }, []);
 
   const fetchRecords = async () => {
@@ -574,6 +625,14 @@ function App() {
           delete next[uuid];
           return next;
         });
+      },
+      (updateProg) => {
+        if (updateProg && updateProg.uuid) {
+          setAgentUpdateProgress(prev => ({
+            ...prev,
+            [updateProg.uuid]: updateProg
+          }));
+        }
       }
     );
 
@@ -974,6 +1033,7 @@ function App() {
                             <>
                               <h2 className="pc-name">
                                 {agent.pcName}
+                                <span className="badge-agent-version">v{agent.appVersion || '1.0.1'}</span>
                                 {agent.isStreaming && (
                                   <div className="live-badge">LIVE {agent.streamTimecode || ''}</div>
                                 )}
@@ -1051,6 +1111,14 @@ function App() {
                             </div>
                           )}
                           </>
+                        )}
+                        {agentUpdateProgress[agent.uuid] && (
+                          <div className="update-progress-container">
+                            <div className="update-progress-bar" style={{ width: `${agentUpdateProgress[agent.uuid].progress || 0}%` }}></div>
+                            <span className="update-progress-text">
+                              {agentUpdateProgress[agent.uuid].status === 'installing' ? 'Memasang update...' : `Mengunduh ${agentUpdateProgress[agent.uuid].progress || 0}%`}
+                            </span>
+                          </div>
                         )}
                     </div>
 
@@ -1844,6 +1912,54 @@ function App() {
               </div>
             </div>
 
+            {/* Centralized Update Management Card */}
+            <div className="settings-card">
+              <div className="settings-card-accent blue"></div>
+              <div className="settings-card-content">
+                <h2 className="settings-card-title">
+                  <i className="fa-solid fa-cloud-arrow-down" style={{ marginRight: '8px' }}></i>
+                  Pembaruan Aplikasi Terpusat (LAN Auto-Update)
+                </h2>
+                <p className="settings-card-subtitle">
+                  Perbarui seluruh PC Agent di jaringan lokal tanpa harus mendatangi komputer satu per satu.
+                </p>
+
+                <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px', padding: '16px', marginBottom: '16px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+                    <div>
+                      <div style={{ fontWeight: 'bold', fontSize: '0.95rem' }}>
+                        Status Paket Installer di Server:
+                      </div>
+                      <div style={{ fontSize: '0.85rem', color: serverUpdateInfo?.hasUpdate ? 'var(--success)' : 'var(--text-muted)', marginTop: '4px' }}>
+                        {serverUpdateInfo?.hasUpdate ? (
+                          <>
+                            <i className="fa-solid fa-circle-check" style={{ marginRight: '6px' }}></i>
+                            Tersedia: <strong>v{serverUpdateInfo.version}</strong> ({serverUpdateInfo.fileName}) &bull; {(serverUpdateInfo.size / 1024 / 1024).toFixed(1)} MB
+                          </>
+                        ) : (
+                          <>
+                            <i className="fa-solid fa-circle-info" style={{ marginRight: '6px' }}></i>
+                            Belum ada file installer Agent di folder Server <code>Documents/AudioMonitor-Updates/agent/</code>
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button className="btn-filter secondary" onClick={checkServerUpdates} disabled={isCheckingUpdate}>
+                        <i className={`fa-solid fa-rotate ${isCheckingUpdate ? 'fa-spin' : ''}`}></i> Cek Ulang
+                      </button>
+                      {serverUpdateInfo?.hasUpdate && (
+                        <button className="btn-filter primary" onClick={() => triggerAgentUpdate('all')}>
+                          <i className="fa-solid fa-rocket"></i> Perbarui Semua PC Agent
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <div className="settings-card">
               <div className="settings-card-accent red"></div>
               <div className="settings-card-content">
@@ -2036,6 +2152,24 @@ function App() {
                         <option value="2000">Normal (2s)</option>
                         <option value="5000">Eco Mode (5s)</option>
                       </select>
+                    </div>
+
+                    <div className="modal-section-title" style={{ color: '#60a5fa', marginTop: '20px' }}>Versi Aplikasi & Pembaruan</div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.03)', padding: '12px', borderRadius: '6px' }}>
+                      <div>
+                        <div style={{ fontSize: '13px', fontWeight: 'bold' }}>Versi Agent Saat Ini:</div>
+                        <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'monospace' }}>v{configModalAgent.appVersion || '1.0.1'}</div>
+                      </div>
+                      {serverUpdateInfo?.hasUpdate && (
+                        <button 
+                          type="button" 
+                          className="btn-filter primary" 
+                          style={{ padding: '6px 12px', fontSize: '0.8rem' }}
+                          onClick={() => triggerAgentUpdate(configModalAgent.uuid)}
+                        >
+                          <i className="fa-solid fa-cloud-arrow-down"></i> Update ke v{serverUpdateInfo.version}
+                        </button>
+                      )}
                     </div>
                   </div>
 

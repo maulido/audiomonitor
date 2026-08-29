@@ -129,6 +129,12 @@ class TelemetryHub {
           }
         });
 
+        // Event saat Agent melaporkan progres pengunduhan/instalasi update
+        socket.on('agent-update-progress', (data) => {
+          if (!data) return;
+          this.io.to('dashboards').emit('agent-update-progress', data);
+        });
+
         // Event usang (Legacy) via socket untuk toggle monitoring PC
       socket.on('agent-monitoring', (data) => { if (!data) return;
         if (data.uuid && data.active !== undefined) {
@@ -230,6 +236,18 @@ class TelemetryHub {
     const globalActive = this.configManager.config.monitoringActive !== false;
     if (globalActive && isMonitoringActive) {
       this.alertManager.processTelemetry(data, pcName);
+    }
+  }
+
+  /**
+   * Memicu proses download dan instalasi pembaruan ke PC Agent.
+   */
+  triggerAgentUpdate(targetUuid, downloadUrl) {
+    if (!downloadUrl) return;
+    if (targetUuid === 'all') {
+      this.io.to('agents').emit('execute-update', { downloadUrl });
+    } else {
+      this.io.to(`agent-${targetUuid}`).emit('execute-update', { downloadUrl });
     }
   }
 }

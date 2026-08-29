@@ -31,6 +31,15 @@ function App() {
   const uuidRef = useRef(uuid);
   useEffect(() => { uuidRef.current = uuid; }, [uuid]);
 
+  const [appVersion, setAppVersion] = useState('1.0.1');
+  useEffect(() => {
+    if (window.electronAPI && window.electronAPI.getAppVersion) {
+      window.electronAPI.getAppVersion().then(v => {
+        if (v) setAppVersion(v);
+      }).catch(() => {});
+    }
+  }, []);
+
   const [rawMicLevel, setRawMicLevel] = useState(0);
   const [micDb, setMicDb] = useState(-100);
   const [micClipping, setMicClipping] = useState(false);
@@ -334,7 +343,29 @@ function App() {
           }
         });
 
+        // Listener Perintah Pembaruan dari Server LAN
+        const handleExecuteUpdate = async (data) => {
+          const downloadUrl = data?.downloadUrl;
+          if (!downloadUrl) return;
+          
+          if (window.electronAPI && window.electronAPI.installUpdate) {
+            socket.emit('agent-update-progress', { uuid: uuidRef.current, progress: 0, status: 'starting' });
+            const unbind = window.electronAPI.onUpdateProgress((prog) => {
+              socket.emit('agent-update-progress', { uuid: uuidRef.current, ...prog });
+            });
+            
+            const res = await window.electronAPI.installUpdate(downloadUrl);
+            if (unbind) unbind();
+            if (!res.success) {
+              socket.emit('agent-update-progress', { uuid: uuidRef.current, status: 'error', error: res.error });
+            }
+          }
+        };
+
+        socket.on('execute-update', handleExecuteUpdate);
+
       return () => {
+        socket.off('execute-update', handleExecuteUpdate);
         telemetryClient.current.disconnect();
       };
     }
@@ -670,9 +701,10 @@ function App() {
           obsSyncRecording,
           obsSyncStreaming,
           telemetryInterval,
+          appVersion,
           audioDevices: audioDevicesRef.current.map(d => d.label || 'Default Microphone')
       };
-  }, [micLevel, rawMicLevel, micDb, micClipping, obsSources, noiseGate, obsLevel, obsDb, status, hardwareUsage, uuid, agentName, micDriverName, obsSourceName, isMonitoringActive, isStreaming, streamTimecode, streamBitrate, streamDroppedFrames, streamTotalFrames, currentScene, silenceTimeoutSec, deadMicTimeoutSec, clippingThreshold, clippingDurationSec, speakingThreshold, obsMuteTimeoutSec, autoRecoveryUnmute, obsSyncRecording, obsSyncStreaming, telemetryInterval, obsConnected, isObsMutedBtn, isRecording]);
+  }, [micLevel, rawMicLevel, micDb, micClipping, obsSources, noiseGate, obsLevel, obsDb, status, hardwareUsage, uuid, agentName, micDriverName, obsSourceName, isMonitoringActive, isStreaming, streamTimecode, streamBitrate, streamDroppedFrames, streamTotalFrames, currentScene, silenceTimeoutSec, deadMicTimeoutSec, clippingThreshold, clippingDurationSec, speakingThreshold, obsMuteTimeoutSec, autoRecoveryUnmute, obsSyncRecording, obsSyncStreaming, telemetryInterval, obsConnected, isObsMutedBtn, isRecording, appVersion]);
 
   // Telemetry Sender (Dynamic Interval)
   useEffect(() => {

@@ -26,7 +26,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   selectFolder: () => ipcRenderer.invoke('select-folder'),
   startRecording: (sessionFolderName, partNumber, recordDir, agentName, serverIp) => ipcRenderer.send('start-recording', { sessionFolderName, partNumber, recordDir, agentName, serverIp }),
   saveAudioChunk: (arrayBuffer) => ipcRenderer.send('save-audio-chunk', arrayBuffer),
-  stopRecording: (isRollover) => ipcRenderer.send('stop-recording', isRollover),
   getWindowsAudioDevices: () => ipcRenderer.invoke('get-windows-audio-devices'),
-  getObsGlobalDevice: (collectionName, deviceKey) => ipcRenderer.invoke('get-obs-global-device', { collectionName, deviceKey })
+  getObsGlobalDevice: (collectionName, deviceKey) => ipcRenderer.invoke('get-obs-global-device', { collectionName, deviceKey }),
+  getAppVersion: () => ipcRenderer.invoke('get-app-version'),
+  installUpdate: (downloadUrl) => ipcRenderer.invoke('install-update', downloadUrl),
+  onUpdateProgress: (callback) => {
+    const handler = (event, data) => callback(data);
+    ipcRenderer.on('update-progress', handler);
+    return () => ipcRenderer.removeListener('update-progress', handler);
+  }
 });

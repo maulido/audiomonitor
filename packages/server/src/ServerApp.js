@@ -549,6 +549,110 @@ class ServerApp {
       this.alertManager.sendTelegramAlert('[TEST] <b>Ping!</b> Ini adalah pesan percobaan dari AudioMonitor Server.');
       res.json({ success: true, message: 'Test message sent' });
     });
+
+    // Helper direktori penyimpanan pembaruan Agent di server
+    const getUpdatesDir = () => {
+      const dir = path.join(os.homedir(), 'Documents', 'AudioMonitor-Updates', 'agent');
+      if (!fs.existsSync(dir)) {
+        try { fs.mkdirSync(dir, { recursive: true }); } catch (e) {}
+      }
+      return dir;
+    };
+
+    // API: Mendapatkan info pembaruan Agent terbaru yang tersedia di Server
+    this.app.get('/updates/agent/info', (req, res) => {
+      const updatesDir = getUpdatesDir();
+      try {
+        if (!fs.existsSync(updatesDir)) {
+          return res.json({ hasUpdate: false });
+        }
+        
+        const files = fs.readdirSync(updatesDir).filter(f => f.toLowerCase().endsWith('.exe'));
+        if (files.length === 0) {
+          return res.json({ hasUpdate: false });
+        }
+
+        // Urutkan dari file installer terbaru
+        const installers = files.map(file => {
+          const filePath = path.join(updatesDir, file);
+          const stat = fs.statSync(filePath);
+          const vMatch = file.match(/v?(\d+\.\d+\.\d+)/i);
+          return {
+            fileName: file,
+            version: vMatch ? vMatch[1] : '1.0.0',
+            size: stat.size,
+            mtime: stat.mtime,
+            downloadUrl: `/updates/agent/${encodeURIComponent(file)}`
+          };
+        }).sort((a, b) => new Date(b.mtime) - new Date(a.mtime));
+
+        const latest = installers[0];
+        res.json({
+          hasUpdate: true,
+          ...latest
+        });
+      } catch (err) {
+        logger.error(`Error reading updates info: ${err.message}`);
+        res.status(500).json({ hasUpdate: false, error: err.message });
+      }
+    });
+
+    // Endpoint streaming download installer Agent untuk PC client di LAN
+    this.app.get('/updates/agent/:filename', (req, res) => {
+      const updatesDir = getUpdatesDir();
+      const safeFileName = path.basename(req.params.filename || '');
+      const filePath = path.resolve(updatesDir, safeFileName);
+      
+      const rel = path.relative(updatesDir, filePath);
+      if (rel.startsWith('..') || path.isAbsolute(rel)) {
+        return res.status(403).send('Forbidden');
+      }
+
+      if (fs.existsSync(filePath)) {
+        res.sendFile(filePath);
+      } else {
+        res.status(404).send('Update file not found');
+      }
+    });
+
+    // API: Memicu update remote pada Agent (satu PC atau semua PC)
+    this.app.post('/api/updates/trigger-agent', (req, res) => {
+      const { targetUuid, downloadUrl } = req.body || {};
+      if (!downloadUrl) return res.status(400).json({ success: false, error: 'URL unduhan diperlukan' });
+
+      // Jika URL relatif, ubah ke URL lengkap berbasis IP Server
+      let fullDownloadUrl = downloadUrl;
+      if (fullDownloadUrl.startsWith('/')) {
+        const host = req.headers.host || `localhost:${this.port}`;
+        const protocol = req.protocol || 'http';
+        fullDownloadUrl = `${protocol}://${host}${fullDownloadUrl}`;
+      }
+
+      this.telemetryHub.triggerAgentUpdate(targetUuid || 'all', fullDownloadUrl);
+      logger.info(`[UpdateHub] Memicu pembaruan Agent ke target: ${targetUuid || 'all'} (URL: ${fullDownloadUrl})`);
+      res.json({ success: true, message: 'Perintah pembaruan disiarkan ke Agent', downloadUrl: fullDownloadUrl });
+    });
+
+    // API: Upload installer Agent baru ke Server
+    this.app.post('/internal/upload-update', (req, res) => {
+      const rawFileName = req.headers['x-file-name'] || 'AudioMonitor_Agent_Installer.exe';
+      const safeFileName = path.basename(rawFileName).replace(/[^a-zA-Z0-9_\-\.]/g, '');
+      const updatesDir = getUpdatesDir();
+      const filePath = path.join(updatesDir, safeFileName);
+
+      const writeStream = fs.createWriteStream(filePath);
+      req.pipe(writeStream);
+
+      writeStream.on('finish', () => {
+        logger.info(`[UpdateHub] Berhasil menerima installer Agent baru: ${safeFileName}`);
+        res.json({ success: true, fileName: safeFileName, path: filePath });
+      });
+
+      writeStream.on('error', (err) => {
+        logger.error(`[UpdateHub] Gagal menyimpan file update: ${err.message}`);
+        res.status(500).json({ success: false, error: err.message });
+      });
+    });
   }
 
   /**
