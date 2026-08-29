@@ -1,0 +1,50 @@
+[
+  {
+    "id": 1,
+    "uuid": "agent-reconnect-007",
+    "pcName": "agent-reconnect-007",
+    "incidentType": "OFFLINE",
+    "details": "Koneksi terputus",
+    "timestamp": "2026-08-29 09:15:57"
+  },
+  {
+    "id": 2,
+    "uuid": "agent-reconnect-007",
+    "pcName": "agent-reconnect-007",
+    "incidentType": "OFFLINE",
+    "details": "Koneksi terputus",
+    "timestamp": "2026-08-29 09:15:57"
+  },
+  {
+    "id": 3,
+    "uuid": "agent-reconnect-007",
+    "pcName": "agent-reconnect-007",
+    "incidentType": "OFFLINE",
+    "details": "Koneksi terputus",
+    "timestamp": "2026-08-29 09:16:26"
+  },
+  {
+    "id": 4,
+    "uuid": "agent-reconnect-007",
+    "pcName": "agent-reconnect-007",
+    "incidentType": "OFFLINE",
+    "details": "Koneksi terputus",
+    "timestamp": "2026-08-29 09:16:26"
+  },
+  {
+    "id": 5,
+    "uuid": "agent-reconnect-007",
+    "pcName": "agent-reconnect-007",
+    "incidentType": "OFFLINE",
+    "details": "Koneksi terputus",
+    "timestamp": "2026-08-29 09:16:44"
+  },
+  {
+    "id": 6,
+    "uuid": "agent-reconnect-007",
+    "pcName": "agent-reconnect-007",
+    "incidentType": "OFFLINE",
+    "details": "Koneksi terputus",
+    "timestamp": "2026-08-29 09:16:44"
+  }
+]

@@ -227,6 +227,7 @@ class TelemetryHub {
    * Jantung pemrosesan data real-time. Memperkaya data Agent dengan nama aslinya, lalu meneruskannya.
    */
   handleTelemetry(data) {
+    if (!data || !data.uuid) return;
     const pcName = this.configManager.getPcName(data.uuid) || data.name || data.uuid;
     
     // Inisialisasi atau sinkronisasi status pengawasan per-PC
