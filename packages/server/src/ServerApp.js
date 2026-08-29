@@ -75,12 +75,13 @@ class ServerApp {
       
       let decodedPath = '';
       try {
-        decodedPath = decodeURIComponent(req.path);
+        decodedPath = decodeURIComponent(req.path || '');
       } catch (err) {
         return res.status(400).send('Bad Request: Malformed URI');
       }
 
-      let fullPath = path.resolve(recordDir, '.' + decodedPath);
+      const cleanRelPath = decodedPath.replace(/^[/\\]+/, '');
+      let fullPath = path.resolve(recordDir, cleanRelPath);
       
       // Strict path traversal protection
       const rel = path.relative(recordDir, fullPath);
@@ -182,6 +183,14 @@ class ServerApp {
         } finally {
           if (fd !== null) try { fs.closeSync(fd); } catch(e) {}
         }
+      }
+
+      if (!fs.existsSync(fullPath)) {
+        return res.status(404).send('File not found');
+      }
+
+      if (fullPath.endsWith('.webm')) {
+        res.setHeader('Content-Type', 'audio/webm');
       }
       
       res.sendFile(fullPath, (err) => {

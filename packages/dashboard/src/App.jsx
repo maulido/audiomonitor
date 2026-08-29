@@ -36,6 +36,12 @@ import DashboardClient from './core/DashboardClient';
 
 const SERVER_URL = window.location.port.startsWith('517') ? `http://${window.location.hostname}:4000` : window.location.origin;
 
+const getMediaUrl = (url) => {
+  if (!url) return '';
+  if (url.startsWith('http://') || url.startsWith('https://')) return url;
+  return `${SERVER_URL}${url.startsWith('/') ? '' : '/'}${url}`;
+};
+
 function App() {
   const [agents, setAgents] = useState({});
   const [isConnected, setIsConnected] = useState(false);
@@ -506,7 +512,7 @@ function App() {
         const results = await Promise.all(
           playingSession.parts.map(async (p, idx) => {
             try {
-              const res = await fetch(p.url, { signal: abortController.signal });
+              const res = await fetch(getMediaUrl(p.url), { signal: abortController.signal });
               if (!res.ok) throw new Error(`HTTP ${res.status}`);
               const buf = await res.arrayBuffer();
               const decoded = await ctx.decodeAudioData(buf);
@@ -1677,13 +1683,14 @@ function App() {
                   <audio 
                     ref={audioRef}
                     key={playingSession.parts[currentPartIndex].url}
-                    src={playingSession.parts[currentPartIndex].url}
+                    src={getMediaUrl(playingSession.parts[currentPartIndex].url)}
                     onLoadedMetadata={handleAudioLoadedMetadata}
                     onTimeUpdate={handleAudioTimeUpdate}
                     onEnded={handleAudioEnded}
                     onPlay={() => setIsPlaying(true)}
                     onPause={() => setIsPlaying(false)}
-                    onError={() => {
+                    onError={(e) => {
+                      console.error('Audio playback error:', e);
                       customAlert('Gagal memuat file rekaman audio. File mungkin telah dipindahkan atau dihapus dari server.', 'Gagal Memutar Audio');
                       setPlayingSession(null);
                     }}
