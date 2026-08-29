@@ -99,6 +99,7 @@ class AudioProcessor {
     if (this.mediaRecorder && this.mediaRecorder.state === 'recording') return true;
 
     try {
+      this.isRecording = true;
       const now = new Date();
       const year = now.getFullYear();
       const month = String(now.getMonth() + 1).padStart(2, '0');
@@ -119,6 +120,7 @@ class AudioProcessor {
       
       return true;
     } catch (e) {
+      this.isRecording = false;
       console.error('Failed to start recording:', e);
       return false;
     }
@@ -148,7 +150,8 @@ class AudioProcessor {
             window.electronAPI.stopRecording(true); 
           }
           this.partNumber++;
-          setTimeout(() => {
+          this.rolloverRestartTimer = setTimeout(() => {
+            this.rolloverRestartTimer = null;
             if (this.isRecording) {
               this._startMediaRecorderChunk();
             }
@@ -160,9 +163,15 @@ class AudioProcessor {
   }
 
   stopRecording() {
+    this.isRecording = false;
     if (this.chunkTimer) {
       clearTimeout(this.chunkTimer);
       this.chunkTimer = null;
+    }
+
+    if (this.rolloverRestartTimer) {
+      clearTimeout(this.rolloverRestartTimer);
+      this.rolloverRestartTimer = null;
     }
 
     if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {

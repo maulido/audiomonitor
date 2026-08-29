@@ -86,7 +86,11 @@ class AlertManager {
     this.sendTelegramAlert(`[OFFLINE] <b>${safePcName}</b> terputus dari jaringan.`);
     if (this.dbManager) this.dbManager.logIncident(uuid, pcName, 'OFFLINE', 'Koneksi terputus');
     
-    delete this.lastAlertState[uuid];
+    if (this.lastAlertState[uuid]) {
+      this.lastAlertState[uuid].status = 'OFFLINE';
+    } else {
+      this.lastAlertState[uuid] = { status: 'OFFLINE', time: Date.now(), notified: false };
+    }
     delete this.lastAlertState[`${uuid}_hw`];
   }
 }

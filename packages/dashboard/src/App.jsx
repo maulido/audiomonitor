@@ -87,11 +87,18 @@ function App() {
   const [systemLogs, setSystemLogs] = useState('');
   const [showSystemLogs, setShowSystemLogs] = useState(false);
 
+  // Helper untuk format tanggal lokal (WIB / UTC+7 aman tanpa pergeseran hari)
+  const getLocalDateStr = (d = new Date()) => {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
 
   // Incident Filter State
-  const getDefaultStartDate = () => { const d = new Date(); d.setDate(d.getDate() - 7); return d.toISOString().slice(0, 10); };
+  const getDefaultStartDate = () => { const d = new Date(); d.setDate(d.getDate() - 7); return getLocalDateStr(d); };
   const [incidentStartDate, setIncidentStartDate] = useState(getDefaultStartDate());
-  const [incidentEndDate, setIncidentEndDate] = useState(new Date().toISOString().slice(0, 10));
+  const [incidentEndDate, setIncidentEndDate] = useState(getLocalDateStr());
   const [incidentPcFilter, setIncidentPcFilter] = useState('');
   const [incidentStatusFilter, setIncidentStatusFilter] = useState('');
   const [incidentPcNames, setIncidentPcNames] = useState([]);
@@ -299,45 +306,56 @@ function App() {
     });
 
     setPartDurations(initialEstimated);
-    setLocalCurrentTime(0);
-    setCurrentPartIndex(0);
-    pendingSeekOffsetRef.current = 0;
     setIsPlaying(true);
 
-    let isCancelled = false;
+    const abortController = new AbortController();
+    let ctx = null;
 
-    // Decode exact sample-accurate durations with AudioContext
+    // Decode exact sample-accurate durations with single reusable AudioContext
     const probeExactDurations = async () => {
-      const results = await Promise.all(
-        playingSession.parts.map(async (p, idx) => {
-          try {
-            const res = await fetch(p.url);
-            const buf = await res.arrayBuffer();
-            const ctx = new (window.AudioContext || window.webkitAudioContext)();
-            const decoded = await ctx.decodeAudioData(buf);
-            const d = decoded.duration;
-            ctx.close();
-            if (d && isFinite(d) && !isNaN(d) && d > 0) {
-              return d;
+      try {
+        ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const results = await Promise.all(
+          playingSession.parts.map(async (p, idx) => {
+            try {
+              const res = await fetch(p.url, { signal: abortController.signal });
+              if (!res.ok) throw new Error(`HTTP ${res.status}`);
+              const buf = await res.arrayBuffer();
+              const decoded = await ctx.decodeAudioData(buf);
+              const d = decoded.duration;
+              if (d && isFinite(d) && !isNaN(d) && d > 0) {
+                return d;
+              }
+            } catch (err) {
+              if (err.name !== 'AbortError') {
+                console.warn(`Duration probe failed for ${p.fileName}:`, err.message);
+              }
             }
-          } catch (err) {
-            console.warn('Could not decode audio duration via AudioContext:', err);
-          }
-          return initialEstimated[idx] || 0;
-        })
-      );
+            return initialEstimated[idx] || 0;
+          })
+        );
 
-      if (!isCancelled) {
-        setPartDurations(results);
+        if (!abortController.signal.aborted) {
+          setPartDurations(results);
+        }
+      } catch (e) {
+        // ignore abort
+      } finally {
+        if (ctx && ctx.state !== 'closed') {
+          ctx.close().catch(() => {});
+        }
       }
     };
 
     probeExactDurations();
 
     return () => {
-      isCancelled = true;
+      abortController.abort();
+      if (ctx && ctx.state !== 'closed') {
+        ctx.close().catch(() => {});
+      }
     };
-  }, [playingSession]);
+  }, [playingSession?.folderName]);
 
   const totalSessionDuration = partDurations.reduce((acc, d) => acc + (isFinite(d) ? d : 0), 0);
 
@@ -355,7 +373,12 @@ function App() {
 
   const handleGlobalSeek = (targetGlobalTime) => {
     if (!playingSession || !playingSession.parts || playingSession.parts.length === 0) return;
-    targetGlobalTime = Math.max(0, Math.min(totalSessionDuration || targetGlobalTime, targetGlobalTime));
+    if (!totalSessionDuration || totalSessionDuration <= 0) {
+      if (audioRef.current) audioRef.current.currentTime = 0;
+      setLocalCurrentTime(0);
+      return;
+    }
+    targetGlobalTime = Math.max(0, Math.min(totalSessionDuration, targetGlobalTime));
 
     let accumulated = 0;
     let targetPartIdx = 0;
@@ -408,11 +431,18 @@ function App() {
   };
 
   const handleAudioEnded = () => {
-    if (currentPartIndex < playingSession.parts.length - 1) {
+    if (playingSession?.parts && currentPartIndex < playingSession.parts.length - 1) {
       pendingSeekOffsetRef.current = 0;
       setCurrentPartIndex(prev => prev + 1);
     } else {
       setIsPlaying(false);
+    }
+  };
+
+  const handleSpeedChange = (rate) => {
+    setPlaybackRate(rate);
+    if (audioRef.current) {
+      audioRef.current.playbackRate = rate;
     }
   };
 
@@ -1326,22 +1356,22 @@ function App() {
             {/* Quick Filters */}
             <div style={{ display: 'flex', gap: '8px', marginBottom: '-16px', flexWrap: 'wrap' }}>
               <button className="btn-filter secondary" onClick={() => {
-                const today = new Date().toISOString().slice(0, 10);
+                const today = getLocalDateStr();
                 setRecordStartDate(today);
                 setRecordEndDate(today);
               }}>Hari Ini</button>
               <button className="btn-filter secondary" onClick={() => {
-                const end = new Date().toISOString().slice(0, 10);
+                const end = getLocalDateStr();
                 const start = new Date();
                 start.setDate(start.getDate() - 7);
-                setRecordStartDate(start.toISOString().slice(0, 10));
+                setRecordStartDate(getLocalDateStr(start));
                 setRecordEndDate(end);
               }}>7 Hari Terakhir</button>
               <button className="btn-filter secondary" onClick={() => {
-                const end = new Date().toISOString().slice(0, 10);
+                const end = getLocalDateStr();
                 const start = new Date();
                 start.setDate(start.getDate() - 30);
-                setRecordStartDate(start.toISOString().slice(0, 10));
+                setRecordStartDate(getLocalDateStr(start));
                 setRecordEndDate(end);
               }}>30 Hari Terakhir</button>
               {(recordStartDate || recordEndDate || recordPcFilter) && (
@@ -1675,8 +1705,12 @@ function App() {
                                     className="btn-filter primary"
                                     style={{ padding: '6px 14px', fontSize: '0.85rem' }}
                                     onClick={() => {
-                                      setPlayingSession(session);
+                                      if (playingSession?.folderName !== session.folderName) {
+                                        setPlayingSession(session);
+                                      }
+                                      pendingSeekOffsetRef.current = 0;
                                       setCurrentPartIndex(0);
+                                      setLocalCurrentTime(0);
                                     }}
                                   >
                                     <i className="fa-solid fa-play"></i> Putar Sesi Ini
@@ -1695,8 +1729,12 @@ function App() {
                                         key={part.url || pIdx}
                                         className={`part-chip-btn ${isPartPlaying ? 'playing' : ''}`}
                                         onClick={() => {
-                                          setPlayingSession(session);
+                                          if (playingSession?.folderName !== session.folderName) {
+                                            setPlayingSession(session);
+                                          }
+                                          pendingSeekOffsetRef.current = 0;
                                           setCurrentPartIndex(pIdx);
+                                          setLocalCurrentTime(0);
                                         }}
                                         title={`Putar ${part.fileName}`}
                                       >

@@ -28,6 +28,9 @@ import TelemetryClient from './core/TelemetryClient';
 
 function App() {
   const [uuid, setUuid] = useState('Loading...');
+  const uuidRef = useRef(uuid);
+  useEffect(() => { uuidRef.current = uuid; }, [uuid]);
+
   const [rawMicLevel, setRawMicLevel] = useState(0);
   const [micDb, setMicDb] = useState(-100);
   const [micClipping, setMicClipping] = useState(false);
@@ -56,6 +59,9 @@ function App() {
   useEffect(() => { agentNameRef.current = agentName; }, [agentName]);
 
   const [serverIp, setServerIp] = useState(() => localStorage.getItem('serverIp') || 'http://localhost:4000');
+  const serverIpRef = useRef(serverIp);
+  useEffect(() => { serverIpRef.current = serverIp; }, [serverIp]);
+
   const [committedServerIp, setCommittedServerIp] = useState(serverIp);
   const [obsIp, setObsIp] = useState(() => localStorage.getItem('obsIp') || 'localhost:4455');
   const [obsPassword, setObsPassword] = useState(() => localStorage.getItem('obsPassword') || '');
@@ -375,7 +381,7 @@ function App() {
            }
            if (obsSyncRecordingRef.current && audioProcessor.current) {
              if (status.outputActive && !isRecordingRef.current) {
-               if (audioProcessor.current.startRecording(agentNameRef.current, recordDirRef.current, uuid, serverIp)) setIsRecording(true);
+               if (audioProcessor.current.startRecording(agentNameRef.current, recordDirRef.current, uuidRef.current, serverIpRef.current)) setIsRecording(true);
              } else if (!status.outputActive && isRecordingRef.current) {
                audioProcessor.current.stopRecording();
                setIsRecording(false);
@@ -485,8 +491,7 @@ function App() {
     }
   };
 
-  const silenceTimeout = useRef(null);
-  const deadMicTimeout = useRef(null);
+  const silenceScore = useRef(0);
   const dangerScore = useRef(0);
   const lastTickRef = useRef(0);
   const clippingScore = useRef(0);
@@ -511,10 +516,7 @@ function App() {
       if (status !== 'AMAN') setStatus('AMAN');
       dangerScore.current = 0;
       clippingScore.current = 0;
-      if (silenceTimeout.current) clearTimeout(silenceTimeout.current);
-      if (deadMicTimeout.current) clearTimeout(deadMicTimeout.current);
-      silenceTimeout.current = null;
-      deadMicTimeout.current = null;
+      silenceScore.current = 0;
       return;
     }
 
@@ -530,53 +532,43 @@ function App() {
     }
 
     // Build up danger score if talking while OBS is muted. Drain it if not.
-    // NOTE: isObsMuted is based on the meter level (< 0.5) OR the physical mute button.
     const isActuallyMuted = isObsMutedBtn || isObsMuted;
-    if (isTalking && isActuallyMuted && obsConnected) {
+    if (!obsConnected) {
+      dangerScore.current = 0;
+    } else if (isTalking && isActuallyMuted) {
       dangerScore.current += 100;
     } else {
-      dangerScore.current = Math.max(-1000, dangerScore.current - 200); // Drains twice as fast during pauses
+      dangerScore.current = Math.max(0, dangerScore.current - 500);
+      if (!isActuallyMuted) dangerScore.current = 0;
     }
 
-    if (dangerScore.current >= (obsMuteTimeoutSec * 1000)) { // dynamic timeout of "mostly" talking while muted
-      if (autoRecoveryUnmute && obsClient.current) {
-          obsClient.current.setMute(obsSourceNameRef.current, false);
-          dangerScore.current = -2000; // grace period of 2 seconds to allow meter to recover
-          nextStatus = 'AMAN';
-        } else {
-          nextStatus = 'BAHAYA_OBS_MUTE';
-        }
+    if (dangerScore.current >= (obsMuteTimeoutSec * 1000)) {
+      if (autoRecoveryUnmute && obsClient.current && obsConnected) {
+        obsClient.current.setMute(obsSourceNameRef.current, false);
+        dangerScore.current = -2000; // grace period of 2 seconds to allow meter to recover
+      } else {
+        nextStatus = 'BAHAYA_OBS_MUTE';
+      }
     } else if (clippingScore.current >= clippingDurationSec * 1000) {
       nextStatus = 'BAHAYA_AUDIO_PECAH';
     } else if (dangerScore.current <= 0 && clippingScore.current <= 0 && (status === 'BAHAYA_OBS_MUTE' || status === 'BAHAYA_AUDIO_PECAH')) {
       nextStatus = 'AMAN';
     }
 
+    // Silence & Dead Mic Logic via tick score
     if (currentMicLevel.current < 2 && currentObsLevel.current < 2) {
-      // Start standby timer if quiet
-      if (!silenceTimeout.current && status !== 'STANDBY_DIAM' && status !== 'BAHAYA_MIC_MATI' && nextStatus !== 'BAHAYA_OBS_MUTE' && nextStatus !== 'BAHAYA_AUDIO_PECAH') {
-        silenceTimeout.current = setTimeout(() => {
-          silenceTimeout.current = null;
-          setStatus('STANDBY_DIAM');
-        }, silenceTimeoutSec * 1000);
-      }
-      // Start dead mic timer
-      if (!deadMicTimeout.current && status !== 'BAHAYA_MIC_MATI' && nextStatus !== 'BAHAYA_OBS_MUTE' && nextStatus !== 'BAHAYA_AUDIO_PECAH') {
-        deadMicTimeout.current = setTimeout(() => {
-          deadMicTimeout.current = null;
-          setStatus('BAHAYA_MIC_MATI');
-        }, deadMicTimeoutSec * 1000);
+      silenceScore.current += 100;
+      if (silenceScore.current >= deadMicTimeoutSec * 1000) {
+        if (nextStatus !== 'BAHAYA_OBS_MUTE' && nextStatus !== 'BAHAYA_AUDIO_PECAH') {
+          nextStatus = 'BAHAYA_MIC_MATI';
+        }
+      } else if (silenceScore.current >= silenceTimeoutSec * 1000) {
+        if (nextStatus !== 'BAHAYA_OBS_MUTE' && nextStatus !== 'BAHAYA_AUDIO_PECAH') {
+          nextStatus = 'STANDBY_DIAM';
+        }
       }
     } else {
-      // Clear standby and dead mic timers if there is sound
-      if (silenceTimeout.current) {
-        clearTimeout(silenceTimeout.current);
-        silenceTimeout.current = null;
-      }
-      if (deadMicTimeout.current) {
-        clearTimeout(deadMicTimeout.current);
-        deadMicTimeout.current = null;
-      }
+      silenceScore.current = 0;
       if (nextStatus === 'STANDBY_DIAM' || nextStatus === 'BAHAYA_MIC_MATI') {
         nextStatus = 'AMAN';
       }
@@ -615,11 +607,6 @@ function App() {
         lastNotificationTime.current = now;
       }
     }
-
-    return () => {
-      if (silenceTimeout.current) clearTimeout(silenceTimeout.current);
-      if (deadMicTimeout.current) clearTimeout(deadMicTimeout.current);
-    };
   }, [obsConnected, status, silenceTimeoutSec, deadMicTimeoutSec, isMonitoringActive, tick, clippingThreshold, clippingDurationSec, isObsMutedBtn, speakingThreshold, obsMuteTimeoutSec, autoRecoveryUnmute]);
 
   // Refs to hold latest values for telemetry throttling

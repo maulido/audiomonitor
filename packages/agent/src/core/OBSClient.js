@@ -278,9 +278,9 @@ class OBSClient {
           detailed.push({
             name: input.inputName,
             muted: muteRes.inputMuted,
-            db: parseFloat((volRes.inputVolumeDb).toFixed(1)),
-            volume: volRes.inputVolumeMul,
-            monitorType: monRes.monitorType,
+            db: volRes && volRes.inputVolumeDb != null ? parseFloat(volRes.inputVolumeDb.toFixed(1)) : -100,
+            volume: volRes ? volRes.inputVolumeMul : 0,
+            monitorType: monRes ? monRes.monitorType : 'OBS_MONITORING_TYPE_NONE',
             hardwareId: hardwareId
           });
         } catch (e) {}

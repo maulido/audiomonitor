@@ -55,9 +55,8 @@ app.whenReady().then(() => {
         {
           label: isEnabled ? 'Matikan Auto-Start' : 'Hidupkan Auto-Start',
           click: () => {
-            if (isEnabled) serverAutoLauncher.disable();
-            else serverAutoLauncher.enable();
-            setTimeout(updateMenu, 500);
+            const action = isEnabled ? serverAutoLauncher.disable() : serverAutoLauncher.enable();
+            Promise.resolve(action).finally(() => setTimeout(updateMenu, 500));
           }
         },
         { type: 'separator' },

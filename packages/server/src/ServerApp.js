@@ -65,6 +65,8 @@ class ServerApp {
 
     // Menyajikan folder rekaman agar bisa diakses browser via /media/...
     const os = require('os');
+    const mediaRepairLocks = new Set();
+
     this.app.use('/media', (req, res, next) => {
       const recordDir = path.resolve(
         this.configManager.config.recordDir || 
@@ -78,7 +80,7 @@ class ServerApp {
         return res.status(400).send('Bad Request: Malformed URI');
       }
 
-      const fullPath = path.resolve(recordDir, '.' + decodedPath);
+      let fullPath = path.resolve(recordDir, '.' + decodedPath);
       
       // Strict path traversal protection
       const rel = path.relative(recordDir, fullPath);
@@ -86,38 +88,85 @@ class ServerApp {
         return res.status(403).send('Forbidden');
       }
 
-      // Auto-repair missing EBML headers for rollover WebM chunks
-      if (fs.existsSync(fullPath) && fullPath.endsWith('.webm')) {
-        try {
-          const fd = fs.openSync(fullPath, 'r');
-          const magic = Buffer.alloc(4);
-          fs.readSync(fd, magic, 0, 4, 0);
-          fs.closeSync(fd);
+      // If exact file does not exist, check if the folder was renamed to a completed session
+      if (!fs.existsSync(fullPath)) {
+        const parentDir = path.dirname(fullPath);
+        const fileName = path.basename(fullPath);
+        const parentBaseName = path.basename(parentDir).replace(/_to_\d{2}-\d{2}-\d{2}$/i, '');
+        const rootDir = path.dirname(parentDir);
 
-          if (magic.toString('hex') !== '1a45dfa3') {
-            // Missing EBML header! Let's find Part_001.webm in same or base session folder
-            const parentDir = path.dirname(fullPath);
-            let p1Path = path.join(parentDir, 'Part_001.webm');
-            
-            if (!fs.existsSync(p1Path)) {
-              const baseFolder = path.basename(parentDir).replace(/_to_\d{2}-\d{2}-\d{2}$/i, '');
-              p1Path = path.join(path.dirname(parentDir), baseFolder, 'Part_001.webm');
-            }
-
-            if (fs.existsSync(p1Path)) {
-              const p1Buf = fs.readFileSync(p1Path);
-              const clusterMarker = Buffer.from([0x1f, 0x43, 0xb6, 0x75]);
-              const clusterIdx = p1Buf.indexOf(clusterMarker);
-              if (clusterIdx > 0 && p1Buf.slice(0, 4).toString('hex') === '1a45dfa3') {
-                const headerBuf = p1Buf.slice(0, clusterIdx);
-                const currentData = fs.readFileSync(fullPath);
-                const repairedData = Buffer.concat([headerBuf, currentData]);
-                fs.writeFileSync(fullPath, repairedData);
-                logger.info(`[Media] Berhasil memperbaiki WebM header yang hilang untuk: ${path.basename(fullPath)}`);
+        if (fs.existsSync(rootDir)) {
+          try {
+            const siblings = fs.readdirSync(rootDir);
+            for (const sib of siblings) {
+              if (sib.startsWith(parentBaseName)) {
+                const candidate = path.join(rootDir, sib, fileName);
+                if (fs.existsSync(candidate)) {
+                  fullPath = candidate;
+                  break;
+                }
               }
+            }
+          } catch (e) {}
+        }
+      }
+
+      // Auto-repair missing EBML headers for rollover WebM chunks
+      if (fs.existsSync(fullPath) && fullPath.endsWith('.webm') && !mediaRepairLocks.has(fullPath)) {
+        try {
+          const stat = fs.statSync(fullPath);
+          if (stat.size >= 4) {
+            const fd = fs.openSync(fullPath, 'r');
+            const magic = Buffer.alloc(4);
+            fs.readSync(fd, magic, 0, 4, 0);
+            fs.closeSync(fd);
+
+            if (magic.toString('hex') !== '1a45dfa3') {
+              mediaRepairLocks.add(fullPath);
+              const parentDir = path.dirname(fullPath);
+              let p1Path = path.join(parentDir, 'Part_001.webm');
+              
+              if (!fs.existsSync(p1Path)) {
+                const baseFolder = path.basename(parentDir).replace(/_to_\d{2}-\d{2}-\d{2}$/i, '');
+                const rootDir = path.dirname(parentDir);
+                if (fs.existsSync(rootDir)) {
+                  const siblings = fs.readdirSync(rootDir);
+                  for (const sib of siblings) {
+                    if (sib.startsWith(baseFolder)) {
+                      const candidate = path.join(rootDir, sib, 'Part_001.webm');
+                      if (fs.existsSync(candidate)) {
+                        p1Path = candidate;
+                        break;
+                      }
+                    }
+                  }
+                }
+              }
+
+              if (fs.existsSync(p1Path) && path.resolve(p1Path) !== path.resolve(fullPath)) {
+                const p1Buf = fs.readFileSync(p1Path);
+                const clusterMarker = Buffer.from([0x1f, 0x43, 0xb6, 0x75]);
+                const clusterIdx = p1Buf.indexOf(clusterMarker);
+                if (clusterIdx > 0 && p1Buf.slice(0, 4).toString('hex') === '1a45dfa3') {
+                  const headerBuf = p1Buf.slice(0, clusterIdx);
+                  const currentData = fs.readFileSync(fullPath);
+                  const repairedData = Buffer.concat([headerBuf, currentData]);
+                  const tempPath = `${fullPath}.tmp_${Date.now()}`;
+                  fs.writeFileSync(tempPath, repairedData);
+                  try {
+                    fs.renameSync(tempPath, fullPath);
+                  } catch (rnErr) {
+                    fs.copyFileSync(tempPath, fullPath);
+                    try { fs.unlinkSync(tempPath); } catch (e) {}
+                  }
+                  logger.info(`[Media] Berhasil memperbaiki WebM header yang hilang untuk: ${path.basename(fullPath)}`);
+                }
+              }
+              mediaRepairLocks.delete(fullPath);
             }
           }
         } catch (repairErr) {
+          mediaRepairLocks.delete(fullPath);
           logger.warn(`[Media] Auto-repair check error: ${repairErr.message}`);
         }
       }
@@ -146,15 +195,23 @@ class ServerApp {
       const path = require('path');
       const os = require('os');
       
-      // Sanitize path components
-      const sessionFolder = path.basename(rawSessionFolder);
-      const fileName = path.basename(rawFileName);
+      // Sanitize path components to prevent path traversal
+      const sessionFolder = path.basename(rawSessionFolder).replace(/[^a-zA-Z0-9_\-\.]/g, '');
+      const fileName = path.basename(rawFileName).replace(/[^a-zA-Z0-9_\-\.]/g, '');
+
+      if (!sessionFolder || !fileName || sessionFolder === '.' || sessionFolder === '..') {
+        return res.status(400).json({ success: false, error: 'Invalid folder or file name' });
+      }
 
       const baseDir = path.resolve(
         this.configManager.config.recordDir || 
         path.join(os.homedir(), 'Documents', 'AudioMonitor-Recordings-Server')
       );
-      const targetDir = path.join(baseDir, sessionFolder);
+      const targetDir = path.resolve(baseDir, sessionFolder);
+      const rel = path.relative(baseDir, targetDir);
+      if (rel.startsWith('..') || path.isAbsolute(rel)) {
+        return res.status(403).json({ success: false, error: 'Forbidden' });
+      }
       
       try {
         // Jika sessionFolder memiliki akhiran waktu stop (_to_...), gabungkan file dari folder sebelum di-rename jika ada
@@ -170,7 +227,13 @@ class ServerApp {
               for (const f of oldFiles) {
                 const oldFilePath = path.join(oldDir, f);
                 const newFilePath = path.join(targetDir, f);
-                fs.renameSync(oldFilePath, newFilePath);
+                try {
+                  fs.renameSync(oldFilePath, newFilePath);
+                } catch (mvErr) {
+                  // Fallback copy if rename fails due to active file lock
+                  fs.copyFileSync(oldFilePath, newFilePath);
+                  try { fs.unlinkSync(oldFilePath); } catch (e) {}
+                }
               }
               try { fs.rmdirSync(oldDir); } catch(e) {}
             } catch(mergeErr) {
@@ -208,8 +271,15 @@ class ServerApp {
         
         req.on('error', (err) => {
           logger.error(`[Upload] Gagal menerima file rekaman dari ${agentName}: ${err.message}`);
-          writeStream.close();
+          writeStream.destroy();
           sendResponse(500, { success: false, error: err.message });
+        });
+
+        req.on('close', () => {
+          if (!req.complete) {
+            writeStream.destroy();
+            try { if (fs.existsSync(filePath)) fs.unlinkSync(filePath); } catch (e) {}
+          }
         });
       } catch (err) {
         logger.error(`[Upload] Error initializing stream: ${err.message}`);
@@ -310,9 +380,13 @@ class ServerApp {
               const pcStat = fs.statSync(pcPath);
               if (!pcStat.isDirectory()) continue;
 
+              const AUDIO_EXTS = new Set(['.webm', '.ogg', '.wav', '.mp3', '.m4a']);
               const files = fs.readdirSync(pcPath);
               for (const file of files) {
                 try {
+                  const ext = path.extname(file).toLowerCase();
+                  if (!AUDIO_EXTS.has(ext)) continue;
+
                   const filePath = path.join(pcPath, file);
                   const stat = fs.statSync(filePath);
                   if (!stat.isFile()) continue;
@@ -322,8 +396,8 @@ class ServerApp {
                   let realPcName = pc;
                   let uuid = '';
                   let isParsed = false;
-                  let isCompleted = false;
-                  let baseSessionKey = pc;
+                  let isCompleted = /_to_\d{2}-\d{2}-\d{2}$/i.test(pc);
+                  let baseSessionKey = pc.replace(/_to_\d{2}-\d{2}-\d{2}$/i, '');
                   let dateStr = '';
                   let timeStr = '';
                   
@@ -382,13 +456,22 @@ class ServerApp {
       const fs = require('fs');
       const path = require('path');
       const os = require('os');
-      const recordDir = this.configManager.config.recordDir || path.join(os.homedir(), 'Documents', 'AudioMonitor-Recordings-Server');
+      const baseDir = path.resolve(this.configManager.config.recordDir || path.join(os.homedir(), 'Documents', 'AudioMonitor-Recordings-Server'));
       
       // Mencegah path traversal attack
-      const safePcName = path.basename(pcName);
-      const safeFileName = path.basename(fileName);
+      const safePcName = path.basename(pcName).replace(/[^a-zA-Z0-9_\-\.]/g, '');
+      const safeFileName = path.basename(fileName).replace(/[^a-zA-Z0-9_\-\.]/g, '');
+
+      if (!safePcName || !safeFileName || safePcName === '.' || safePcName === '..') {
+        return res.status(400).json({ success: false, error: 'Invalid path parameters' });
+      }
       
-      const filePath = path.join(recordDir, safePcName, safeFileName);
+      const filePath = path.resolve(baseDir, safePcName, safeFileName);
+      const rel = path.relative(baseDir, filePath);
+      if (rel.startsWith('..') || path.isAbsolute(rel)) {
+        return res.status(403).json({ success: false, error: 'Forbidden' });
+      }
+
       if (fs.existsSync(filePath)) {
         try {
           fs.unlinkSync(filePath);

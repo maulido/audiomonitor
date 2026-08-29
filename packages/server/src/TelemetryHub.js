@@ -65,6 +65,7 @@ class TelemetryHub {
           
           socket.agentUuid = data.uuid;
           socket.agentName = data.name || data.uuid;
+          this.agentSockets.set(data.uuid, socket.id);
           
           // Jika PC ini sebelumnya berstatus OFF, beri tahu agar mematikan monitoringnya
           const stored = this.pcMonitoringState[data.uuid];
@@ -172,6 +173,7 @@ class TelemetryHub {
    */
   deleteAgent(uuid) {
     this.lastKnownState.delete(uuid);
+    this.agentSockets.delete(uuid);
     delete this.pcMonitoringState[uuid];
     this.io.to('dashboards').emit('agent-deleted', uuid);
   }

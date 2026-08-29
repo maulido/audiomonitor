@@ -358,7 +358,7 @@ function uploadToServer(filePath, serverUrl, agentName, sessionFolder) {
       normalizedUrl = `http://${normalizedUrl}`;
     }
     const urlObj = new URL(normalizedUrl);
-    if (!urlObj.port && !serverUrl.includes(':')) {
+    if (!urlObj.port) {
       urlObj.port = '4000';
     }
     
@@ -378,31 +378,35 @@ function uploadToServer(filePath, serverUrl, agentName, sessionFolder) {
       }
     };
     
+    writeAgentLog('INFO', `Mengunggah file rekaman ke Server: ${urlObj.toString()}`);
+    
     const req = lib.request(urlObj, options, (res) => {
       let data = '';
-      res.on('data', chunk => data += chunk);
+      res.on('data', (chunk) => { data += chunk; });
       res.on('end', () => {
         if (res.statusCode >= 200 && res.statusCode < 300) {
-          writeAgentLog('INFO', `[Upload Sukses] ${fileName} ke Server`);
+          writeAgentLog('INFO', `Sukses mengunggah ${fileName} ke Server.`);
         } else {
-          writeAgentLog('ERROR', `[Upload Gagal] Server membalas: ${res.statusCode} ${data}`);
+          writeAgentLog('ERROR', `Gagal mengunggah ${fileName} ke Server. Status: ${res.statusCode}, Respon: ${data}`);
         }
       });
     });
     
     req.on('error', (err) => {
-      writeAgentLog('ERROR', `[Upload Gagal] Tidak dapat menghubungi server: ${err.message}`);
+      writeAgentLog('ERROR', `Koneksi gagal saat mengunggah ${fileName} ke Server: ${err.message}`);
     });
     
-    const fileStream = fs.createReadStream(filePath);
-    fileStream.pipe(req);
-    
+    const readStream = fs.createReadStream(filePath);
+    readStream.pipe(req);
   } catch (err) {
-    writeAgentLog('ERROR', `[Upload Gagal] Kesalahan sistem: ${err.message}`);
+    writeAgentLog('ERROR', `Error fungsi uploadToServer: ${err.message}`);
   }
 }
 
-let audioWriteStream = null;
+let currentSessionDir = null;
+let currentAgentName = null;
+let currentServerIp = null;
+let pendingAudioChunks = [];
 
 
 ipcMain.handle('select-folder', async () => {
@@ -415,11 +419,6 @@ ipcMain.handle('select-folder', async () => {
 });
 
 
-
-let currentSessionDir = null;
-let currentAgentName = null;
-let currentServerIp = null;
-let pendingAudioChunks = [];
 
 ipcMain.on('start-recording', (event, { sessionFolderName, partNumber, recordDir, agentName, serverIp }) => {
     currentAgentName = agentName;
@@ -460,12 +459,16 @@ ipcMain.on('save-audio-chunk', (event, arrayBuffer) => {
   const buf = Buffer.from(arrayBuffer);
   if (audioWriteStream) {
     audioWriteStream.write(buf);
-  } else {
+  } else if (currentSessionDir && pendingAudioChunks.length < 10) {
     pendingAudioChunks.push(buf);
   }
 });
 
 ipcMain.on('stop-recording', (event, isRollover) => {
+  if (!isRollover) {
+    currentSessionDir = null;
+    pendingAudioChunks = [];
+  }
   if (audioWriteStream) {
     const streamToClose = audioWriteStream;
     const capturedSessionDir = currentSessionDir;
@@ -474,10 +477,6 @@ ipcMain.on('stop-recording', (event, isRollover) => {
     
     if (audioWriteStream === streamToClose) {
       audioWriteStream = null;
-    }
-    if (!isRollover) {
-      currentSessionDir = null;
-      pendingAudioChunks = [];
     }
     
     streamToClose.end();
