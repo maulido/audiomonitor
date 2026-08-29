@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 class ErrorBoundary extends React.Component {
   constructor(props) {
@@ -81,6 +82,9 @@ function App() {
   const [incidentPcFilter, setIncidentPcFilter] = useState('');
   const [incidentStatusFilter, setIncidentStatusFilter] = useState('');
   const [incidentPcNames, setIncidentPcNames] = useState([]);
+  const [incidentPage, setIncidentPage] = useState(1);
+  const logsPerPage = 15;
+  
   
   // Settings State
   const [telegramToken, setTelegramToken] = useState('');
@@ -185,6 +189,7 @@ function App() {
   };
 
   const applyIncidentFilters = () => {
+    setIncidentPage(1);
     fetchLogs({
       startDate: incidentStartDate || undefined,
       endDate: incidentEndDate || undefined,
@@ -200,7 +205,52 @@ function App() {
     setIncidentEndDate(end);
     setIncidentPcFilter('');
     setIncidentStatusFilter('');
+    setIncidentPage(1);
     fetchLogs({ startDate: start, endDate: end });
+  };
+
+  const setQuickFilter = (days) => {
+    const endObj = new Date();
+    const startObj = new Date();
+    if (days > 0) {
+      startObj.setDate(endObj.getDate() - days);
+    }
+    const startStr = startObj.toISOString().slice(0, 10);
+    const endStr = endObj.toISOString().slice(0, 10);
+    setIncidentStartDate(startStr);
+    setIncidentEndDate(endStr);
+    setIncidentPage(1);
+    fetchLogs({
+      startDate: startStr,
+      endDate: endStr,
+      pcName: incidentPcFilter || undefined,
+      status: incidentStatusFilter || undefined
+    });
+  };
+
+  const exportToCSV = () => {
+    if (logs.length === 0) {
+      alert('Tidak ada data untuk diunduh.');
+      return;
+    }
+    const headers = ['Waktu Kejadian', 'PC Name', 'UUID', 'Status', 'Detail'];
+    const rows = logs.map(log => [
+      `"${new Date(log.timestamp).toLocaleString()}"`,
+      `"${log.pcName || ''}"`,
+      `"${log.uuid || ''}"`,
+      `"${log.incidentType || log.status || ''}"`,
+      `"${(log.details || '').replace(/"/g, '""')}"`
+    ]);
+    const csvContent = "data:text/csv;charset=utf-8," 
+      + headers.join(',') + "\n" 
+      + rows.map(e => e.join(',')).join("\n");
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `Incident_Logs_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   useEffect(() => {
@@ -857,6 +907,7 @@ function App() {
           const pcCounts = {};
           const typeCounts = {};
           const dayCounts = {};
+          
           logs.forEach(log => {
             if (log.pcName) pcCounts[log.pcName] = (pcCounts[log.pcName] || 0) + 1;
             const t = (log.incidentType || log.status || 'UNKNOWN').toUpperCase();
@@ -864,18 +915,46 @@ function App() {
             const day = (log.timestamp || '').substring(0, 10);
             if (day) dayCounts[day] = (dayCounts[day] || 0) + 1;
           });
+
+          // Sort arrays for display
           const affectedPcs = Object.keys(pcCounts);
           const topType = Object.entries(typeCounts).sort((a, b) => b[1] - a[1])[0];
           const worstDay = Object.entries(dayCounts).sort((a, b) => b[1] - a[1])[0];
+          
+          // Chart Data (sorted by date ascending)
+          const chartData = Object.entries(dayCounts)
+            .map(([date, count]) => ({ date: new Date(date).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' }), count }))
+            .sort((a, b) => new Date(a.date) - new Date(b.date));
+
+          // Top Offenders Table Data
+          const topOffenders = Object.entries(pcCounts)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 5);
+
+          // Pagination logic
+          const indexOfLastLog = incidentPage * logsPerPage;
+          const indexOfFirstLog = indexOfLastLog - logsPerPage;
+          const currentLogs = logs.slice(indexOfFirstLog, indexOfLastLog);
+          const totalPages = Math.ceil(logs.length / logsPerPage) || 1;
 
           return (
           <div className="settings-layout" style={{ maxWidth: '1100px' }}>
             <div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <h1 className="settings-header" style={{ marginBottom: 0 }}>Incident Logs</h1>
-                  <button className="btn-primary" onClick={() => { setShowSystemLogs(true); fetchSystemLogs(); }}><i className="fa-solid fa-terminal"></i> System Logs</button>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button className="btn-primary" onClick={exportToCSV} style={{ background: '#10b981' }}><i className="fa-solid fa-file-csv"></i> Unduh CSV</button>
+                    <button className="btn-primary" onClick={() => { setShowSystemLogs(true); fetchSystemLogs(); }}><i className="fa-solid fa-terminal"></i> System Logs</button>
+                  </div>
                 </div>
-              <p className="settings-desc">Rekam jejak masalah audio (Bahaya Mute/Suara Buruk) dari seluruh PC.</p>
+              <p className="settings-desc">Rekam jejak dan analisis masalah audio dari seluruh PC.</p>
+            </div>
+
+            {/* Quick Filters */}
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '-16px' }}>
+              <button className="btn-filter secondary" onClick={() => setQuickFilter(0)}>Hari Ini</button>
+              <button className="btn-filter secondary" onClick={() => setQuickFilter(7)}>7 Hari Terakhir</button>
+              <button className="btn-filter secondary" onClick={() => setQuickFilter(30)}>30 Hari Terakhir</button>
             </div>
 
             {/* Filter Bar */}
@@ -943,11 +1022,64 @@ function App() {
                 <div className="summary-detail">{worstDay ? `${worstDay[1]} insiden di hari itu` : 'Belum ada data'}</div>
               </div>
             </div>
+
+            {/* Complex Grid: Chart & Top Offenders */}
+            <div className="incident-complex-grid">
+              {/* Chart */}
+              <div className="settings-card">
+                <div className="settings-card-content">
+                  <h3 className="settings-card-title">Tren Insiden Harian</h3>
+                  <div style={{ width: '100%', height: 250, marginTop: '20px' }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={chartData}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
+                        <XAxis dataKey="date" stroke="#888" fontSize={12} tickMargin={10} />
+                        <YAxis stroke="#888" fontSize={12} allowDecimals={false} />
+                        <Tooltip contentStyle={{ backgroundColor: '#1e1e1e', borderColor: '#333' }} />
+                        <Bar dataKey="count" fill="#3b82f6" radius={[4, 4, 0, 0]} name="Jumlah Insiden" />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              </div>
+
+              {/* Top Offenders */}
+              <div className="settings-card">
+                <div className="settings-card-content" style={{ padding: '0' }}>
+                  <div style={{ padding: '24px 24px 12px 24px' }}>
+                    <h3 className="settings-card-title">PC Paling Bermasalah (Top 5)</h3>
+                  </div>
+                  <table className="logs-table">
+                    <thead>
+                      <tr>
+                        <th>Nama PC</th>
+                        <th style={{ textAlign: 'right' }}>Jumlah</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {topOffenders.map(([pc, count], i) => (
+                        <tr key={i}>
+                          <td><strong>{pc}</strong></td>
+                          <td style={{ textAlign: 'right' }}><span className="log-danger">{count}x</span></td>
+                        </tr>
+                      ))}
+                      {topOffenders.length === 0 && (
+                        <tr><td colSpan="2" style={{textAlign: 'center', color: 'var(--text-muted)'}}>Belum ada data</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
             
             {/* Tabel Insiden */}
             <div className="settings-card">
               <div className="settings-card-accent orange"></div>
               <div className="settings-card-content" style={{ padding: '0' }}>
+                <div style={{ padding: '24px', borderBottom: '1px solid rgba(255,255,255,0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <h3 className="settings-card-title" style={{ margin: 0 }}>Riwayat Insiden</h3>
+                  <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Menampilkan {indexOfFirstLog + 1}-{Math.min(indexOfLastLog, totalIncidents)} dari {totalIncidents}</div>
+                </div>
                 <table className="logs-table">
                   <thead>
                     <tr>
@@ -957,18 +1089,27 @@ function App() {
                     </tr>
                   </thead>
                   <tbody>
-                    {logs.map((log, i) => (
+                    {currentLogs.map((log, i) => (
                       <tr key={i}>
                         <td>{new Date(log.timestamp).toLocaleString()}</td>
                         <td><strong>{log.pcName}</strong><br/><span style={{ fontSize: "0.7rem", color: "var(--text-muted)", fontFamily: "monospace" }}>{log.uuid}</span></td>
                         <td><span className={getLogClass(log.incidentType || log.status)}>{log.incidentType || log.status || "UNKNOWN"}</span><div style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "4px" }}>{log.details}</div></td>
                       </tr>
                     ))}
-                    {logs.length === 0 && (
+                    {currentLogs.length === 0 && (
                       <tr><td colSpan="3" style={{textAlign: 'center', color: 'var(--text-muted)'}}>Belum ada insiden tercatat dalam rentang waktu ini.</td></tr>
                     )}
                   </tbody>
                 </table>
+                
+                {/* Pagination Controls */}
+                {totalPages > 1 && (
+                  <div className="pagination-controls">
+                    <button className="btn-page" disabled={incidentPage === 1} onClick={() => setIncidentPage(p => p - 1)}><i className="fa-solid fa-chevron-left"></i></button>
+                    <span className="page-info">Halaman {incidentPage} dari {totalPages}</span>
+                    <button className="btn-page" disabled={incidentPage === totalPages} onClick={() => setIncidentPage(p => p + 1)}><i className="fa-solid fa-chevron-right"></i></button>
+                  </div>
+                )}
               </div>
             </div>
           </div>
