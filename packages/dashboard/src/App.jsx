@@ -1314,15 +1314,23 @@ function App() {
                             </>
                           )}
                         </div>
-                        <div className="pc-meta-row">
-                          <span className="pc-meta-item">IP: {agent.localIp || 'Unknown'}</span>
-                          {agent.currentScene && (
-                            <span className="pc-meta-item scene-pill"><i className="fa-solid fa-film" style={{ marginRight: '4px' }}></i>{agent.currentScene}</span>
-                          )}
-                          {!isCompactMode && (
-                            <span className="pc-meta-item id-pill" title={agent.uuid}>ID: {agent.uuid.substring(0, 8)}...</span>
-                          )}
-                        </div>
+                        {isCompactMode ? (
+                          <div className="pc-meta-row">
+                            <span className="pc-meta-item">IP: {agent.localIp || 'Unknown'}</span>
+                            {agent.currentScene && (
+                              <span className="pc-meta-item scene-pill"><i className="fa-solid fa-film" style={{ marginRight: '4px' }}></i>{agent.currentScene}</span>
+                            )}
+                          </div>
+                        ) : (
+                          <>
+                            <div className="pc-id">ID: {agent.uuid} &bull; IP: {agent.localIp || 'Unknown'}</div>
+                            {agent.currentScene && (
+                              <div className="pc-id" style={{ marginTop: '3px', color: 'var(--accent)', fontWeight: 'bold' }}>
+                                <i className="fa-solid fa-film" style={{ marginRight: '5px' }}></i>Scene: {agent.currentScene}
+                              </div>
+                            )}
+                          </>
+                        )}
                       </div>
                     </div>
 
