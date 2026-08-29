@@ -397,7 +397,7 @@ function App() {
         }
       };
       },
-      () => () => { setObsConnected(false); if (window.electronAPI && window.electronAPI.writeLog) window.electronAPI.writeLog('WARN', 'OBS Terputus'); },
+      () => { setObsConnected(false); if (window.electronAPI && window.electronAPI.writeLog) window.electronAPI.writeLog('WARN', 'OBS Terputus'); },
       (inputs) => {
         const source = inputs.find(i => i.inputName === obsSourceNameRef.current);
         if (source && source.inputLevelsMul && source.inputLevelsMul[0] && source.inputLevelsMul[0].length > 0) {
@@ -548,7 +548,7 @@ function App() {
         }
     } else if (clippingScore.current >= clippingDurationSec * 1000) {
       nextStatus = 'BAHAYA_AUDIO_PECAH';
-    } else if (dangerScore.current === 0 && clippingScore.current === 0 && (status === 'BAHAYA_OBS_MUTE' || status === 'BAHAYA_AUDIO_PECAH')) {
+    } else if (dangerScore.current <= 0 && clippingScore.current <= 0 && (status === 'BAHAYA_OBS_MUTE' || status === 'BAHAYA_AUDIO_PECAH')) {
       nextStatus = 'AMAN';
     }
 

@@ -66,20 +66,29 @@ class ServerApp {
     // Menyajikan folder rekaman agar bisa diakses browser via /media/...
     const os = require('os');
     this.app.use('/media', (req, res, next) => {
-      const recordDir = this.configManager.config.recordDir 
-        || path.join(os.homedir(), 'Documents', 'AudioMonitor-Recordings-Server');
+      const recordDir = path.resolve(
+        this.configManager.config.recordDir || 
+        path.join(os.homedir(), 'Documents', 'AudioMonitor-Recordings-Server')
+      );
       
-      const reqPath = req.path;
-      const fullPath = path.join(recordDir, decodeURI(reqPath));
+      let decodedPath = '';
+      try {
+        decodedPath = decodeURIComponent(req.path);
+      } catch (err) {
+        return res.status(400).send('Bad Request: Malformed URI');
+      }
+
+      const fullPath = path.resolve(recordDir, '.' + decodedPath);
       
-      // Basic protection against path traversal
-      if (!fullPath.startsWith(recordDir)) {
+      // Strict path traversal protection
+      const rel = path.relative(recordDir, fullPath);
+      if (rel.startsWith('..') || path.isAbsolute(rel)) {
         return res.status(403).send('Forbidden');
       }
       
       res.sendFile(fullPath, (err) => {
-        if (err && err.code !== 'ECONNABORTED' && err.status !== 304) {
-          next();
+        if (err && !res.headersSent && err.code !== 'ECONNABORTED' && err.status !== 304) {
+          res.status(404).send('File not found');
         }
       });
     });
@@ -94,42 +103,60 @@ class ServerApp {
     // Internal API: Menerima file rekaman audio dari Agent
     this.app.post('/internal/upload-record', (req, res) => {
       const agentName = req.headers['x-agent-name'] || 'UnknownAgent';
-      const sessionFolder = req.headers['x-session-folder'] || 'UnknownSession';
-      const fileName = req.headers['x-file-name'] || 'UnknownFile.webm';
+      const rawSessionFolder = req.headers['x-session-folder'] || 'UnknownSession';
+      const rawFileName = req.headers['x-file-name'] || 'UnknownFile.webm';
       
       const fs = require('fs');
       const path = require('path');
       const os = require('os');
       
-      // Gunakan recordDir dari config jika ada, jika tidak fallback ke Documents
-      const baseDir = this.configManager.config.recordDir 
-        || path.join(os.homedir(), 'Documents', 'AudioMonitor-Recordings-Server');
+      // Sanitize path components
+      const sessionFolder = path.basename(rawSessionFolder);
+      const fileName = path.basename(rawFileName);
+
+      const baseDir = path.resolve(
+        this.configManager.config.recordDir || 
+        path.join(os.homedir(), 'Documents', 'AudioMonitor-Recordings-Server')
+      );
       const targetDir = path.join(baseDir, sessionFolder);
       
-      if (!fs.existsSync(targetDir)) {
-        fs.mkdirSync(targetDir, { recursive: true });
+      try {
+        if (!fs.existsSync(targetDir)) {
+          fs.mkdirSync(targetDir, { recursive: true });
+        }
+        
+        const filePath = path.join(targetDir, fileName);
+        const writeStream = fs.createWriteStream(filePath);
+        
+        let responded = false;
+        const sendResponse = (statusCode, payload) => {
+          if (!responded && !res.headersSent) {
+            responded = true;
+            res.status(statusCode).json(payload);
+          }
+        };
+
+        req.pipe(writeStream);
+        
+        writeStream.on('finish', () => {
+          logger.info(`[Upload] Berhasil menerima file rekaman dari ${agentName}: ${fileName} -> ${filePath}`);
+          sendResponse(200, { success: true, message: 'Upload selesai', path: filePath });
+        });
+        
+        writeStream.on('error', (err) => {
+          logger.error(`[Upload] Gagal menulis file rekaman dari ${agentName}: ${err.message}`);
+          sendResponse(500, { success: false, error: err.message });
+        });
+        
+        req.on('error', (err) => {
+          logger.error(`[Upload] Gagal menerima file rekaman dari ${agentName}: ${err.message}`);
+          writeStream.close();
+          sendResponse(500, { success: false, error: err.message });
+        });
+      } catch (err) {
+        logger.error(`[Upload] Error initializing stream: ${err.message}`);
+        res.status(500).json({ success: false, error: err.message });
       }
-      
-      const filePath = path.join(targetDir, fileName);
-      const writeStream = fs.createWriteStream(filePath);
-      
-      req.pipe(writeStream);
-      
-      writeStream.on('finish', () => {
-        logger.info(`[Upload] Berhasil menerima file rekaman dari ${agentName}: ${fileName} -> ${filePath}`);
-        res.status(200).json({ success: true, message: 'Upload selesai', path: filePath });
-      });
-      
-      writeStream.on('error', (err) => {
-        logger.error(`[Upload] Gagal menulis file rekaman dari ${agentName}: ${err.message}`);
-        res.status(500).json({ success: false, error: err.message });
-      });
-      
-      req.on('error', (err) => {
-        logger.error(`[Upload] Gagal menerima file rekaman dari ${agentName}: ${err.message}`);
-        writeStream.close();
-        res.status(500).json({ success: false, error: err.message });
-      });
     });
 
     // API: Mengambil log harian dari file log
@@ -142,12 +169,15 @@ class ServerApp {
     this.app.delete('/api/pc/:uuid', (req, res) => {
       // Validasi PIN sekali lagi untuk proteksi ganda (meski sudah ada middleware)
       const pin = req.headers['x-pin'];
-      if (!pin || pin !== this.configManager.config.dashboardPin) {
+      const correctPin = this.configManager.config.dashboardPin || '1234';
+      if (!pin || pin !== correctPin) {
         return res.status(401).json({ error: 'Invalid PIN' });
       }
       const { uuid } = req.params;
       this.telemetryHub.deleteAgent(uuid);
-      delete this.configManager.config.pcMapping[uuid];
+      if (this.configManager.config.pcMapping) {
+        delete this.configManager.config.pcMapping[uuid];
+      }
       this.configManager.saveConfig();
       res.json({ success: true });
     });
@@ -216,14 +246,19 @@ class ServerApp {
       if (fs.existsSync(recordDir)) {
         try {
           const pcFolders = fs.readdirSync(recordDir);
-          pcFolders.forEach(pc => {
-            const pcPath = path.join(recordDir, pc);
-            if (fs.statSync(pcPath).isDirectory()) {
+          for (const pc of pcFolders) {
+            try {
+              const pcPath = path.join(recordDir, pc);
+              const pcStat = fs.statSync(pcPath);
+              if (!pcStat.isDirectory()) continue;
+
               const files = fs.readdirSync(pcPath);
-              files.forEach(file => {
-                const filePath = path.join(pcPath, file);
-                const stat = fs.statSync(filePath);
-                if (stat.isFile()) {
+              for (const file of files) {
+                try {
+                  const filePath = path.join(pcPath, file);
+                  const stat = fs.statSync(filePath);
+                  if (!stat.isFile()) continue;
+
                   // Regex match folder: PC_Testing_3365df9b-62ec-46ed-8644-83db7d225868_2026-08-29_00-48-53_to_00-49-02
                   const match = pc.match(/^(.*)_([a-f0-9\-]{36})_(\d{4}-\d{2}-\d{2})_(\d{2}-\d{2}-\d{2})(?:_to_(\d{2}-\d{2}-\d{2}))?$/i);
                   let realPcName = pc;
@@ -238,7 +273,7 @@ class ServerApp {
                     const startTime = match[4].replace(/-/g, ':');
                     const endTime = match[5] ? match[5].replace(/-/g, ':') : 'Berlanjut...';
                     
-                    realPcName = this.configManager.config.pcMapping[uuid] || pcNamePart.replace(/_/g, ' ') || uuid;
+                    realPcName = (this.configManager.getPcName ? this.configManager.getPcName(uuid) : this.configManager.config.pcMapping?.[uuid]) || pcNamePart.replace(/_/g, ' ') || uuid;
                     dateStr = datePart;
                     timeStr = `${startTime} - ${endTime}`;
                     isParsed = true;
@@ -252,15 +287,19 @@ class ServerApp {
                     timeStr,
                     fileName: file,
                     size: stat.size,
-                    createdAt: stat.birthtime,
+                    createdAt: stat.birthtime && stat.birthtime.getTime() > 0 ? stat.birthtime : stat.mtime,
                     url: `/media/${encodeURIComponent(pc)}/${encodeURIComponent(file)}`
                   });
+                } catch (fileErr) {
+                  logger.warn(`Gagal membaca file rekaman ${file}: ${fileErr.message}`);
                 }
-              });
+              }
+            } catch (folderErr) {
+              logger.warn(`Gagal membaca folder rekaman ${pc}: ${folderErr.message}`);
             }
-          });
+          }
         } catch(e) {
-          console.error("Error reading records directory", e);
+          logger.error("Error reading records directory", e);
         }
       }
       

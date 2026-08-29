@@ -232,9 +232,9 @@ function App() {
     });
   };
 
-  const exportToCSV = () => {
+  const exportToCSV = async () => {
     if (logs.length === 0) {
-      alert('Tidak ada data untuk diunduh.');
+      await customAlert('Tidak ada data untuk diunduh.', 'Peringatan');
       return;
     }
     const headers = ['Waktu Kejadian', 'PC Name', 'UUID', 'Status', 'Detail'];
@@ -946,21 +946,22 @@ function App() {
           const topType = Object.entries(typeCounts).sort((a, b) => b[1] - a[1])[0];
           const worstDay = Object.entries(dayCounts).sort((a, b) => b[1] - a[1])[0];
           
-          // Chart Data (sorted by date ascending)
+          // Chart Data (sorted by date ISO string ascending)
           const chartData = Object.entries(dayCounts)
-            .map(([date, count]) => ({ date: new Date(date).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' }), count }))
-            .sort((a, b) => new Date(a.date) - new Date(b.date));
+            .sort(([dA], [dB]) => dA.localeCompare(dB))
+            .map(([date, count]) => ({ date: new Date(date).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' }), count }));
 
           // Top Offenders Table Data
           const topOffenders = Object.entries(pcCounts)
             .sort((a, b) => b[1] - a[1])
             .slice(0, 5);
 
-          // Pagination logic
-          const indexOfLastLog = incidentPage * logsPerPage;
+          // Pagination logic with auto-clamping
+          const totalPages = Math.ceil(logs.length / logsPerPage) || 1;
+          const safePage = Math.min(Math.max(1, incidentPage), totalPages);
+          const indexOfLastLog = safePage * logsPerPage;
           const indexOfFirstLog = indexOfLastLog - logsPerPage;
           const currentLogs = logs.slice(indexOfFirstLog, indexOfLastLog);
-          const totalPages = Math.ceil(logs.length / logsPerPage) || 1;
 
           return (
           <div className="settings-layout" style={{ maxWidth: '1100px' }}>
@@ -1082,8 +1083,8 @@ function App() {
                       </tr>
                     </thead>
                     <tbody>
-                      {topOffenders.map(([pc, count], i) => (
-                        <tr key={i}>
+                      {topOffenders.map(([pc, count]) => (
+                        <tr key={pc}>
                           <td><strong>{pc}</strong></td>
                           <td style={{ textAlign: 'right' }}><span className="log-danger">{count}x</span></td>
                         </tr>
@@ -1103,7 +1104,12 @@ function App() {
               <div className="settings-card-content" style={{ padding: '0' }}>
                 <div style={{ padding: '24px', borderBottom: '1px solid rgba(255,255,255,0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <h3 className="settings-card-title" style={{ margin: 0 }}>Riwayat Insiden</h3>
-                  <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Menampilkan {indexOfFirstLog + 1}-{Math.min(indexOfLastLog, totalIncidents)} dari {totalIncidents}</div>
+                  <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                    {totalIncidents === 0 
+                      ? 'Menampilkan 0 dari 0' 
+                      : `Menampilkan ${indexOfFirstLog + 1}-${Math.min(indexOfLastLog, totalIncidents)} dari ${totalIncidents}`
+                    }
+                  </div>
                 </div>
                 <table className="logs-table">
                   <thead>
@@ -1115,7 +1121,7 @@ function App() {
                   </thead>
                   <tbody>
                     {currentLogs.map((log, i) => (
-                      <tr key={i}>
+                      <tr key={log.id || `${log.uuid}-${log.timestamp}-${i}`}>
                         <td>{new Date(log.timestamp).toLocaleString()}</td>
                         <td><strong>{log.pcName}</strong><br/><span style={{ fontSize: "0.7rem", color: "var(--text-muted)", fontFamily: "monospace" }}>{log.uuid}</span></td>
                         <td><span className={getLogClass(log.incidentType || log.status)}>{log.incidentType || log.status || "UNKNOWN"}</span><div style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "4px" }}>{log.details}</div></td>
@@ -1130,9 +1136,9 @@ function App() {
                 {/* Pagination Controls */}
                 {totalPages > 1 && (
                   <div className="pagination-controls">
-                    <button className="btn-page" disabled={incidentPage === 1} onClick={() => setIncidentPage(p => p - 1)}><i className="fa-solid fa-chevron-left"></i></button>
-                    <span className="page-info">Halaman {incidentPage} dari {totalPages}</span>
-                    <button className="btn-page" disabled={incidentPage === totalPages} onClick={() => setIncidentPage(p => p + 1)}><i className="fa-solid fa-chevron-right"></i></button>
+                    <button className="btn-page" disabled={safePage === 1} onClick={() => setIncidentPage(p => Math.max(1, p - 1))}><i className="fa-solid fa-chevron-left"></i></button>
+                    <span className="page-info">Halaman {safePage} dari {totalPages}</span>
+                    <button className="btn-page" disabled={safePage === totalPages} onClick={() => setIncidentPage(p => Math.min(totalPages, p + 1))}><i className="fa-solid fa-chevron-right"></i></button>
                   </div>
                 )}
               </div>
@@ -1169,7 +1175,16 @@ function App() {
                     </div>
                     <button className="btn-filter secondary" style={{ padding: '4px 8px' }} onClick={() => setPlayingAudio(null)}><i className="fa-solid fa-xmark"></i> Tutup</button>
                   </div>
-                  <audio controls autoPlay src={playingAudio.url} style={{ width: '100%', outline: 'none' }} />
+                  <audio 
+                    controls 
+                    autoPlay 
+                    src={playingAudio.url} 
+                    style={{ width: '100%', outline: 'none' }} 
+                    onError={() => {
+                      customAlert('Gagal memuat file rekaman audio. File mungkin telah dipindahkan atau dihapus dari server.', 'Gagal Memutar Audio');
+                      setPlayingAudio(null);
+                    }}
+                  />
                 </div>
               </div>
             )}
@@ -1190,7 +1205,9 @@ function App() {
                 return (
                   <div className="settings-card">
                     <div className="settings-card-content" style={{ textAlign: 'center', color: 'var(--text-muted)' }}>
-                      Belum ada file rekaman yang tersimpan di server.
+                      {recordPcFilter 
+                        ? `Tidak ada file rekaman untuk PC "${recordPcFilter}".` 
+                        : 'Belum ada file rekaman yang tersimpan di server.'}
                     </div>
                   </div>
                 );
@@ -1220,7 +1237,7 @@ function App() {
                       </thead>
                       <tbody>
                         {grouped[pc].map((rec, i) => (
-                          <tr key={i}>
+                          <tr key={rec.url || `${rec.fileName}-${i}`}>
                             <td>
                               <strong>{rec.isParsed ? rec.dateStr : new Date(rec.createdAt).toLocaleDateString()}</strong>
                               <br/>

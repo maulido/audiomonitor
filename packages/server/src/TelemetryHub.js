@@ -79,17 +79,10 @@ class TelemetryHub {
 
       // Event saat Agent mengirimkan data status terbarunya (Volume, dB, CPU, Status Bahaya)
       socket.on('telemetry', (data) => {
-        try {
-          if (data && data.obsSources) {
-             require('fs').writeFileSync('telemetry_dump.json', JSON.stringify(data.obsSources));
-          }
-        } catch(e){}
         if (!data || !data.uuid) return;
-        if (data.uuid) {
-          socket.agentUuid = data.uuid;
-          socket.agentName = data.name;
-          this.agentSockets.set(data.uuid, socket.id);
-        }
+        socket.agentUuid = data.uuid;
+        socket.agentName = data.name;
+        this.agentSockets.set(data.uuid, socket.id);
         
         // Memproses data dan menyebarkannya ke semua Dashboard
         this.handleTelemetry(data);
@@ -151,7 +144,7 @@ class TelemetryHub {
           // Hanya hapus jika socket ini memang koneksi aktif yang terbaru
           if (this.agentSockets.get(socket.agentUuid) === socket.id) {
             this.agentSockets.delete(socket.agentUuid);
-            const pcName = this.configManager.config.pcMapping[socket.agentUuid] || socket.agentName || socket.agentUuid;
+            const pcName = this.configManager.getPcName(socket.agentUuid) || socket.agentName || socket.agentUuid;
             
             const existing = this.lastKnownState.get(socket.agentUuid) || {};
             const offlineData = { ...existing, uuid: socket.agentUuid, pcName, status: 'OFFLINE', lastSeen: Date.now() };
@@ -212,7 +205,7 @@ class TelemetryHub {
    * Jantung pemrosesan data real-time. Memperkaya data Agent dengan nama aslinya, lalu meneruskannya.
    */
   handleTelemetry(data) {
-    const pcName = this.configManager.config.pcMapping[data.uuid] || data.name || data.uuid;
+    const pcName = this.configManager.getPcName(data.uuid) || data.name || data.uuid;
     
     // Suntikkan status pengawasan terkini dari memori (karena Server adalah penentu kebenarannya)
     const isMonitoringActive = this.pcMonitoringState[data.uuid] !== undefined 

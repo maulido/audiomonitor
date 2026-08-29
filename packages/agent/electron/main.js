@@ -353,11 +353,13 @@ function uploadToServer(filePath, serverUrl, agentName, sessionFolder) {
   const { URL } = require('url');
   
   try {
-    let urlObj;
-    try {
-       urlObj = new URL(serverUrl);
-    } catch(e) {
-       urlObj = new URL(`http://${serverUrl}:4000`);
+    let normalizedUrl = (serverUrl || 'localhost:4000').trim();
+    if (!normalizedUrl.startsWith('http://') && !normalizedUrl.startsWith('https://')) {
+      normalizedUrl = `http://${normalizedUrl}`;
+    }
+    const urlObj = new URL(normalizedUrl);
+    if (!urlObj.port && !serverUrl.includes(':')) {
+      urlObj.port = '4000';
     }
     
     urlObj.pathname = '/internal/upload-record';

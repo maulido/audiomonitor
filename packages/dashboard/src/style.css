@@ -318,7 +318,7 @@ body {
 .btn-page {
   background: var(--bg-card);
   border: 1px solid var(--border);
-  color: var(--text-color);
+  color: var(--text-main);
   width: 32px;
   height: 32px;
   border-radius: 6px;

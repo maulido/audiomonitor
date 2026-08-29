@@ -39,10 +39,11 @@ class DatabaseManager {
     if (fs.existsSync(this.dbPath)) {
       try {
         const data = fs.readFileSync(this.dbPath, 'utf8');
-        this.incidents = JSON.parse(data);
+        const parsed = JSON.parse(data);
+        this.incidents = Array.isArray(parsed) ? parsed : [];
         if (this.incidents.length > 0) {
-          // Lanjutkan penomoran ID dari angka tertinggi
-          this.nextId = Math.max(...this.incidents.map(i => i.id)) + 1;
+          // Lanjutkan penomoran ID dari angka tertinggi secara aman
+          this.nextId = this.incidents.reduce((max, i) => Math.max(max, Number(i.id) || 0), 0) + 1;
         }
       } catch (err) {
         console.error('Error reading JSON DB:', err.message);
@@ -123,29 +124,35 @@ class DatabaseManager {
    * @param {Object} filters - { startDate, endDate, pcName, status, limit }
    * @param {Function} callback - Callback dengan hasil array insiden.
    */
-  getFilteredIncidents(filters, callback) {
+  getFilteredIncidents(filters = {}, callback) {
     let result = [...this.incidents];
 
     if (filters.startDate) {
       const start = new Date(filters.startDate);
-      result = result.filter(i => new Date(i.timestamp) >= start);
+      if (!isNaN(start.getTime())) {
+        result = result.filter(i => new Date(i.timestamp) >= start);
+      }
     }
     if (filters.endDate) {
       const end = new Date(filters.endDate);
-      end.setHours(23, 59, 59, 999);
-      result = result.filter(i => new Date(i.timestamp) <= end);
+      if (!isNaN(end.getTime())) {
+        end.setHours(23, 59, 59, 999);
+        result = result.filter(i => new Date(i.timestamp) <= end);
+      }
     }
     if (filters.pcName) {
       result = result.filter(i => i.pcName === filters.pcName);
     }
     if (filters.status) {
-      const s = filters.status.toUpperCase();
+      const s = String(filters.status).toUpperCase();
       result = result.filter(i => (i.incidentType || '').toUpperCase().includes(s));
     }
 
     result.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-    const limit = parseInt(filters.limit) || 500;
-    callback(result.slice(0, limit));
+    const limit = Math.max(1, parseInt(filters.limit, 10) || 500);
+    if (typeof callback === 'function') {
+      callback(result.slice(0, limit));
+    }
   }
 
   /**
