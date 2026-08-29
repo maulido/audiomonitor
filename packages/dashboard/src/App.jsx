@@ -61,7 +61,22 @@ function App() {
   };
 
   const [configModalAgent, setConfigModalAgent] = useState(null);
-  const [remoteConfig, setRemoteConfig] = useState({});
+  const [remoteConfig, setRemoteConfig] = useState({
+    agentName: '',
+    micDriverName: '',
+    obsSourceName: '',
+    speakingThreshold: 10,
+    noiseGate: 15,
+    clippingThreshold: 95,
+    silenceTimeoutSec: 15,
+    deadMicTimeoutSec: 30,
+    obsMuteTimeoutSec: 3,
+    clippingDurationSec: 3,
+    obsSyncStreaming: false,
+    obsSyncRecording: false,
+    autoRecoveryUnmute: true,
+    telemetryInterval: 500
+  });
   const [editingName, setEditingName] = useState('');
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -551,7 +566,7 @@ function App() {
       setLocalCurrentTime(0);
       return;
     }
-    targetGlobalTime = Math.max(0, Math.min(totalSessionDuration, targetGlobalTime));
+    targetGlobalTime = Math.max(0, Math.min(Math.max(0, totalSessionDuration - 0.1), targetGlobalTime));
 
     let accumulated = 0;
     let targetPartIdx = 0;
@@ -1549,9 +1564,9 @@ function App() {
                 {/* Pagination Controls */}
                 {totalPages > 1 && (
                   <div className="pagination-controls">
-                    <button className="btn-page" disabled={safePage === 1} onClick={() => setIncidentPage(p => Math.max(1, p - 1))}><i className="fa-solid fa-chevron-left"></i></button>
+                    <button className="btn-page" disabled={safePage === 1} onClick={() => setIncidentPage(Math.max(1, safePage - 1))}><i className="fa-solid fa-chevron-left"></i></button>
                     <span className="page-info">Halaman {safePage} dari {totalPages}</span>
-                    <button className="btn-page" disabled={safePage === totalPages} onClick={() => setIncidentPage(p => Math.min(totalPages, p + 1))}><i className="fa-solid fa-chevron-right"></i></button>
+                    <button className="btn-page" disabled={safePage === totalPages} onClick={() => setIncidentPage(Math.min(totalPages, safePage + 1))}><i className="fa-solid fa-chevron-right"></i></button>
                   </div>
                 )}
               </div>
@@ -1961,7 +1976,7 @@ function App() {
                                           <i className="fa-solid fa-circle-play"></i>
                                         )}
                                         <span>Part {pIdx + 1}</span>
-                                        <span className="chip-size">({(part.size / 1024 / 1024).toFixed(2)} MB)</span>
+                                        <span className="chip-size">({(((part.size || 0)) / 1024 / 1024).toFixed(2)} MB)</span>
                                       </button>
                                     );
                                   })}
@@ -2090,7 +2105,7 @@ function App() {
                       <div style={{ background: 'rgba(59, 130, 246, 0.1)', border: '1px solid rgba(59, 130, 246, 0.2)', borderRadius: '6px', padding: '10px', marginBottom: '12px', fontSize: '0.8rem' }}>
                         <div><strong>Rilis:</strong> {githubReleaseInfo.name || githubReleaseInfo.tag}</div>
                         <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginTop: '2px' }}>
-                          File: {githubReleaseInfo.asset ? `${githubReleaseInfo.asset.name} (${(githubReleaseInfo.asset.size / 1024 / 1024).toFixed(1)} MB)` : 'Tidak ada installer .exe'}
+                          File: {githubReleaseInfo.asset ? `${githubReleaseInfo.asset.name} (${(((githubReleaseInfo.asset.size || 0)) / 1024 / 1024).toFixed(1)} MB)` : 'Tidak ada installer .exe'}
                         </div>
                       </div>
                     )}
@@ -2239,7 +2254,7 @@ function App() {
                       <label>Hardware Microphone</label>
                       {configModalAgent.audioDevices && configModalAgent.audioDevices.length > 0 ? (
                         <select className="form-input" value={remoteConfig.micDriverName || ''} onChange={e => setRemoteConfig({...remoteConfig, micDriverName: e.target.value})}>
-                          {configModalAgent.audioDevices.map((dev, i) => <option key={i} value={dev}>{dev}</option>)}
+                          {configModalAgent.audioDevices.map((dev) => <option key={dev} value={dev}>{dev}</option>)}
                         </select>
                       ) : (
                         <input className="form-input" value={remoteConfig.micDriverName || ''} onChange={e => setRemoteConfig({...remoteConfig, micDriverName: e.target.value})} />
@@ -2249,7 +2264,7 @@ function App() {
                       <label>OBS Source Name</label>
                       {configModalAgent.obsSources && configModalAgent.obsSources.length > 0 ? (
                         <select className="form-input" value={remoteConfig.obsSourceName || ''} onChange={e => setRemoteConfig({...remoteConfig, obsSourceName: e.target.value})}>
-                          {configModalAgent.obsSources.map((s, i) => <option key={i} value={s.name}>{s.name}</option>)}
+                          {configModalAgent.obsSources.map((s) => <option key={s.name} value={s.name}>{s.name}</option>)}
                         </select>
                       ) : (
                         <input className="form-input" value={remoteConfig.obsSourceName || ''} onChange={e => setRemoteConfig({...remoteConfig, obsSourceName: e.target.value})} />
@@ -2262,25 +2277,25 @@ function App() {
                     <div className="setting-group">
                       <label style={{ display: 'flex', justifyContent: 'space-between' }}>
                         <span>Sensitivitas Bicara (Speaking Threshold)</span>
-                        <span style={{ color: 'var(--accent)', fontWeight: 'bold' }}>{remoteConfig.speakingThreshold || 10}%</span>
+                        <span style={{ color: 'var(--accent)', fontWeight: 'bold' }}>{remoteConfig.speakingThreshold ?? 10}%</span>
                       </label>
-                      <input className="range-slider range-accent" type="range" value={remoteConfig.speakingThreshold || 10} onChange={e => setRemoteConfig({...remoteConfig, speakingThreshold: Number(e.target.value)})} min="1" max="100" />
+                      <input className="range-slider range-accent" type="range" value={remoteConfig.speakingThreshold ?? 10} onChange={e => setRemoteConfig({...remoteConfig, speakingThreshold: Number(e.target.value)})} min="1" max="100" />
                     </div>
 
                     <div className="setting-group">
                       <label style={{ display: 'flex', justifyContent: 'space-between' }}>
                         <span>Noise Gate</span>
-                        <span style={{ color: 'var(--warning)', fontWeight: 'bold' }}>{remoteConfig.noiseGate || 15}%</span>
+                        <span style={{ color: 'var(--warning)', fontWeight: 'bold' }}>{remoteConfig.noiseGate ?? 15}%</span>
                       </label>
-                      <input className="range-slider range-warning" type="range" value={remoteConfig.noiseGate || 15} onChange={e => setRemoteConfig({...remoteConfig, noiseGate: Number(e.target.value)})} min="0" max="100" />
+                      <input className="range-slider range-warning" type="range" value={remoteConfig.noiseGate ?? 15} onChange={e => setRemoteConfig({...remoteConfig, noiseGate: Number(e.target.value)})} min="0" max="100" />
                     </div>
     
                     <div className="setting-group" style={{ marginBottom: 0 }}>
                       <label style={{ display: 'flex', justifyContent: 'space-between' }}>
                         <span>Batas Pecah (Clipping Threshold)</span>
-                        <span style={{ color: 'var(--danger)', fontWeight: 'bold' }}>{remoteConfig.clippingThreshold || 95}%</span>
+                        <span style={{ color: 'var(--danger)', fontWeight: 'bold' }}>{remoteConfig.clippingThreshold ?? 95}%</span>
                       </label>
-                      <input className="range-slider range-danger" type="range" value={remoteConfig.clippingThreshold || 95} onChange={e => setRemoteConfig({...remoteConfig, clippingThreshold: Number(e.target.value)})} min="50" max="100" />
+                      <input className="range-slider range-danger" type="range" value={remoteConfig.clippingThreshold ?? 95} onChange={e => setRemoteConfig({...remoteConfig, clippingThreshold: Number(e.target.value)})} min="50" max="100" />
                     </div>
                   </div>
 
@@ -2289,19 +2304,19 @@ function App() {
                     <div className="timeout-grid">
                       <div className="setting-group" style={{ marginBottom: 0 }}>
                         <label>Silence (s)</label>
-                        <input className="form-input" type="number" value={remoteConfig.silenceTimeoutSec || 15} onChange={e => setRemoteConfig({...remoteConfig, silenceTimeoutSec: Number(e.target.value)})} min="1" />
+                        <input className="form-input" type="number" value={remoteConfig.silenceTimeoutSec ?? 15} onChange={e => setRemoteConfig({...remoteConfig, silenceTimeoutSec: Number(e.target.value)})} min="1" />
                       </div>
                       <div className="setting-group" style={{ marginBottom: 0 }}>
                         <label>Dead Mic (s)</label>
-                        <input className="form-input" type="number" value={remoteConfig.deadMicTimeoutSec || 30} onChange={e => setRemoteConfig({...remoteConfig, deadMicTimeoutSec: Number(e.target.value)})} min="1" />
+                        <input className="form-input" type="number" value={remoteConfig.deadMicTimeoutSec ?? 30} onChange={e => setRemoteConfig({...remoteConfig, deadMicTimeoutSec: Number(e.target.value)})} min="1" />
                       </div>
                       <div className="setting-group" style={{ marginBottom: 0 }}>
                         <label>Mute OBS (s)</label>
-                        <input className="form-input" type="number" value={remoteConfig.obsMuteTimeoutSec || 3} onChange={e => setRemoteConfig({...remoteConfig, obsMuteTimeoutSec: Number(e.target.value)})} min="1" />
+                        <input className="form-input" type="number" value={remoteConfig.obsMuteTimeoutSec ?? 3} onChange={e => setRemoteConfig({...remoteConfig, obsMuteTimeoutSec: Number(e.target.value)})} min="1" />
                       </div>
                       <div className="setting-group" style={{ marginBottom: 0 }}>
                     <label>Pecah (s)</label>
-                        <input className="form-input" type="number" value={remoteConfig.clippingDurationSec || 3} onChange={e => setRemoteConfig({...remoteConfig, clippingDurationSec: Number(e.target.value)})} min="1" />
+                        <input className="form-input" type="number" value={remoteConfig.clippingDurationSec ?? 3} onChange={e => setRemoteConfig({...remoteConfig, clippingDurationSec: Number(e.target.value)})} min="1" />
                       </div>
                     </div>
                   </div>

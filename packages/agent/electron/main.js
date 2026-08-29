@@ -457,11 +457,16 @@ ipcMain.on('start-recording', (event, { sessionFolderName, partNumber, recordDir
 });
 
 ipcMain.on('save-audio-chunk', (event, arrayBuffer) => {
-  const buf = Buffer.from(arrayBuffer);
-  if (audioWriteStream) {
-    audioWriteStream.write(buf);
-  } else if (currentSessionDir && pendingAudioChunks.length < 10) {
-    pendingAudioChunks.push(buf);
+  try {
+    if (!arrayBuffer) return;
+    const buf = Buffer.from(arrayBuffer);
+    if (audioWriteStream) {
+      audioWriteStream.write(buf);
+    } else if (currentSessionDir && pendingAudioChunks.length < 10) {
+      pendingAudioChunks.push(buf);
+    }
+  } catch (err) {
+    writeAgentLog('WARN', `Gagal memproses save-audio-chunk: ${err.message}`);
   }
 });
 

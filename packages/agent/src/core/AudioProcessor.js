@@ -90,13 +90,17 @@ class AudioProcessor {
           this.onLevelChange({ level, db: parseFloat(db.toFixed(1)), isClipping });
         }
         
-        // Menggunakan setTimeout agar iterasi tetap berjalan walaupun jendela tertutup (Background mode)
         this.animationFrame = setTimeout(updateLevel, 50); // ~20fps polling
       };
       
       updateLevel();
+      return true;
     } catch (err) {
       console.error("Microphone access denied or error:", err);
+      if (this.onLevelChange) {
+        this.onLevelChange({ level: 0, db: -100, isClipping: false, error: err.message });
+      }
+      return false;
     }
   }
 

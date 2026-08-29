@@ -635,7 +635,11 @@ class ServerApp {
       }
 
       if (fs.existsSync(filePath)) {
-        res.sendFile(filePath);
+        res.sendFile(filePath, (err) => {
+          if (err && !res.headersSent && err.code !== 'ECONNABORTED' && err.status !== 304) {
+            res.status(404).send('Update file not found');
+          }
+        });
       } else {
         res.status(404).send('Update file not found');
       }
