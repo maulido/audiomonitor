@@ -1252,68 +1252,77 @@ function App() {
                             </form>
                           ) : (
                             <>
-                              <h2 className="pc-name">
-                                {agent.pcName}
+                              <div className="pc-name-wrapper">
+                                <span className="pc-name-title" title={agent.pcName}>{agent.pcName}</span>
                                 <span className="badge-agent-version">v{agent.appVersion || '1.0.1'}</span>
                                 {agent.isStreaming && (
-                                  <div className="live-badge">LIVE {agent.streamTimecode || ''}</div>
+                                  <span className="live-badge">LIVE {agent.streamTimecode || ''}</span>
                                 )}
-                              </h2>
+                              </div>
                               <div className="card-actions">
                                 <button 
                                   className={`toggle-btn ${agent.isMonitoringActive ? '' : 'off'}`}
                                   onClick={() => togglePcMonitoring(agent.uuid, !agent.isMonitoringActive)}
+                                  title={agent.isMonitoringActive ? 'Monitoring Aktif (Klik untuk Pause)' : 'Monitoring Nonaktif (Klik untuk Resume)'}
                                 >
-                                    {agent.isMonitoringActive ? <i className="fa-solid fa-pause" style={{marginRight: '4px'}}></i> : <i className="fa-solid fa-play" style={{marginRight: '4px'}}></i>} {agent.isMonitoringActive ? 'ON' : 'OFF'}
+                                  {agent.isMonitoringActive ? <i className="fa-solid fa-pause" style={{marginRight: '3px'}}></i> : <i className="fa-solid fa-play" style={{marginRight: '3px'}}></i>}
+                                  {agent.isMonitoringActive ? 'ON' : 'OFF'}
                                 </button>
                                 <button className="icon-btn" title="Remote Config" onClick={() => { 
-    setConfigModalAgent(agent); 
-    setRemoteConfig({
-      agentName: agent.pcName,
-      micDriverName: agent.micDriverName || '',
-      noiseGate: agent.noiseGate ?? 15,
-      silenceTimeoutSec: agent.silenceTimeoutSec ?? 10,
-      deadMicTimeoutSec: agent.deadMicTimeoutSec ?? 60,
-      clippingThreshold: agent.clippingThreshold ?? 95,
-      clippingDurationSec: agent.clippingDurationSec ?? 3,
-        speakingThreshold: agent.speakingThreshold ?? 10,
-        obsMuteTimeoutSec: agent.obsMuteTimeoutSec ?? 3,
-        autoRecoveryUnmute: agent.autoRecoveryUnmute ?? false,
-        obsSyncRecording: agent.obsSyncRecording ?? false,
-        obsSyncStreaming: agent.obsSyncStreaming ?? false,
-        telemetryInterval: agent.telemetryInterval ?? 500,
-        obsSourceName: agent.obsSourceName || 'Mic/Aux'
-    }); 
-  }}><i className="fa-solid fa-gear"></i></button>
+                                  setConfigModalAgent(agent); 
+                                  setRemoteConfig({
+                                    agentName: agent.pcName,
+                                    micDriverName: agent.micDriverName || '',
+                                    noiseGate: agent.noiseGate ?? 15,
+                                    silenceTimeoutSec: agent.silenceTimeoutSec ?? 10,
+                                    deadMicTimeoutSec: agent.deadMicTimeoutSec ?? 60,
+                                    clippingThreshold: agent.clippingThreshold ?? 95,
+                                    clippingDurationSec: agent.clippingDurationSec ?? 3,
+                                    speakingThreshold: agent.speakingThreshold ?? 10,
+                                    obsMuteTimeoutSec: agent.obsMuteTimeoutSec ?? 3,
+                                    autoRecoveryUnmute: agent.autoRecoveryUnmute ?? false,
+                                    obsSyncRecording: agent.obsSyncRecording ?? false,
+                                    obsSyncStreaming: agent.obsSyncStreaming ?? false,
+                                    telemetryInterval: agent.telemetryInterval ?? 500,
+                                    obsSourceName: agent.obsSourceName || 'Mic/Aux'
+                                  }); 
+                                }}><i className="fa-solid fa-gear"></i></button>
 
-      <button className="icon-btn" title="Lihat File Rekaman PC ini" onClick={() => {
-        setRecordPcFilter(agent.pcName || agent.uuid);
-        setCurrentView('records');
-      }}>
-        <i className="fa-solid fa-file-audio"></i>
-      </button>
+                                <button className="icon-btn" title="Lihat File Rekaman PC ini" onClick={() => {
+                                  setRecordPcFilter(agent.pcName || agent.uuid);
+                                  setCurrentView('records');
+                                }}>
+                                  <i className="fa-solid fa-file-audio"></i>
+                                </button>
 
-      <button 
-        className="icon-btn" 
-        title={agent.isRecording ? 'Stop Recording (Manual)' : 'Start Recording (Manual)'} 
-        style={{ color: agent.isRecording ? '#f44336' : 'inherit' }}
-        onClick={() => {
-           if (client.current && client.current.socket) {
-             client.current.socket.emit('agent-record', { uuid: agent.uuid, record: !agent.isRecording });
-           }
-        }}>
-        <i className="fa-solid fa-circle"></i>
-      </button>
+                                <button 
+                                  className="icon-btn" 
+                                  title={agent.isRecording ? 'Stop Recording (Manual)' : 'Start Recording (Manual)'} 
+                                  style={{ color: agent.isRecording ? '#f44336' : 'inherit' }}
+                                  onClick={() => {
+                                     if (client.current && client.current.socket) {
+                                       client.current.socket.emit('agent-record', { uuid: agent.uuid, record: !agent.isRecording });
+                                     }
+                                  }}>
+                                  <i className="fa-solid fa-circle"></i>
+                                </button>
 
-                                <button className="icon-btn" title="Delete PC" onClick={() => handleDeletePC(agent.uuid)}>
-                                    <i className="fa-solid fa-trash"></i>
-                                  </button>
+                                <button className="icon-btn" title="Hapus PC" onClick={() => handleDeletePC(agent.uuid)}>
+                                  <i className="fa-solid fa-trash"></i>
+                                </button>
                               </div>
                             </>
                           )}
                         </div>
-                        <div className="pc-id">ID: {agent.uuid} &bull; IP: {agent.localIp || 'Unknown'}</div>
-                        {agent.currentScene && <div className="pc-id" style={{ marginTop: '2px', color: 'var(--accent)', fontWeight: 'bold' }}>Scene: {agent.currentScene}</div>}
+                        <div className="pc-meta-row">
+                          <span className="pc-meta-item">IP: {agent.localIp || 'Unknown'}</span>
+                          {agent.currentScene && (
+                            <span className="pc-meta-item scene-pill"><i className="fa-solid fa-film" style={{ marginRight: '4px' }}></i>{agent.currentScene}</span>
+                          )}
+                          {!isCompactMode && (
+                            <span className="pc-meta-item id-pill" title={agent.uuid}>ID: {agent.uuid.substring(0, 8)}...</span>
+                          )}
+                        </div>
                       </div>
                     </div>
 
@@ -1355,12 +1364,14 @@ function App() {
 
                     <div className="meters">
                       <div className="meter-row" style={{ position: 'relative' }}>
-                        <div className="meter-info" style={{ width: '145px', flexShrink: 0 }}>
+                        <div className="meter-info">
                           <span className="meter-title">MIC Input</span>
-                          <span className="meter-device" style={{ whiteSpace: 'normal', wordBreak: 'break-word', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', lineHeight: '1.2' }}>{agent.micDriverName || 'No Device'}</span>
+                          {!isCompactMode && (
+                            <span className="meter-device">{agent.micDriverName || 'Default Microphone'}</span>
+                          )}
                         </div>
                         {agent.micHistory && (
-                          <svg width="100%" height="20" viewBox="0 0 80 20" preserveAspectRatio="none" className="sparkline" style={{ flex: 1, margin: "0 10px" }}>
+                          <svg width="100%" height="20" viewBox="0 0 80 20" preserveAspectRatio="none" className="sparkline">
                             <polyline
                               points={agent.micHistory.map((val, i) => `${i * (80/30)},${20 - ((val || 0) / 100) * 20}`).join(' ')}
                               fill="none" stroke="#10b981" strokeWidth="1.5"
@@ -1368,47 +1379,42 @@ function App() {
                           </svg>
                         )}
                         
-                        <div style={{ width: '65px', textAlign: 'right', fontSize: '0.75rem', fontFamily: 'monospace', color: 'var(--text-muted)' }}>{agent.micDb !== undefined ? agent.micDb + ' dB' : ''}</div>
-                        {agent.micClipping && <span style={{ position: 'absolute', top: '-22px', right: 0, background: 'var(--danger)', color: '#fff', fontSize: '0.6rem', padding: '2px 4px', borderRadius: '4px', fontWeight: 'bold' }}>⚠️ PECAH</span>}
+                        <div className="meter-db-value">
+                          {isFinite(Number(agent.micDb)) ? Number(agent.micDb).toFixed(1) + ' dB' : '-60.0 dB'}
+                        </div>
+                        {agent.micClipping && <span className="clipping-tag">PECAH</span>}
                       </div>
 
-                      
-                        
-                        <div className="meter-row" style={{ opacity: (agent.obsConnected === false) ? 0.4 : 1 }}>
-                            <div className="meter-info" style={{ width: '145px', flexShrink: 0 }}>
-                              <span className="meter-title">OBS Output</span>
-                                  <span className="meter-device" style={{ whiteSpace: 'normal', wordBreak: 'break-word', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', lineHeight: '1.2' }}>{agent.obsConnected === false ? 'Terputus dari OBS' : (agent.obsSourceName || 'System / Desktop')}
-                                    {agent.obsConnected !== false && agent.obsSources && agent.obsSources.find(s => s.name === agent.obsSourceName) && (() => {
-                                          const hw = agent.obsSources.find(s => s.name === agent.obsSourceName).hardwareId;
-                                          const displayHw = (hw === 'Unknown' || hw === 'default' || hw === 'Default') ? (agent.micDriverName ? agent.micDriverName : hw) : hw;
-                                          return <span style={{ color: '#888' }}> - {displayHw}</span>;
-                                      })()}
-                                  </span>
-                                </div>
-                              {agent.obsHistory && (
-                                <svg width="100%" height="20" viewBox="0 0 80 20" preserveAspectRatio="none" className="sparkline" style={{ flex: 1, margin: "0 10px" }}>
-                                  {agent.obsConnected === false ? (
-                                    <line x1="0" y1="10" x2="80" y2="10" stroke="var(--danger)" strokeWidth="1.5" strokeDasharray="4 2" />
-                                  ) : agent.isObsMutedBtn ? (
-                                    <line x1="0" y1="19" x2="80" y2="19" stroke="var(--warning)" strokeWidth="1.5" />
-                                  ) : (
-                                    <polyline
-                                      points={agent.obsHistory.map((val, i) => `${i * (80/30)},${20 - ((val || 0) / 100) * 20}`).join(' ')}
-                                      fill="none" stroke="#3b82f6" strokeWidth="1.5"
-                                    />
-                                  )}
-                                </svg>
-                              )}
-                              <div style={{ width: '65px', textAlign: 'right', fontSize: '0.75rem', fontFamily: 'monospace', color: (agent.obsConnected === false) ? 'var(--danger)' : (agent.isObsMutedBtn ? 'var(--warning)' : 'var(--text-muted)') }}>
-                                { agent.obsConnected === false ? 'DISCONNECTED' : (agent.isObsMutedBtn ? 'MUTED' : (isFinite(Number(agent.obsDb)) ? Number(agent.obsDb).toFixed(1) + ' dB' : Number(((agent.obsLevel || 0) * 0.6 - 60)).toFixed(1) + ' dB')) }
-                              </div>
-                            </div>
+                      <div className="meter-row" style={{ opacity: (agent.obsConnected === false) ? 0.4 : 1 }}>
+                        <div className="meter-info">
+                          <span className="meter-title">OBS Output</span>
+                          {!isCompactMode && (
+                            <span className="meter-device">{agent.obsConnected === false ? 'Terputus dari OBS' : (agent.obsSourceName || 'Mic/Aux')}</span>
+                          )}
+                        </div>
+                        {agent.obsHistory && (
+                          <svg width="100%" height="20" viewBox="0 0 80 20" preserveAspectRatio="none" className="sparkline">
+                            {agent.obsConnected === false ? (
+                              <line x1="0" y1="10" x2="80" y2="10" stroke="var(--danger)" strokeWidth="1.5" strokeDasharray="4 2" />
+                            ) : agent.isObsMutedBtn ? (
+                              <line x1="0" y1="19" x2="80" y2="19" stroke="var(--warning)" strokeWidth="1.5" />
+                            ) : (
+                              <polyline
+                                points={agent.obsHistory.map((val, i) => `${i * (80/30)},${20 - ((val || 0) / 100) * 20}`).join(' ')}
+                                fill="none" stroke="#3b82f6" strokeWidth="1.5"
+                              />
+                            )}
+                          </svg>
+                        )}
+                        <div className="meter-db-value" style={{ color: agent.obsConnected === false ? 'var(--danger)' : (agent.isObsMutedBtn ? 'var(--warning)' : undefined) }}>
+                          {agent.obsConnected === false ? 'DISCONNECTED' : (agent.isObsMutedBtn ? 'MUTED' : (isFinite(Number(agent.obsDb)) ? Number(agent.obsDb).toFixed(1) + ' dB' : '-60.0 dB'))}
+                        </div>
+                      </div>
                     </div>
 
                     <div className="card-footer">
                       <span>{isOffline ? 'Terputus' : 'Tersambung via WebSocket'}</span>
                       <span>Update: {agent.timestamp ? new Date(agent.timestamp).toLocaleTimeString() : '-'}</span>
-                    
 
       </div>
     </div>
