@@ -62,15 +62,31 @@ class DatabaseManager {
     if (this._saveTimeout) return;
     this._saveTimeout = setTimeout(() => {
       this._saveTimeout = null;
-      try {
-        // Tulis ke file temp lalu rename (Atomic Write) mencegah file corrupt kalau lampu mati di tengah proses
-        const tempPath = this.dbPath + '.tmp';
-        require('fs').writeFileSync(tempPath, JSON.stringify(this.incidents, null, 2));
-        require('fs').renameSync(tempPath, this.dbPath);
-      } catch (err) {
-        console.error('Error saving JSON DB:', err.message);
-      }
+      this.saveDbSync();
     }, 500);
+  }
+
+  saveDbSync() {
+    if (this._saveTimeout) {
+      clearTimeout(this._saveTimeout);
+      this._saveTimeout = null;
+    }
+    try {
+      const fs = require('fs');
+      const tempPath = this.dbPath + '.tmp';
+      fs.writeFileSync(tempPath, JSON.stringify(this.incidents, null, 2));
+      try {
+        if (fs.existsSync(this.dbPath)) {
+          try { fs.unlinkSync(this.dbPath); } catch (e) {}
+        }
+        fs.renameSync(tempPath, this.dbPath);
+      } catch (rnErr) {
+        fs.copyFileSync(tempPath, this.dbPath);
+        try { fs.unlinkSync(tempPath); } catch (e) {}
+      }
+    } catch (err) {
+      console.error('Error saving JSON DB:', err.message);
+    }
   }
 
   /**
@@ -168,7 +184,7 @@ class DatabaseManager {
    */
   clearIncidents(callback) {
     this.incidents = [];
-    this.saveDb();
+    this.saveDbSync();
     if (callback) callback(null);
   }
 }

@@ -85,6 +85,11 @@ class TelemetryHub {
         socket.agentName = data.name;
         this.agentSockets.set(data.uuid, socket.id);
         
+        // Pastikan socket agent tergabung dalam room agar selalu menerima perintah remote update & config
+        const agentRoom = `agent-${data.uuid}`;
+        if (!socket.rooms.has(agentRoom)) socket.join(agentRoom);
+        if (!socket.rooms.has('agents')) socket.join('agents');
+
         // Memproses data dan menyebarkannya ke semua Dashboard
         this.handleTelemetry(data);
       });
@@ -132,7 +137,8 @@ class TelemetryHub {
         // Event saat Agent melaporkan progres pengunduhan/instalasi update
         socket.on('agent-update-progress', (data) => {
           if (!data) return;
-          this.io.to('dashboards').emit('agent-update-progress', data);
+          const enriched = typeof data === 'object' ? { uuid: socket.agentUuid, ...data } : data;
+          this.io.to('dashboards').emit('agent-update-progress', enriched);
         });
 
         // Event usang (Legacy) via socket untuk toggle monitoring PC

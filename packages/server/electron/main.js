@@ -13,8 +13,10 @@ app.whenReady().then(() => {
   serverApp.start((err) => {
     if (err.code === 'EADDRINUSE') {
       dialog.showErrorBox('Port 4000 Terpakai', 'Server gagal berjalan karena Port 4000 sudah digunakan. Apakah ada Server lain yang masih terbuka?');
-      app.quit();
+    } else {
+      dialog.showErrorBox('Server Error', `Server gagal berjalan: ${err.message || err.code}`);
     }
+    app.quit();
   });
 
   const iconPath = path.join(__dirname, '../public/icon.ico');

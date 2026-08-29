@@ -113,13 +113,15 @@ class ServerApp {
 
       // Auto-repair missing EBML headers for rollover WebM chunks
       if (fs.existsSync(fullPath) && fullPath.endsWith('.webm') && !mediaRepairLocks.has(fullPath)) {
+        let fd = null;
         try {
           const stat = fs.statSync(fullPath);
           if (stat.size >= 4) {
-            const fd = fs.openSync(fullPath, 'r');
+            fd = fs.openSync(fullPath, 'r');
             const magic = Buffer.alloc(4);
             fs.readSync(fd, magic, 0, 4, 0);
             fs.closeSync(fd);
+            fd = null;
 
             if (magic.toString('hex') !== '1a45dfa3') {
               mediaRepairLocks.add(fullPath);
@@ -144,22 +146,31 @@ class ServerApp {
               }
 
               if (fs.existsSync(p1Path) && path.resolve(p1Path) !== path.resolve(fullPath)) {
-                const p1Buf = fs.readFileSync(p1Path);
-                const clusterMarker = Buffer.from([0x1f, 0x43, 0xb6, 0x75]);
-                const clusterIdx = p1Buf.indexOf(clusterMarker);
-                if (clusterIdx > 0 && p1Buf.slice(0, 4).toString('hex') === '1a45dfa3') {
-                  const headerBuf = p1Buf.slice(0, clusterIdx);
-                  const currentData = fs.readFileSync(fullPath);
-                  const repairedData = Buffer.concat([headerBuf, currentData]);
-                  const tempPath = `${fullPath}.tmp_${Date.now()}`;
-                  fs.writeFileSync(tempPath, repairedData);
-                  try {
-                    fs.renameSync(tempPath, fullPath);
-                  } catch (rnErr) {
-                    fs.copyFileSync(tempPath, fullPath);
-                    try { fs.unlinkSync(tempPath); } catch (e) {}
+                // Read at most 64KB for EBML header search to prevent memory spike on large files
+                let p1Fd = null;
+                try {
+                  p1Fd = fs.openSync(p1Path, 'r');
+                  const p1HeaderSample = Buffer.alloc(65536);
+                  const bytesRead = fs.readSync(p1Fd, p1HeaderSample, 0, 65536, 0);
+                  const p1Buf = p1HeaderSample.slice(0, bytesRead);
+                  const clusterMarker = Buffer.from([0x1f, 0x43, 0xb6, 0x75]);
+                  const clusterIdx = p1Buf.indexOf(clusterMarker);
+                  if (clusterIdx > 0 && p1Buf.slice(0, 4).toString('hex') === '1a45dfa3') {
+                    const headerBuf = p1Buf.slice(0, clusterIdx);
+                    const currentData = fs.readFileSync(fullPath);
+                    const repairedData = Buffer.concat([headerBuf, currentData]);
+                    const tempPath = `${fullPath}.tmp_${Date.now()}`;
+                    fs.writeFileSync(tempPath, repairedData);
+                    try {
+                      fs.renameSync(tempPath, fullPath);
+                    } catch (rnErr) {
+                      fs.copyFileSync(tempPath, fullPath);
+                      try { fs.unlinkSync(tempPath); } catch (e) {}
+                    }
+                    logger.info(`[Media] Berhasil memperbaiki WebM header yang hilang untuk: ${path.basename(fullPath)}`);
                   }
-                  logger.info(`[Media] Berhasil memperbaiki WebM header yang hilang untuk: ${path.basename(fullPath)}`);
+                } finally {
+                  if (p1Fd !== null) try { fs.closeSync(p1Fd); } catch(e) {}
                 }
               }
               mediaRepairLocks.delete(fullPath);
@@ -168,6 +179,10 @@ class ServerApp {
         } catch (repairErr) {
           mediaRepairLocks.delete(fullPath);
           logger.warn(`[Media] Auto-repair check error: ${repairErr.message}`);
+        } finally {
+          if (fd !== null) try { fs.closeSync(fd); } catch(e) {}
+        }
+      }
         }
       }
       
@@ -459,7 +474,7 @@ class ServerApp {
       const baseDir = path.resolve(this.configManager.config.recordDir || path.join(os.homedir(), 'Documents', 'AudioMonitor-Recordings-Server'));
       
       // Mencegah path traversal attack
-      const safePcName = path.basename(pcName).replace(/[^a-zA-Z0-9_\-\.]/g, '');
+      const safePcName = path.basename(pcName).replace(/[^a-zA-Z0-9_\-\. ]/g, '');
       const safeFileName = path.basename(fileName).replace(/[^a-zA-Z0-9_\-\.]/g, '');
 
       if (!safePcName || !safeFileName || safePcName === '.' || safePcName === '..') {
@@ -572,7 +587,17 @@ class ServerApp {
           return res.json({ hasUpdate: false });
         }
 
-        // Urutkan dari file installer terbaru
+        const semverCompare = (v1, v2) => {
+          const p1 = (v1 || '0.0.0').split('.').map(Number);
+          const p2 = (v2 || '0.0.0').split('.').map(Number);
+          for (let i = 0; i < 3; i++) {
+            if ((p1[i] || 0) > (p2[i] || 0)) return 1;
+            if ((p1[i] || 0) < (p2[i] || 0)) return -1;
+          }
+          return 0;
+        };
+
+        // Urutkan dari file installer versi tertinggi, lalu mtime
         const installers = files.map(file => {
           const filePath = path.join(updatesDir, file);
           const stat = fs.statSync(filePath);
@@ -584,7 +609,10 @@ class ServerApp {
             mtime: stat.mtime,
             downloadUrl: `/updates/agent/${encodeURIComponent(file)}`
           };
-        }).sort((a, b) => new Date(b.mtime) - new Date(a.mtime));
+        }).sort((a, b) => {
+          const cmp = semverCompare(b.version, a.version);
+          return cmp !== 0 ? cmp : new Date(b.mtime) - new Date(a.mtime);
+        });
 
         const latest = installers[0];
         res.json({
@@ -620,10 +648,25 @@ class ServerApp {
       const { targetUuid, downloadUrl } = req.body || {};
       if (!downloadUrl) return res.status(400).json({ success: false, error: 'URL unduhan diperlukan' });
 
-      // Jika URL relatif, ubah ke URL lengkap berbasis IP Server
+      // Jika URL relatif, ubah ke URL lengkap berbasis IP Server (resolve real LAN IP jika host adalah localhost)
       let fullDownloadUrl = downloadUrl;
       if (fullDownloadUrl.startsWith('/')) {
-        const host = req.headers.host || `localhost:${this.port}`;
+        let host = req.headers.host || `localhost:${this.port}`;
+        if (host.includes('localhost') || host.includes('127.0.0.1')) {
+          const ifaces = os.networkInterfaces();
+          let lanIp = 'localhost';
+          for (const name of Object.keys(ifaces)) {
+            for (const net of ifaces[name]) {
+              if (net.family === 'IPv4' && !net.internal) {
+                lanIp = net.address;
+                break;
+              }
+            }
+            if (lanIp !== 'localhost') break;
+          }
+          const port = host.split(':')[1] || this.port;
+          host = `${lanIp}:${port}`;
+        }
         const protocol = req.protocol || 'http';
         fullDownloadUrl = `${protocol}://${host}${fullDownloadUrl}`;
       }
@@ -684,8 +727,12 @@ class ServerApp {
         });
       });
 
+      request.setTimeout(10000, () => {
+        request.destroy(new Error('GitHub API request timed out'));
+      });
+
       request.on('error', (err) => {
-        res.status(500).json({ success: false, error: err.message });
+        if (!res.headersSent) res.status(500).json({ success: false, error: err.message });
       });
       request.end();
     });
@@ -705,13 +752,21 @@ class ServerApp {
       const downloadFile = (url, depth = 0) => {
         if (depth > 5) return Promise.reject(new Error('Terlalu banyak redirect'));
         return new Promise((resolve, reject) => {
-          const parsed = new URL(url);
+          let parsed;
+          try {
+            parsed = new URL(url);
+          } catch (err) {
+            return reject(new Error(`Invalid URL: ${url}`));
+          }
           const client = parsed.protocol === 'https:' ? https : http;
-          client.get(url, { headers: { 'User-Agent': 'AudioMonitor-Server' } }, (response) => {
+          const req = client.get(url, { headers: { 'User-Agent': 'AudioMonitor-Server' } }, (response) => {
             if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
-              return resolve(downloadFile(response.headers.location, depth + 1));
+              response.resume();
+              const redirectUrl = new URL(response.headers.location, url).href;
+              return resolve(downloadFile(redirectUrl, depth + 1));
             }
             if (response.statusCode !== 200) {
+              response.resume();
               return reject(new Error(`Gagal mengunduh file: HTTP ${response.statusCode}`));
             }
 
@@ -720,8 +775,15 @@ class ServerApp {
             fileStream.on('finish', () => {
               fileStream.close(() => {
                 try {
-                  if (fs.existsSync(destPath)) fs.unlinkSync(destPath);
-                  fs.renameSync(tempDest, destPath);
+                  if (fs.existsSync(destPath)) {
+                    try { fs.unlinkSync(destPath); } catch (e) {}
+                  }
+                  try {
+                    fs.renameSync(tempDest, destPath);
+                  } catch (rnErr) {
+                    fs.copyFileSync(tempDest, destPath);
+                    try { fs.unlinkSync(tempDest); } catch (e) {}
+                  }
                   resolve();
                 } catch (err) {
                   reject(err);
@@ -729,10 +791,20 @@ class ServerApp {
               });
             });
             fileStream.on('error', (err) => {
-              try { fs.unlinkSync(tempDest); } catch(e) {}
+              try { fs.unlinkSync(tempDest); } catch (e) {}
               reject(err);
             });
-          }).on('error', reject);
+            response.on('error', (err) => {
+              fileStream.destroy();
+              try { fs.unlinkSync(tempDest); } catch (e) {}
+              reject(err);
+            });
+          });
+
+          req.setTimeout(30000, () => {
+            req.destroy(new Error('Download timeout (30s)'));
+          });
+          req.on('error', reject);
         });
       };
 
@@ -744,7 +816,7 @@ class ServerApp {
       } catch (err) {
         logger.error(`[UpdateHub] Gagal mengunduh installer dari GitHub: ${err.message}`);
         try { if (fs.existsSync(tempDest)) fs.unlinkSync(tempDest); } catch(e) {}
-        res.status(500).json({ success: false, error: err.message });
+        if (!res.headersSent) res.status(500).json({ success: false, error: err.message });
       }
     });
 
@@ -767,23 +839,47 @@ class ServerApp {
       const tempPath = `${filePath}.tmp_${Date.now()}`;
 
       const writeStream = fs.createWriteStream(tempPath);
+      let isFinished = false;
+
+      req.on('close', () => {
+        if (!req.complete && !isFinished) {
+          writeStream.destroy();
+          try { if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath); } catch (e) {}
+        }
+      });
+
+      req.on('error', (err) => {
+        writeStream.destroy();
+        try { if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath); } catch (e) {}
+        if (!res.headersSent) res.status(500).json({ success: false, error: err.message });
+      });
+
       req.pipe(writeStream);
 
       writeStream.on('finish', () => {
+        isFinished = true;
         try {
-          if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-          fs.renameSync(tempPath, filePath);
+          if (fs.existsSync(filePath)) {
+            try { fs.unlinkSync(filePath); } catch (e) {}
+          }
+          try {
+            fs.renameSync(tempPath, filePath);
+          } catch (rnErr) {
+            fs.copyFileSync(tempPath, filePath);
+            try { fs.unlinkSync(tempPath); } catch (e) {}
+          }
           logger.info(`[UpdateHub] Berhasil menerima upload installer Agent: ${safeFileName}`);
           res.json({ success: true, fileName: safeFileName, path: filePath });
         } catch (e) {
-          res.status(500).json({ success: false, error: e.message });
+          try { if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath); } catch (uErr) {}
+          if (!res.headersSent) res.status(500).json({ success: false, error: e.message });
         }
       });
 
       writeStream.on('error', (err) => {
         try { fs.unlinkSync(tempPath); } catch(e) {}
         logger.error(`[UpdateHub] Gagal menyimpan file upload update: ${err.message}`);
-        res.status(500).json({ success: false, error: err.message });
+        if (!res.headersSent) res.status(500).json({ success: false, error: err.message });
       });
     });
 

@@ -36,11 +36,12 @@ class OBSClient {
     
     // Dipanggil saat koneksi OBS tertutup
     this.obs.on('ConnectionClosed', () => {
+      const wasConnected = this.isConnected;
       this.isConnected = false;
       if (this.onDisconnectCallback) this.onDisconnectCallback();
       
-      // Auto-reconnect logic: Jika putus bukan karena tombol Disconnect manual, coba hubungkan ulang setiap 5 detik.
-      if (!this.intentionalDisconnect && !this.reconnectInterval) {
+      // Auto-reconnect logic: Hanya jika sebelumnya memang pernah sukses terkoneksi
+      if (wasConnected && !this.intentionalDisconnect && !this.reconnectInterval) {
         console.log("OBS Connection lost. Attempting auto-reconnect...");
         this.reconnectInterval = setInterval(() => {
           this.connect(this.lastIp, this.lastPassword, true).catch(() => {});
@@ -77,41 +78,27 @@ class OBSClient {
   }
 
   /**
-   * Menghubungkan ke server WebSocket OBS Studio.
-   * @param {string} ip - Alamat IP:Port WebSocket OBS (contoh: 127.0.0.1:4455).
-   * @param {string} password - Kata sandi otentikasi WebSocket OBS.
-   * @param {boolean} isAutoReconnect - Flag internal untuk menandai apakah koneksi ini merupakan proses penyambungan ulang otomatis.
-   * @returns {Promise<boolean>} Resolves jika berhasil terhubung, Reject jika gagal.
+   * Menghubungkan agen ke OBS Studio melalui protokol WebSocket.
+   * @param {string} ip - IP dan Port OBS (contoh: "127.0.0.1:4455")
+   * @param {string} password - Password Server WebSocket yang diatur di OBS Studio
+   * @param {boolean} [isAutoReconnect=false] - Flag internal apakah pemanggilan ini dari interval auto-reconnect
+   * @returns {Promise<boolean>}
    */
   async connect(ip, password, isAutoReconnect = false) {
     if (this.isConnecting) return false;
     
-    // Cegah koneksi ganda jika sudah terhubung ke tujuan yang sama
-    if (!isAutoReconnect && this.isConnected && this.lastIp === ip && this.lastPassword === password && this.obs) {
-      if (this.onConnectCallback) this.onConnectCallback();
-      return true;
-    }
-    
-    this.isConnecting = true;
-
-    // Bersihkan interval koneksi ulang otomatis yang lama
-    if (!isAutoReconnect && this.reconnectInterval) {
-      clearInterval(this.reconnectInterval);
-      this.reconnectInterval = null;
-    }
-
-    // Hancurkan instansi OBS yang lama secara total untuk mencegah 'koneksi zombie'
-    if (this.obs) {
-      try {
-        this.obs.removeAllListeners();
-        await this.obs.disconnect();
-      } catch(e) {}
-      this.obs = null;
-    }
-
+    // Simpan data kredensial untuk kebutuhan auto-reconnect jika nanti jaringan goyang
     this.lastIp = ip;
     this.lastPassword = password;
     this.intentionalDisconnect = false;
+    this.isConnecting = true;
+
+    // Bersihkan instansi koneksi sebelumnya jika ada
+    if (this.obs) {
+      this.obs.removeAllListeners();
+      try { this.obs.disconnect(); } catch(e) {}
+      this.obs = null;
+    }
 
     // Buat instansi OBS WebSocket baru
     this.obs = new OBSWebSocket();
@@ -123,6 +110,14 @@ class OBSClient {
         rpcVersion: 1,
         eventSubscriptions: 65601 
       });
+
+      if (this.intentionalDisconnect) {
+        try { this.obs.disconnect(); } catch (e) {}
+        this.obs = null;
+        this.isConnected = false;
+        this.isConnecting = false;
+        return false;
+      }
       
       this.isConnected = true;
       this.isConnecting = false;

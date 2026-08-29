@@ -1092,3 +1092,20 @@ input[type=range].range-danger::-webkit-slider-thumb {
   color: #fff;
   text-shadow: 0 1px 2px rgba(0,0,0,0.8);
 }
+
+.update-progress-container.error {
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  background: rgba(239, 68, 68, 0.15);
+}
+
+.update-progress-container.error .update-progress-text {
+  color: #fca5a5;
+}
+
+.btn-filter.disabled, 
+label.btn-filter.disabled {
+  opacity: 0.45;
+  pointer-events: none;
+  cursor: not-allowed;
+}
+

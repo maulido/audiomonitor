@@ -73,7 +73,10 @@ class DashboardClient {
       method: 'DELETE',
       headers: { 'x-pin': pin }
     });
-    if (!res.ok) throw new Error('Failed to delete PC');
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `Failed to delete PC (${res.status})`);
+    }
   }
 
   async renamePC(uuid, newName, pin) {
@@ -87,7 +90,8 @@ class DashboardClient {
     });
     
     if (!res.ok) {
-      throw new Error('Failed to rename PC');
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `Failed to rename PC (${res.status})`);
     }
     return await res.json();
   }

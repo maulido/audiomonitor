@@ -65,10 +65,13 @@ class ConfigManager {
           recordDir: parsed.recordDir || ''
         };
       } catch (err) {
-        console.error('Error reading config file, using defaults:', err.message);
-        // Jika file JSON rusak/corrupt, kembalikan ke setelan pabrik
+        console.error('Error reading config file:', err.message);
+        try {
+          const backupPath = `${this.configPath}.corrupt_${Date.now()}`;
+          fs.copyFileSync(this.configPath, backupPath);
+          console.warn(`Corrupted config backed up to: ${backupPath}`);
+        } catch (bErr) {}
         this.config = { ...this.defaultConfig, telegram: { ...this.defaultConfig.telegram } };
-        this.saveConfig();
       }
     } else {
       this.saveConfig();
@@ -76,11 +79,21 @@ class ConfigManager {
   }
 
   /**
-   * Menulis struktur memori saat ini (Object config) langsung ke dalam file JSON secara permanen.
+   * Menulis struktur memori saat ini (Object config) langsung ke dalam file JSON secara atomik.
    */
   saveConfig() {
     try {
-      fs.writeFileSync(this.configPath, JSON.stringify(this.config, null, 2));
+      const tempPath = `${this.configPath}.tmp_${Date.now()}`;
+      fs.writeFileSync(tempPath, JSON.stringify(this.config, null, 2));
+      try {
+        if (fs.existsSync(this.configPath)) {
+          try { fs.unlinkSync(this.configPath); } catch (e) {}
+        }
+        fs.renameSync(tempPath, this.configPath);
+      } catch (rnErr) {
+        fs.copyFileSync(tempPath, this.configPath);
+        try { fs.unlinkSync(tempPath); } catch (e) {}
+      }
     } catch (err) {
       console.error('Error saving config file:', err);
     }

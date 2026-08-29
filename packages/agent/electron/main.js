@@ -465,15 +465,17 @@ ipcMain.on('save-audio-chunk', (event, arrayBuffer) => {
 });
 
 ipcMain.on('stop-recording', (event, isRollover) => {
+  const capturedSessionDir = currentSessionDir;
+  const capturedAgentName = currentAgentName;
+  const capturedServerIp = currentServerIp;
+
   if (!isRollover) {
     currentSessionDir = null;
     pendingAudioChunks = [];
   }
+
   if (audioWriteStream) {
     const streamToClose = audioWriteStream;
-    const capturedSessionDir = currentSessionDir;
-    const capturedAgentName = currentAgentName;
-    const capturedServerIp = currentServerIp;
     
     if (audioWriteStream === streamToClose) {
       audioWriteStream = null;
@@ -552,27 +554,56 @@ ipcMain.handle('install-update', async (event, downloadUrl) => {
   
   if (!downloadUrl) return { success: false, error: 'URL pembaruan kosong' };
 
-  try {
-    writeAgentLog('INFO', `Menerima perintah pembaruan aplikasi dari: ${downloadUrl}`);
-    const destPath = path.join(app.getPath('temp'), 'AudioMonitor_Agent_Update.exe');
-    
-    // Hapus file temporary sebelumnya jika ada
-    if (fs.existsSync(destPath)) {
-      try { fs.unlinkSync(destPath); } catch (e) {}
-    }
+  writeAgentLog('INFO', `Menerima perintah pembaruan aplikasi dari: ${downloadUrl}`);
+  const destPath = path.join(app.getPath('temp'), 'AudioMonitor_Agent_Update.exe');
 
-    const urlObj = new URL(downloadUrl);
-    const lib = urlObj.protocol === 'https:' ? https : http;
-
+  const downloadFile = (targetUrl, redirectCount = 0) => {
     return new Promise((resolve) => {
+      if (redirectCount > 5) {
+        return resolve({ success: false, error: 'Terlalu banyak redirect HTTP' });
+      }
+
+      let parsedUrl;
+      try {
+        parsedUrl = new URL(targetUrl);
+      } catch (err) {
+        return resolve({ success: false, error: `URL tidak valid: ${err.message}` });
+      }
+
+      const lib = parsedUrl.protocol === 'https:' ? https : http;
+      if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+        return resolve({ success: false, error: `Protokol tidak didukung: ${parsedUrl.protocol}` });
+      }
+
+      // Hapus file temporary sebelumnya jika ada
+      try { if (fs.existsSync(destPath)) fs.unlinkSync(destPath); } catch (e) {}
+
       const fileStream = fs.createWriteStream(destPath);
-      
-      const req = lib.get(urlObj, (res) => {
+      let isResolved = false;
+      const safeResolve = (val) => {
+        if (!isResolved) {
+          isResolved = true;
+          resolve(val);
+        }
+      };
+
+      const cleanupAndFail = (errMsg) => {
+        fileStream.destroy();
+        fs.unlink(destPath, () => {});
+        writeAgentLog('ERROR', `Gagal update: ${errMsg}`);
+        safeResolve({ success: false, error: errMsg });
+      };
+
+      const req = lib.get(parsedUrl, (res) => {
+        // Handle HTTP Redirects (301, 302, 303, 307, 308)
+        if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location) {
+          fileStream.destroy();
+          const nextUrl = new URL(res.headers.location, parsedUrl).toString();
+          return resolve(downloadFile(nextUrl, redirectCount + 1));
+        }
+
         if (res.statusCode !== 200) {
-          writeAgentLog('ERROR', `Gagal mengunduh update. HTTP ${res.statusCode}`);
-          fileStream.close();
-          try { fs.unlinkSync(destPath); } catch(e) {}
-          return resolve({ success: false, error: `HTTP ${res.statusCode}` });
+          return cleanupAndFail(`HTTP ${res.statusCode}`);
         }
 
         const totalBytes = parseInt(res.headers['content-length'] || '0', 10);
@@ -581,20 +612,38 @@ ipcMain.handle('install-update', async (event, downloadUrl) => {
         res.on('data', (chunk) => {
           receivedBytes += chunk.length;
           fileStream.write(chunk);
-          if (totalBytes > 0) {
+          if (totalBytes > 0 && event?.sender && !event.sender.isDestroyed()) {
             const percent = Math.round((receivedBytes / totalBytes) * 100);
             event.sender.send('update-progress', { progress: percent, status: 'downloading' });
           }
         });
 
         res.on('end', () => {
+          if (totalBytes > 0 && receivedBytes < totalBytes) {
+            return cleanupAndFail(`Unduhan terputus: ${receivedBytes}/${totalBytes} byte`);
+          }
           fileStream.end();
         });
+
+        res.on('error', (err) => cleanupAndFail(`Stream error: ${err.message}`));
+      });
+
+      req.setTimeout(30000, () => {
+        req.destroy(new Error('Timeout koneksi unduh update (30s)'));
+      });
+
+      req.on('error', (err) => cleanupAndFail(`Koneksi gagal: ${err.message}`));
+
+      fileStream.on('error', (err) => {
+        req.destroy();
+        cleanupAndFail(`Gagal menulis file: ${err.message}`);
       });
 
       fileStream.on('finish', () => {
         writeAgentLog('INFO', 'Unduhan installer update selesai. Menjalankan silent install...');
-        event.sender.send('update-progress', { progress: 100, status: 'installing' });
+        if (event?.sender && !event.sender.isDestroyed()) {
+          event.sender.send('update-progress', { progress: 100, status: 'installing' });
+        }
 
         try {
           // Eksekusi installer NSIS dengan flag /S (Silent install)
@@ -602,34 +651,26 @@ ipcMain.handle('install-update', async (event, downloadUrl) => {
             detached: true,
             stdio: 'ignore'
           });
+
+          child.on('error', (spawnErr) => {
+            writeAgentLog('ERROR', `Gagal menjalankan installer: ${spawnErr.message}`);
+            safeResolve({ success: false, error: `Spawn error: ${spawnErr.message}` });
+          });
+
           child.unref();
 
-          // Beri jeda 1 detik lalu tutup aplikasi agar installer dapat menimpa binary
+          // Beri jeda 1.5 detik lalu tutup aplikasi agar installer dapat menimpa binary
           setTimeout(() => {
             app.quit();
-          }, 1000);
+          }, 1500);
 
-          resolve({ success: true });
+          safeResolve({ success: true });
         } catch (execErr) {
-          writeAgentLog('ERROR', `Gagal mengeksekusi installer update: ${execErr.message}`);
-          resolve({ success: false, error: execErr.message });
+          cleanupAndFail(`Eksekusi gagal: ${execErr.message}`);
         }
       });
-
-      fileStream.on('error', (err) => {
-        writeAgentLog('ERROR', `Gagal menulis file update: ${err.message}`);
-        resolve({ success: false, error: err.message });
-      });
-
-      req.on('error', (err) => {
-        writeAgentLog('ERROR', `Koneksi gagal saat mengunduh update: ${err.message}`);
-        fileStream.close();
-        try { fs.unlinkSync(destPath); } catch(e) {}
-        resolve({ success: false, error: err.message });
-      });
     });
-  } catch (err) {
-    writeAgentLog('ERROR', `Error fungsi install-update: ${err.message}`);
-    return { success: false, error: err.message };
-  }
+  };
+
+  return await downloadFile(downloadUrl);
 });

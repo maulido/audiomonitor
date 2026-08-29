@@ -22,6 +22,7 @@ class AudioProcessor {
    * @param {string|null} deviceId - ID Perangkat mikrofon yang ingin digunakan. Jika null, menggunakan mikrofon default.
    */
   async start(deviceId = null) {
+    this.stop(); // Bersihkan context dan stream lama sebelum membuat yang baru
     try {
       // Mendefinisikan aturan permintaan media (hanya audio)
       const constraints = {
@@ -31,6 +32,11 @@ class AudioProcessor {
       
       // Meminta akses aliran (stream) mikrofon dari sistem operasi
       this.stream = await navigator.mediaDevices.getUserMedia(constraints);
+      this.stream.getTracks().forEach(track => {
+        track.onended = () => {
+          this.stopRecording();
+        };
+      });
       
       // Membuat AudioContext standar Web Audio API
       this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
@@ -163,6 +169,7 @@ class AudioProcessor {
   }
 
   stopRecording() {
+    const wasRecording = this.isRecording;
     this.isRecording = false;
     if (this.chunkTimer) {
       clearTimeout(this.chunkTimer);
@@ -176,9 +183,15 @@ class AudioProcessor {
 
     if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
       this.mediaRecorder.onstop = () => {
-        if (window.electronAPI && window.electronAPI.stopRecording) { window.electronAPI.stopRecording(false); }
+        if (window.electronAPI && window.electronAPI.stopRecording) { 
+          window.electronAPI.stopRecording(false); 
+        }
       }; // prevent starting the next chunk
-      this.mediaRecorder.stop();
+      try { this.mediaRecorder.stop(); } catch (e) {}
+    } else if (wasRecording) {
+      if (window.electronAPI && window.electronAPI.stopRecording) {
+        window.electronAPI.stopRecording(false);
+      }
     }
   }
 

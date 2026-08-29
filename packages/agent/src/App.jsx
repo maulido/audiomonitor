@@ -324,7 +324,7 @@ function App() {
         
         telemetryClient.current.setRecordListener((shouldRecord) => {
           if (shouldRecord && audioProcessor.current) {
-            const success = audioProcessor.current.startRecording(agentNameRef.current, recordDirRef.current, uuid, serverIp);
+            const success = audioProcessor.current.startRecording(agentNameRef.current, recordDirRef.current, uuidRef.current, serverIpRef.current);
             if (success) setIsRecording(true);
           } else if (!shouldRecord && audioProcessor.current) {
             audioProcessor.current.stopRecording();
@@ -344,20 +344,29 @@ function App() {
         });
 
         // Listener Perintah Pembaruan dari Server LAN
+        let isUpdating = false;
         const handleExecuteUpdate = async (data) => {
           const downloadUrl = data?.downloadUrl;
-          if (!downloadUrl) return;
+          if (!downloadUrl || isUpdating) return;
           
           if (window.electronAPI && window.electronAPI.installUpdate) {
+            isUpdating = true;
             socket.emit('agent-update-progress', { uuid: uuidRef.current, progress: 0, status: 'starting' });
-            const unbind = window.electronAPI.onUpdateProgress((prog) => {
-              socket.emit('agent-update-progress', { uuid: uuidRef.current, ...prog });
-            });
-            
-            const res = await window.electronAPI.installUpdate(downloadUrl);
-            if (unbind) unbind();
-            if (!res.success) {
-              socket.emit('agent-update-progress', { uuid: uuidRef.current, status: 'error', error: res.error });
+            let unbind = null;
+            try {
+              unbind = window.electronAPI.onUpdateProgress((prog) => {
+                socket.emit('agent-update-progress', { uuid: uuidRef.current, ...prog });
+              });
+              
+              const res = await window.electronAPI.installUpdate(downloadUrl);
+              if (!res?.success) {
+                socket.emit('agent-update-progress', { uuid: uuidRef.current, status: 'error', error: res?.error || 'Unknown error' });
+              }
+            } catch (err) {
+              socket.emit('agent-update-progress', { uuid: uuidRef.current, status: 'error', error: err.message });
+            } finally {
+              if (unbind) unbind();
+              isUpdating = false;
             }
           }
         };
@@ -455,7 +464,7 @@ function App() {
         }
         if (obsSyncRecordingRef.current && audioProcessor.current) {
              if (isActive && !isRecordingRef.current) {
-               if (audioProcessor.current.startRecording(agentNameRef.current, recordDirRef.current, uuid, serverIp)) setIsRecording(true);
+               if (audioProcessor.current.startRecording(agentNameRef.current, recordDirRef.current, uuidRef.current, serverIpRef.current)) setIsRecording(true);
              } else if (!isActive && isRecordingRef.current) {
                audioProcessor.current.stopRecording();
                setIsRecording(false);
@@ -569,8 +578,12 @@ function App() {
     } else if (isTalking && isActuallyMuted) {
       dangerScore.current += 100;
     } else {
-      dangerScore.current = Math.max(0, dangerScore.current - 500);
-      if (!isActuallyMuted) dangerScore.current = 0;
+      if (dangerScore.current > 0) {
+        dangerScore.current = Math.max(0, dangerScore.current - 500);
+      }
+      if (!isActuallyMuted && dangerScore.current >= 0) {
+        dangerScore.current = 0;
+      }
     }
 
     if (dangerScore.current >= (obsMuteTimeoutSec * 1000)) {
@@ -790,7 +803,7 @@ function App() {
                       audioProcessor.current.stopRecording();
                       setIsRecording(false);
                     } else {
-                      if (audioProcessor.current.startRecording(agentNameRef.current, recordDirRef.current, uuid, serverIp)) setIsRecording(true);
+                      if (audioProcessor.current.startRecording(agentNameRef.current, recordDirRef.current, uuidRef.current, serverIpRef.current)) setIsRecording(true);
                     }
                   }}
                   style={{

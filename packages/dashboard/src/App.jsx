@@ -149,14 +149,18 @@ function App() {
 
   const handleLogin = async (e) => {
     e.preventDefault();
-    const res = await fetch(`${SERVER_URL}/api/config`, { headers: { 'x-pin': pin } });
-    if (res.ok) {
-      setIsAuthenticated(true);
-      sessionStorage.setItem('dashboardPin', pin);
-      setLoginError('');
-      fetchConfigData(await res.json());
-    } else {
-      setLoginError('PIN Salah');
+    try {
+      const res = await fetch(`${SERVER_URL}/api/config`, { headers: { 'x-pin': pin } });
+      if (res.ok) {
+        setIsAuthenticated(true);
+        sessionStorage.setItem('dashboardPin', pin);
+        setLoginError('');
+        fetchConfigData(await res.json());
+      } else {
+        setLoginError('PIN Salah');
+      }
+    } catch (err) {
+      setLoginError('Tidak dapat terhubung ke server');
     }
   };
 
@@ -230,7 +234,7 @@ function App() {
 
   const resetIncidentFilters = () => {
     const start = getDefaultStartDate();
-    const end = new Date().toISOString().slice(0, 10);
+    const end = getLocalDateStr();
     setIncidentStartDate(start);
     setIncidentEndDate(end);
     setIncidentPcFilter('');
@@ -245,8 +249,8 @@ function App() {
     if (days > 0) {
       startObj.setDate(endObj.getDate() - days);
     }
-    const startStr = startObj.toISOString().slice(0, 10);
-    const endStr = endObj.toISOString().slice(0, 10);
+    const startStr = getLocalDateStr(startObj);
+    const endStr = getLocalDateStr(endObj);
     setIncidentStartDate(startStr);
     setIncidentEndDate(endStr);
     setIncidentPage(1);
@@ -277,7 +281,7 @@ function App() {
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `Incident_Logs_${new Date().toISOString().slice(0, 10)}.csv`);
+    link.setAttribute("download", `Incident_Logs_${getLocalDateStr()}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -324,8 +328,9 @@ function App() {
       return;
     }
 
+    const sizeMb = githubReleaseInfo.asset.size ? (githubReleaseInfo.asset.size / 1024 / 1024).toFixed(1) : '0';
     const confirmed = await customConfirm(
-      `Unduh installer ${githubReleaseInfo.asset.name} (${(githubReleaseInfo.asset.size / 1024 / 1024).toFixed(1)} MB) dari GitHub ke Server?`,
+      `Unduh installer ${githubReleaseInfo.asset.name} (${sizeMb} MB) dari GitHub ke Server?`,
       'Konfirmasi Unduhan'
     );
     if (!confirmed) return;
@@ -344,7 +349,7 @@ function App() {
         await customAlert('Installer Agent berhasil diunduh ke Server dan siap disebarkan ke seluruh PC Agent!', 'Sukses');
         await checkServerUpdates();
       } else {
-        const err = await res.json();
+        const err = await res.json().catch(() => ({}));
         await customAlert(`Gagal mengunduh installer: ${err.error || 'Server error'}`, 'Gagal');
       }
     } catch (e) {
@@ -355,20 +360,23 @@ function App() {
   };
 
   const handleUploadInstaller = async (e) => {
-    const file = e.target.files?.[0];
+    const inputEl = e.target;
+    const file = inputEl.files?.[0];
     if (!file) return;
 
     if (!file.name.toLowerCase().endsWith('.exe')) {
+      inputEl.value = '';
       await customAlert('Hanya file installer (.exe) yang diperbolehkan.', 'Format Salah');
       return;
     }
 
+    const sizeMb = file.size ? (file.size / 1024 / 1024).toFixed(1) : '0';
     const confirmed = await customConfirm(
-      `Upload file ${file.name} (${(file.size / 1024 / 1024).toFixed(1)} MB) langsung ke Server?`,
+      `Upload file ${file.name} (${sizeMb} MB) langsung ke Server?`,
       'Konfirmasi Upload'
     );
     if (!confirmed) {
-      e.target.value = '';
+      inputEl.value = '';
       return;
     }
 
@@ -385,18 +393,25 @@ function App() {
         body: file
       });
 
+      if (res.status === 401) {
+        setIsAuthenticated(false);
+        sessionStorage.removeItem('dashboardPin');
+        await customAlert('Sesi habis atau PIN salah.', 'Akses Ditolak');
+        return;
+      }
+
       if (res.ok) {
         await customAlert(`File ${file.name} berhasil di-upload ke Server dan siap disebarkan!`, 'Upload Berhasil');
         await checkServerUpdates();
       } else {
-        const err = await res.json();
+        const err = await res.json().catch(() => ({}));
         await customAlert(`Gagal upload: ${err.error || 'Server error'}`, 'Upload Gagal');
       }
     } catch (err) {
       await customAlert(`Koneksi error saat upload: ${err.message}`, 'Error');
     } finally {
       setIsUploadingInstaller(false);
-      e.target.value = '';
+      inputEl.value = '';
     }
   };
 
@@ -580,7 +595,10 @@ function App() {
     }
     audio.playbackRate = playbackRate;
     if (isPlaying) {
-      audio.play().catch(err => console.log('Autoplay info:', err.message));
+      audio.play().catch(err => {
+        console.log('Autoplay info:', err.message);
+        setIsPlaying(false);
+      });
     }
   };
 
@@ -610,7 +628,10 @@ function App() {
       audioRef.current.pause();
       setIsPlaying(false);
     } else {
-      audioRef.current.play().then(() => setIsPlaying(true)).catch(console.error);
+      audioRef.current.play().then(() => setIsPlaying(true)).catch((err) => {
+        console.error(err);
+        setIsPlaying(false);
+      });
     }
   };
 
@@ -628,7 +649,12 @@ function App() {
 
   useEffect(() => {
     if (isAuthenticated && currentView === 'logs') {
-      fetchLogs({ startDate: incidentStartDate, endDate: incidentEndDate });
+      fetchLogs({
+        startDate: incidentStartDate || undefined,
+        endDate: incidentEndDate || undefined,
+        pcName: incidentPcFilter || undefined,
+        status: incidentStatusFilter || undefined
+      });
       fetchPcNames();
     } else if (isAuthenticated && currentView === 'records') {
       fetchRecords();
@@ -728,6 +754,12 @@ function App() {
       },
       (uuid) => {
         setAgents(prev => {
+          const next = { ...prev };
+          delete next[uuid];
+          return next;
+        });
+        setAgentUpdateProgress(prev => {
+          if (!prev[uuid]) return prev;
           const next = { ...prev };
           delete next[uuid];
           return next;
@@ -1220,10 +1252,20 @@ function App() {
                           </>
                         )}
                         {agentUpdateProgress[agent.uuid] && (
-                          <div className="update-progress-container">
-                            <div className="update-progress-bar" style={{ width: `${agentUpdateProgress[agent.uuid].progress || 0}%` }}></div>
+                          <div className={`update-progress-container ${agentUpdateProgress[agent.uuid].status === 'error' ? 'error' : ''}`}>
+                            <div 
+                              className="update-progress-bar" 
+                              style={{ 
+                                width: `${agentUpdateProgress[agent.uuid].progress || 0}%`,
+                                background: agentUpdateProgress[agent.uuid].status === 'error' ? 'var(--danger)' : undefined 
+                              }}
+                            ></div>
                             <span className="update-progress-text">
-                              {agentUpdateProgress[agent.uuid].status === 'installing' ? 'Memasang update...' : `Mengunduh ${agentUpdateProgress[agent.uuid].progress || 0}%`}
+                              {agentUpdateProgress[agent.uuid].status === 'error' 
+                                ? `Gagal: ${agentUpdateProgress[agent.uuid].error || 'Update gagal'}` 
+                                : agentUpdateProgress[agent.uuid].status === 'installing' 
+                                  ? 'Memasang update...' 
+                                  : `Mengunduh ${agentUpdateProgress[agent.uuid].progress || 0}%`}
                             </span>
                           </div>
                         )}
@@ -1276,7 +1318,7 @@ function App() {
                                 </svg>
                               )}
                               <div style={{ width: '65px', textAlign: 'right', fontSize: '0.75rem', fontFamily: 'monospace', color: (agent.obsConnected === false) ? 'var(--danger)' : (agent.isObsMutedBtn ? 'var(--warning)' : 'var(--text-muted)') }}>
-                                { agent.obsConnected === false ? 'DISCONNECTED' : (agent.isObsMutedBtn ? 'MUTED' : Number(agent.obsDb != null ? agent.obsDb : ((agent.obsLevel || 0) * 0.6 - 60)).toFixed(1) + ' dB') }
+                                { agent.obsConnected === false ? 'DISCONNECTED' : (agent.isObsMutedBtn ? 'MUTED' : (isFinite(Number(agent.obsDb)) ? Number(agent.obsDb).toFixed(1) + ' dB' : Number(((agent.obsLevel || 0) * 0.6 - 60)).toFixed(1) + ' dB')) }
                               </div>
                             </div>
                     </div>
@@ -1757,7 +1799,7 @@ function App() {
 
                 const dateStr = r.isParsed 
                   ? r.dateStr 
-                  : new Date(r.createdAt).toISOString().slice(0, 10);
+                  : getLocalDateStr(new Date(r.createdAt));
 
                 if (recordStartDate && dateStr < recordStartDate) return;
                 if (recordEndDate && dateStr > recordEndDate) return;
