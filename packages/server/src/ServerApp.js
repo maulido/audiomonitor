@@ -65,9 +65,24 @@ class ServerApp {
 
     // Menyajikan folder rekaman agar bisa diakses browser via /media/...
     const os = require('os');
-    const recordDir = this.configManager.config.recordDir 
-      || path.join(os.homedir(), 'Documents', 'AudioMonitor-Recordings-Server');
-    this.app.use('/media', express.static(recordDir));
+    this.app.use('/media', (req, res, next) => {
+      const recordDir = this.configManager.config.recordDir 
+        || path.join(os.homedir(), 'Documents', 'AudioMonitor-Recordings-Server');
+      
+      const reqPath = req.path;
+      const fullPath = path.join(recordDir, decodeURI(reqPath));
+      
+      // Basic protection against path traversal
+      if (!fullPath.startsWith(recordDir)) {
+        return res.status(403).send('Forbidden');
+      }
+      
+      res.sendFile(fullPath, (err) => {
+        if (err && err.code !== 'ECONNABORTED' && err.status !== 304) {
+          next();
+        }
+      });
+    });
   }
 
   /**
