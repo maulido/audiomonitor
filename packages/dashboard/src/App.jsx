@@ -839,13 +839,50 @@ function App() {
         body: JSON.stringify({ 
           token: telegramToken, 
           chatId: telegramChatId, 
-          interval: parseInt(telegramInterval, 10) || 60,
-          logRetentionDays: logRetentionDays
+          interval: parseInt(telegramInterval, 10) || 60
         })
       });
-      if (res.ok) await customAlert('Telegram Configuration Saved & Bot Reloaded!', 'Sukses');
+      if (res.ok) await customAlert('Konfigurasi Telegram berhasil disimpan!', 'Sukses');
     } catch (e) {
-      await customAlert('Failed to save configuration', 'Error');
+      await customAlert('Gagal menyimpan konfigurasi Telegram: ' + e.message, 'Error');
+    }
+  };
+
+  const saveRetentionConfig = async () => {
+    try {
+      const days = parseInt(logRetentionDays, 10) || 30;
+      const res = await apiFetch(`/api/config/retention`, {
+        method: 'POST',
+        body: JSON.stringify({ days })
+      });
+      if (res.ok) {
+        await customAlert(`Batas retensi log insiden berhasil diubah menjadi ${days} hari.`, 'Sukses');
+      } else {
+        await customAlert('Gagal menyimpan batas retensi log.', 'Error');
+      }
+    } catch (e) {
+      await customAlert('Error: ' + e.message, 'Error');
+    }
+  };
+
+  const handleManualCleanupNow = async () => {
+    const confirmed = await customConfirm(
+      `Apakah Anda yakin ingin menghapus seluruh log insiden yang berusia lebih dari ${logRetentionDays} hari sekarang?`,
+      'Konfirmasi Pembersihan Log'
+    );
+    if (!confirmed) return;
+
+    try {
+      const res = await apiFetch(`/api/incidents/cleanup-now`, { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        await customAlert(`Pembersihan selesai. Sebanyak ${data.removedCount || 0} catatan log lama telah dihapus dari database server.`, 'Pembersihan Sukses');
+        fetchLogs();
+      } else {
+        await customAlert('Gagal membersihkan log lama.', 'Error');
+      }
+    } catch (e) {
+      await customAlert('Error: ' + e.message, 'Error');
     }
   };
 
@@ -2069,6 +2106,57 @@ function App() {
                 <div style={{ display: 'flex', gap: '16px', maxWidth: '400px' }}>
                   <input type="password" className="form-input" value={newPinInput} onChange={(e) => setNewPinInput(e.target.value)} placeholder="Masukkan PIN Baru..." />
                   <button className="btn btn-primary" onClick={savePinConfig} style={{ whiteSpace: 'nowrap' }}>Ubah PIN</button>
+                </div>
+              </div>
+            </div>
+
+            <div className="settings-card">
+              <div className="settings-card-accent green"></div>
+              <div className="settings-card-content">
+                <h2 className="settings-card-title">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                  Retensi Log & Pembersihan Otomatis (Auto-Cleanup)
+                </h2>
+                <p className="settings-card-subtitle">
+                  Atur batas masa simpan riwayat insiden audio/OBS sebelum otomatis dibersihkan oleh server agar database tetap ringan.
+                </p>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'minmax(200px, 320px) 1fr', gap: '20px', alignItems: 'flex-start', marginBottom: '16px' }}>
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label className="form-label">Batas Retensi Log (Hari)</label>
+                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                      <input 
+                        type="number" 
+                        min="1" 
+                        max="365" 
+                        className="form-input" 
+                        value={logRetentionDays} 
+                        onChange={(e) => setLogRetentionDays(Math.max(1, parseInt(e.target.value, 10) || 1))} 
+                        placeholder="30" 
+                        style={{ width: '130px' }}
+                      />
+                      <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>Hari</span>
+                    </div>
+                    <span className="form-help">Log insiden yang lebih lama dari jumlah hari ini akan dibersihkan otomatis.</span>
+                  </div>
+
+                  <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px', padding: '12px 16px' }}>
+                    <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-main)', marginBottom: '4px' }}>Informasi Pembersihan Server:</div>
+                    <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', lineHeight: '1.4' }}>
+                      Server menjalankan auto-cleanup setiap kali aplikasi dimulai dan setiap kali batas hari retensi disimpan. Anda juga dapat menjalankan pembersihan seketika melalui tombol di bawah.
+                    </div>
+                  </div>
+                </div>
+
+                <div className="button-group">
+                  <button className="btn btn-primary" onClick={saveRetentionConfig}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+                    Simpan Batas Retensi
+                  </button>
+                  <button className="btn btn-secondary" onClick={handleManualCleanupNow} style={{ background: 'rgba(239, 68, 68, 0.12)', borderColor: 'rgba(239, 68, 68, 0.3)', color: '#f87171' }}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+                    Bersihkan Log Lama Sekarang
+                  </button>
                 </div>
               </div>
             </div>

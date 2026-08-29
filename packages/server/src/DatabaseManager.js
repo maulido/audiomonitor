@@ -100,11 +100,13 @@ class DatabaseManager {
     
     const initialLength = this.incidents.length;
     this.incidents = this.incidents.filter(i => new Date(i.timestamp) >= cutoffDate);
+    const removed = initialLength - this.incidents.length;
     
-    if (this.incidents.length !== initialLength) {
-      console.log('Auto-cleanup: Removed old incidents.');
+    if (removed > 0) {
+      console.log(`Auto-cleanup: Removed ${removed} old incidents.`);
       this.saveDb();
     }
+    return removed;
   }
 
   /**

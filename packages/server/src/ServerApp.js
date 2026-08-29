@@ -558,6 +558,23 @@ class ServerApp {
       res.send({ success: true });
     });
 
+    // API: Mengubah batas retensi log lama (Auto-cleanup hari)
+    this.app.post('/api/config/retention', (req, res) => {
+      const { days } = req.body;
+      const retentionDays = Math.max(1, parseInt(days, 10) || 30);
+      this.configManager.config.logRetentionDays = retentionDays;
+      this.configManager.saveConfig();
+      const removed = this.dbManager.autoCleanup(retentionDays);
+      res.json({ success: true, logRetentionDays: retentionDays, removedCount: removed });
+    });
+
+    // API: Memicu pembersihan log lama secara manual seketika
+    this.app.post('/api/incidents/cleanup-now', (req, res) => {
+      const retentionDays = this.configManager.config.logRetentionDays || 30;
+      const removed = this.dbManager.autoCleanup(retentionDays);
+      res.json({ success: true, removedCount: removed, logRetentionDays: retentionDays });
+    });
+
     // API: Mematikan/Menyalakan pemantauan untuk satu PC secara spesifik
     this.app.post('/api/pc/:uuid/monitoring', (req, res) => {
       const { uuid } = req.params;
