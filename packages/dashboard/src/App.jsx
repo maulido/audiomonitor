@@ -1159,42 +1159,77 @@ function App() {
               </div>
             )}
 
-            <div className="settings-card">
-              <div className="settings-card-accent purple"></div>
-              <div className="settings-card-content" style={{ padding: '0' }}>
-                <table className="logs-table">
-                  <thead>
-                    <tr>
-                      <th>Nama PC</th>
-                      <th>Nama File (Waktu)</th>
-                      <th>Ukuran</th>
-                      <th style={{ textAlign: 'center' }}>Aksi</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {records.map((rec, i) => (
-                      <tr key={i}>
-                        <td><strong>{rec.pcName}</strong></td>
-                        <td>{rec.fileName}<br/><span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>{new Date(rec.createdAt).toLocaleString()}</span></td>
-                        <td>{(rec.size / 1024 / 1024).toFixed(2)} MB</td>
-                        <td style={{ textAlign: 'center' }}>
-                          <button 
-                            className="btn-filter primary" 
-                            style={{ padding: '4px 12px', fontSize: '0.8rem' }}
-                            onClick={() => setPlayingAudio({ url: rec.url, name: `${rec.pcName} - ${rec.fileName}` })}
-                          >
-                            <i className="fa-solid fa-play"></i> Play
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                    {records.length === 0 && (
-                      <tr><td colSpan="4" style={{textAlign: 'center', color: 'var(--text-muted)'}}>Belum ada file rekaman yang tersimpan di server.</td></tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
+            {(() => {
+              // Kelompokkan records berdasarkan pcName
+              const grouped = {};
+              records.forEach(r => {
+                if (!grouped[r.pcName]) grouped[r.pcName] = [];
+                grouped[r.pcName].push(r);
+              });
+              const pcNames = Object.keys(grouped);
+
+              if (pcNames.length === 0) {
+                return (
+                  <div className="settings-card">
+                    <div className="settings-card-content" style={{ textAlign: 'center', color: 'var(--text-muted)' }}>
+                      Belum ada file rekaman yang tersimpan di server.
+                    </div>
+                  </div>
+                );
+              }
+
+              return pcNames.map(pc => (
+                <div className="settings-card" key={pc} style={{ marginBottom: '16px' }}>
+                  <div className="settings-card-accent purple"></div>
+                  <div className="settings-card-content" style={{ padding: '0' }}>
+                    <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', backgroundColor: 'rgba(255,255,255,0.02)' }}>
+                      <h3 style={{ margin: 0, display: 'flex', alignItems: 'center' }}>
+                        <i className="fa-solid fa-desktop" style={{ marginRight: '8px', color: 'var(--accent)' }}></i> 
+                        {pc} 
+                        <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: 'normal', marginLeft: '12px' }}>
+                          ({grouped[pc].length} file)
+                        </span>
+                      </h3>
+                    </div>
+                    <table className="logs-table">
+                      <thead>
+                        <tr>
+                          <th>Waktu Insiden</th>
+                          <th>File Rekaman</th>
+                          <th>Ukuran</th>
+                          <th style={{ textAlign: 'center' }}>Aksi</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {grouped[pc].map((rec, i) => (
+                          <tr key={i}>
+                            <td>
+                              <strong>{rec.isParsed ? rec.dateStr : new Date(rec.createdAt).toLocaleDateString()}</strong>
+                              <br/>
+                              <span style={{ color: "var(--text-muted)" }}>{rec.isParsed ? rec.timeStr : new Date(rec.createdAt).toLocaleTimeString()}</span>
+                            </td>
+                            <td>
+                              {rec.fileName}
+                              {!rec.isParsed && <><br/><span style={{ fontSize: "0.75rem", color: "var(--warning)" }}>Format folder lama</span></>}
+                            </td>
+                            <td>{(rec.size / 1024 / 1024).toFixed(2)} MB</td>
+                            <td style={{ textAlign: 'center' }}>
+                              <button 
+                                className="btn-filter primary" 
+                                style={{ padding: '4px 12px', fontSize: '0.8rem' }}
+                                onClick={() => setPlayingAudio({ url: rec.url, name: `${rec.pcName} (${rec.isParsed ? rec.timeStr : rec.fileName})` })}
+                              >
+                                <i className="fa-solid fa-play"></i> Play
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ));
+            })()}
           </div>
         )}
 
