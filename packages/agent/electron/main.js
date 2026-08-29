@@ -419,6 +419,8 @@ ipcMain.handle('select-folder', async () => {
 let currentSessionDir = null;
 let currentAgentName = null;
 let currentServerIp = null;
+let pendingAudioChunks = [];
+
 ipcMain.on('start-recording', (event, { sessionFolderName, partNumber, recordDir, agentName, serverIp }) => {
     currentAgentName = agentName;
     currentServerIp = serverIp;
@@ -439,16 +441,27 @@ ipcMain.on('start-recording', (event, { sessionFolderName, partNumber, recordDir
     const filePath = path.join(sessionDir, filename);
 
     audioWriteStream = fs.createWriteStream(filePath);
+
+    // Flush any pending chunks (e.g. EBML header sent just before stream was ready)
+    if (pendingAudioChunks.length > 0) {
+      for (const chunk of pendingAudioChunks) {
+        audioWriteStream.write(chunk);
+      }
+      pendingAudioChunks = [];
+    }
+
     writeAgentLog('INFO', `Memulai perekaman audio ke: ${filePath}`);
   } catch (error) {
-
     writeAgentLog('ERROR', `Gagal memulai perekaman: ${error.message}`);
   }
 });
 
 ipcMain.on('save-audio-chunk', (event, arrayBuffer) => {
+  const buf = Buffer.from(arrayBuffer);
   if (audioWriteStream) {
-    audioWriteStream.write(Buffer.from(arrayBuffer));
+    audioWriteStream.write(buf);
+  } else {
+    pendingAudioChunks.push(buf);
   }
 });
 
@@ -459,9 +472,12 @@ ipcMain.on('stop-recording', (event, isRollover) => {
     const capturedAgentName = currentAgentName;
     const capturedServerIp = currentServerIp;
     
-    audioWriteStream = null;
+    if (audioWriteStream === streamToClose) {
+      audioWriteStream = null;
+    }
     if (!isRollover) {
       currentSessionDir = null;
+      pendingAudioChunks = [];
     }
     
     streamToClose.end();

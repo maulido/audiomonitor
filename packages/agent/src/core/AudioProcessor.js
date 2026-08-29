@@ -144,9 +144,15 @@ class AudioProcessor {
     this.chunkTimer = setTimeout(() => {
       if (this.mediaRecorder && this.mediaRecorder.state === 'recording') {
         this.mediaRecorder.onstop = () => {
-          if (window.electronAPI && window.electronAPI.stopRecording) { window.electronAPI.stopRecording(true); }
+          if (window.electronAPI && window.electronAPI.stopRecording) { 
+            window.electronAPI.stopRecording(true); 
+          }
           this.partNumber++;
-          this._startMediaRecorderChunk();
+          setTimeout(() => {
+            if (this.isRecording) {
+              this._startMediaRecorderChunk();
+            }
+          }, 150);
         };
         this.mediaRecorder.stop();
       }

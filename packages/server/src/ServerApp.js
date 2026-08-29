@@ -85,6 +85,42 @@ class ServerApp {
       if (rel.startsWith('..') || path.isAbsolute(rel)) {
         return res.status(403).send('Forbidden');
       }
+
+      // Auto-repair missing EBML headers for rollover WebM chunks
+      if (fs.existsSync(fullPath) && fullPath.endsWith('.webm')) {
+        try {
+          const fd = fs.openSync(fullPath, 'r');
+          const magic = Buffer.alloc(4);
+          fs.readSync(fd, magic, 0, 4, 0);
+          fs.closeSync(fd);
+
+          if (magic.toString('hex') !== '1a45dfa3') {
+            // Missing EBML header! Let's find Part_001.webm in same or base session folder
+            const parentDir = path.dirname(fullPath);
+            let p1Path = path.join(parentDir, 'Part_001.webm');
+            
+            if (!fs.existsSync(p1Path)) {
+              const baseFolder = path.basename(parentDir).replace(/_to_\d{2}-\d{2}-\d{2}$/i, '');
+              p1Path = path.join(path.dirname(parentDir), baseFolder, 'Part_001.webm');
+            }
+
+            if (fs.existsSync(p1Path)) {
+              const p1Buf = fs.readFileSync(p1Path);
+              const clusterMarker = Buffer.from([0x1f, 0x43, 0xb6, 0x75]);
+              const clusterIdx = p1Buf.indexOf(clusterMarker);
+              if (clusterIdx > 0 && p1Buf.slice(0, 4).toString('hex') === '1a45dfa3') {
+                const headerBuf = p1Buf.slice(0, clusterIdx);
+                const currentData = fs.readFileSync(fullPath);
+                const repairedData = Buffer.concat([headerBuf, currentData]);
+                fs.writeFileSync(fullPath, repairedData);
+                logger.info(`[Media] Berhasil memperbaiki WebM header yang hilang untuk: ${path.basename(fullPath)}`);
+              }
+            }
+          }
+        } catch (repairErr) {
+          logger.warn(`[Media] Auto-repair check error: ${repairErr.message}`);
+        }
+      }
       
       res.sendFile(fullPath, (err) => {
         if (err && !res.headersSent && err.code !== 'ECONNABORTED' && err.status !== 304) {
