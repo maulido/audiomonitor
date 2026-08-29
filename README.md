@@ -1,80 +1,143 @@
-# 🎙️ AudioMonitor
+# AudioMonitor
 
-AudioMonitor adalah sistem pengawasan audio jarak jauh (Remote Telemetry) kelas enterprise yang dirancang khusus untuk studio siaran langsung (*live streaming*). Sistem ini secara cerdas menggabungkan pembacaan fisik (Hardware Microphone) dan pembacaan perangkat lunak (OBS Studio) secara bersamaan untuk mencegah insiden fatal selama siaran.
-
-![AudioMonitor Dashboard](https://img.shields.io/badge/UI-Dashboard_Ready-success)
-![Platform](https://img.shields.io/badge/Platform-Windows_|_Electron-blue)
-![Stack](https://img.shields.io/badge/Stack-Node.js_|_React-yellow)
-
-## ✨ Fitur Utama
-*   **Pemantauan Hibrida (Mic + OBS):** Sistem membaca volume langsung dari *driver hardware* mikrofon sekaligus menyadap status *output* dari dalam OBS Studio (via WebSocket) secara bersamaan.
-*   **Deteksi Cerdas 3 Bahaya Utama:**
-    1.  **Mic Mati / Terlepas:** Mendeteksi jika ruangan hening total melebihi batas waktu toleransi.
-    2.  **Suara Pecah (Clipping):** Mendeteksi jika level audio (dB) menabrak batas atas terlalu lama.
-    3.  **Bocor Tanpa Suara (OBS Mute):** Mendeteksi jika ada orang berbicara kencang di mikrofon, namun suara tersebut terblokir/Mute di dalam OBS.
-*   **Notifikasi Telegram (Anti-Spam):** Mengirimkan peringatan instan ke grup/chat Telegram hanya saat bahaya terjadi, lengkap dengan interval pengingat.
-*   **Doomsday Protocol (Offline Fallback):** Jika Central Server mati listrik, setiap PC (Agent) akan mengambil alih tugas pengiriman peringatan Telegram menggunakan koneksi internet mereka masing-masing.
-*   **Silent Auto-Update (OTA):** Pembaruan aplikasi PC secara diam-diam (*Seamless*) melalui GitHub Releases. Pengguna PC tidak akan diganggu oleh *wizard* instalasi.
+AudioMonitor adalah sistem pengawasan audio jarak jauh (Remote Audio Telemetry) kelas enterprise yang dirancang khusus untuk studio siaran langsung (live streaming) dan multi-PC broadcast environment. Sistem ini menggabungkan pembacaan fisik (Hardware Microphone) dan pembacaan perangkat lunak (OBS Studio WebSocket) secara bersamaan untuk mencegah insiden audio fatal selama siaran berlangsung.
 
 ---
 
-## 🏗️ Arsitektur Sistem (Monorepo)
+## Fitur Utama
 
-Proyek ini dibangun menggunakan struktur Monorepo (NPM Workspaces) yang memuat 3 aplikasi terpisah:
-
-1.  **`packages/server` (Pusat Komando):** Aplikasi backend Node.js (Socket.io) yang menerima seluruh telemetri dari berbagai PC, mencatat log insiden ke SQLite, dan menembakkan pesan Telegram.
-2.  **`packages/dashboard` (Pusat Kontrol):** Aplikasi web React (Vite) yang menyediakan antarmuka visual (Dashboard) untuk memantau puluhan PC sekaligus dari satu layar.
-3.  **`packages/agent` (Pasukan Pemantau):** Aplikasi desktop rahasia (Electron) yang dipasang di setiap komputer siaran. Berjalan diam-diam di *System Tray* untuk membaca sensor suara dan OBS.
+- **Pemantauan Audio Hibrida (Mic + OBS):** Membaca volume dan sinyal suara langsung dari driver mikrofon fisik sekaligus menyadap status level audio dan status mute dari OBS Studio secara real-time.
+- **Deteksi Cerdas 3 Status Bahaya:**
+  1. **Mic Mati / Hening Total (BAHAYA_MIC_MATI):** Mendeteksi jika ruangan hening melebihi batas waktu toleransi (Dead Mic Timeout).
+  2. **Suara Pecah (BAHAYA_AUDIO_PECAH):** Mendeteksi jika level audio (dB) menabrak batas atas (Clipping) dalam durasi tertentu.
+  3. **Bocor Tanpa Suara / OBS Mute (BAHAYA_OBS_MUTE):** Mendeteksi jika host berbicara di mikrofon namun jalur audio di OBS dalam status Mute.
+- **Fitur Auto-Recovery (Auto-Unmute OBS):** Fitur otomatis untuk membuka Mute pada OBS secara mandiri seketika saat host mulai berbicara, mencegah status bahaya tanpa memerlukan intervensi manual operator.
+- **Perekaman Otomatis Sesi Siaran (Auto-Record):** Sinkronisasi otomatis perekaman audio host saat OBS Streaming/Recording aktif. Audio dipotong otomatis setiap 10 menit (rollover chunk) dan langsung diunggah ke penyimpanan Central Server.
+- **Unified Continuous Audio Player:** Pemutar audio terintegrasi pada Dashboard Web yang mampu memutar seluruh potongan part rekaman dalam satu timeline linier tanpa jeda, dilengkapi kontrol kecepatan pemutaran (1x, 1.25x, 1.5x, 2x), seek antar-part, dan perbaikan otomatis WebM EBML header.
+- **Centralized LAN Auto-Update Hub (Hybrid Update System):**
+  - **Sinkronisasi 1-Klik dari GitHub Releases:** Server dapat langsung memeriksa dan mengunduh file installer Agent versi terbaru dari repositori GitHub.
+  - **Upload Manual dari Web Dashboard:** Operator dapat mengunggah file installer `.exe` baru langsung melalui antarmuka web Dashboard.
+  - **Broadcast Pembaruan LAN:** Server menyiarkan perintah pembaruan ke seluruh atau salah satu PC Agent di jaringan lokal untuk melakukan download dan silent install secara otomatis di latar belakang tanpa mengganggu host.
+- **Peringatan Terpusat Telegram (Anti-Spam):** Mengirimkan peringatan instan ke grup atau chat Telegram saat terjadi insiden bahaya, dilengkapi pengaturan interval pengingat.
+- **Doomsday Protocol (Offline Fallback):** Jika Central Server offline atau mati listrik, setiap PC Agent secara otomatis mengambil alih pengiriman notifikasi Telegram secara mandiri menggunakan koneksi internet masing-masing.
+- **Pencatatan Insiden & Ekspor CSV:** Riwayat kejadian disimpan dan dapat difilter berdasarkan tanggal, nama PC, serta tipe status, lengkap dengan fitur ekspor ke format CSV.
+- **Konfigurasi Jarak Jauh (Remote Config):** Pengaturan sensitivitas bicara, batas clipping, nama PC, dan polling rate dapat diubah langsung dari Web Dashboard tanpa perlu menyentuh komputer Agent.
 
 ---
 
-## 🚀 Cara Menjalankan (Development)
+## Arsitektur Sistem
 
-### 1. Persiapan
-Pastikan Anda memiliki Node.js (v18+) terinstal.
+Proyek ini menggunakan struktur Monorepo (NPM Workspaces) yang terdiri dari tiga komponen utama:
+
+1. **`packages/server` (Central Server & Update Hub):**
+   - Backend Node.js berbasis Express dan Socket.io.
+   - Melayani endpoint API, WebSocket telemetri, penyimpanan database insiden, arsip rekaman audio, dan distribusi file pembaruan aplikasi.
+   - Menyajikan antarmuka Dashboard Web yang telah ter-bundle di port `4000`.
+   - Berjalan sebagai aplikasi background dengan System Tray Windows.
+
+2. **`packages/dashboard` (Web Monitoring Dashboard):**
+   - Antarmuka web modern berbasis React dan Vite.
+   - Menampilkan visualisasi real-time sparkline meter audio, status perangkat keras (CPU, RAM, bitrate stream), kontrol pemutar audio, log insiden, dan panel pengaturan server.
+
+3. **`packages/agent` (Client Monitoring Agent):**
+   - Aplikasi desktop berbasis Electron yang berjalan di System Tray setiap PC siaran.
+   - Memantau hardware audio via Web Audio API, menghubungkan ke OBS Studio via WebSocket (obs-websocket-js v5), merekam chunk audio, dan mengeksekusi silent auto-update.
+
+---
+
+## Persyaratan Sistem
+
+- **Sistem Operasi:** Windows 10 / Windows 11 (64-bit).
+- **Node.js:** Versi 18.0.0 atau lebih baru.
+- **OBS Studio:** Versi 28 ke atas (WebSocket Server bawaan aktif).
+- **Jaringan:** Terhubung dalam satu jaringan lokal (LAN/Wi-Fi yang sama) antara komputer Server dan seluruh PC Agent.
+
+---
+
+## Panduan Instalasi & Pengembangan (Development)
+
+### 1. Kloning Repositori
 ```bash
 git clone https://github.com/maulido/audiomonitor.git
 cd audiomonitor
 npm install
 ```
 
-### 2. Menjalankan Central Server & Dashboard
-Buka terminal pertama dan jalankan perintah:
+### 2. Menjalankan Central Server
 ```bash
-npm run dev --workspace=packages/server
+npm run start --workspace=packages/server
 ```
-Buka browser dan akses `http://localhost:3000`. Masukkan PIN default: `1234`.
+Server akan berjalan di port `4000`. Akses Web Dashboard melalui browser:
+```
+http://localhost:4000
+```
+PIN keamanan default: `1234`.
 
-### 3. Menjalankan Agent (Electron)
-Buka terminal kedua dan jalankan perintah:
+### 3. Menjalankan Dashboard (Mode Dev Vite)
+```bash
+npm run dev --workspace=packages/dashboard
+```
+Dashboard dev server akan berjalan di `http://localhost:5173`.
+
+### 4. Menjalankan Agent (Mode Dev Electron)
 ```bash
 npm run dev --workspace=packages/agent
 ```
 
 ---
 
-## 📦 Build & Distribusi (Production)
+## Build & Distribusi Produksi
 
-### Build Agent (Installer Windows .exe)
+### 1. Build Bundle Web Dashboard
+```bash
+npm run build --workspace=packages/dashboard
+```
+Salin folder `dist` ke `packages/server/dashboard-dist` agar otomatis disajikan oleh server.
+
+### 2. Build Server Installer Windows (`.exe`)
+```bash
+npm run build --workspace=packages/server
+```
+File installer akan dibuat di folder `packages/server/out/AudioMonitor_Server_Installer_v1.0.1.exe`.
+
+### 3. Build Agent Installer Windows (`.exe`)
 ```bash
 npm run build --workspace=packages/agent
 ```
-*Installer akan otomatis dibuat di folder `packages/agent/out/`.*
-
-### Rilis OTA (Auto-Update) via GitHub
-1. Ubah nomor versi (misal ke `1.0.2`) di `packages/agent/package.json`.
-2. Lakukan *build* seperti di atas.
-3. Buat rilis baru di halaman GitHub Releases dengan tag `v1.0.2`.
-4. Unggah file `AudioMonitor_Agent_Installer_v1.0.2.exe`, file `.blockmap`, dan `latest.yml` ke rilis tersebut.
-5. Seluruh PC Agent yang sedang menyala akan otomatis mendownload dan memperbarui dirinya sendiri.
+File installer akan dibuat di folder `packages/agent/out/AudioMonitor_Agent_Installer_v1.0.1.exe`.
 
 ---
 
-## ⚙️ Penyesuaian Sensitivitas (Dari Dashboard)
-*   **Noise Gate:** Batas minimal volume agar sistem tidak tertipu oleh suara AC/Kipas.
-*   **Silence Timeout (Detik):** Batas waktu jeda napas/bicara sebelum masuk mode Standby.
-*   **Dead Mic Timeout (Detik):** Batas toleransi keheningan maksimal (contoh: 600 detik / 10 menit) sebelum membunyikan alarm `BAHAYA_MIC_MATI`.
-*   **Clipping Threshold (dB) & Duration:** Ambang batas volume maksimum sebelum dianggap pecah.
+## Konfigurasi Parameter Sensitivitas
+
+Seluruh parameter berikut dapat disesuaikan per-komputer melalui Dashboard Modal Settings:
+
+| Parameter | Fungsi | Nilai Default |
+|---|---|---|
+| **Speaking Threshold** | Ambang sensitivitas volume mikrofon agar dianggap sedang berbicara | 10% |
+| **Silence Timeout** | Waktu jeda hening sebelum masuk status Standby Diam | 30 detik |
+| **Dead Mic Timeout** | Batas waktu hening maksimal sebelum alarm Mic Mati berbunyi | 600 detik (10 menit) |
+| **OBS Mute Timeout** | Batas waktu toleransi berbicara saat OBS termute sebelum alarm berbunyi | 5 detik |
+| **Clipping Threshold** | Ambang batas volume maksimum sebelum dianggap suara pecah | 98% (-0.5 dB) |
+| **Clipping Duration** | Durasi suara pecah terus-menerus sebelum alarm Suara Pecah aktif | 3 detik |
+| **Auto-Recovery Unmute** | Memaksa buka Mute di OBS seketika saat host mulai berbicara | Aktif |
+| **Auto-Record on OBS Live** | Otomatis merekam audio host saat OBS aktif streaming/recording | Nonaktif |
+| **Data Polling Rate** | Frekuensi pengiriman data telemetri (Realtime 0.5s / Normal 2s / Eco 5s) | Realtime (500ms) |
 
 ---
-*Dibuat untuk keandalan siaran tingkat tinggi.* 🎧
+
+## Alur Pembaruan Otomatis (LAN Auto-Update)
+
+1. Kompilasi versi baru Agent menggunakan perintah `npm run build --workspace=packages/agent`.
+2. Buka Web Dashboard di tab **Settings** pada bagian **Pembaruan Aplikasi Terpusat**.
+3. Pilih salah satu metode penyediaan file installer:
+   - Klik **Cek Rilis GitHub** lalu klik **Unduh Installer ke Server**, atau
+   - Klik **Upload File Installer Manual** dan pilih file `.exe` yang baru dibuat.
+4. Klik **Sebarkan ke Seluruh PC Agent** (atau tombol update per PC pada kartu agent).
+5. Seluruh PC Agent akan mengunduh file secara lokal via HTTP LAN dan mengeksekusi instalasi otomatis tanpa memunculkan jendela wizard.
+
+---
+
+## Lisensi
+
+Didistribusikan di bawah lisensi FOSS (Free and Open Source Software).
