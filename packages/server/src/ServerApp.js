@@ -62,6 +62,12 @@ class ServerApp {
     const path = require('path');
     const dashboardPath = path.join(__dirname, '../dashboard-dist');
     this.app.use(express.static(dashboardPath));
+
+    // Menyajikan folder rekaman agar bisa diakses browser via /media/...
+    const os = require('os');
+    const recordDir = this.configManager.config.recordDir 
+      || path.join(os.homedir(), 'Documents', 'AudioMonitor-Recordings-Server');
+    this.app.use('/media', express.static(recordDir));
   }
 
   /**
@@ -182,6 +188,73 @@ class ServerApp {
         if (err) return res.status(500).send({ success: false, error: err.message });
         res.send({ success: true });
       });
+    });
+
+    // API: Mengambil daftar file rekaman
+    this.app.get('/api/records', (req, res) => {
+      const fs = require('fs');
+      const path = require('path');
+      const os = require('os');
+      const recordDir = this.configManager.config.recordDir || path.join(os.homedir(), 'Documents', 'AudioMonitor-Recordings-Server');
+      
+      const records = [];
+      if (fs.existsSync(recordDir)) {
+        try {
+          const pcFolders = fs.readdirSync(recordDir);
+          pcFolders.forEach(pc => {
+            const pcPath = path.join(recordDir, pc);
+            if (fs.statSync(pcPath).isDirectory()) {
+              const files = fs.readdirSync(pcPath);
+              files.forEach(file => {
+                const filePath = path.join(pcPath, file);
+                const stat = fs.statSync(filePath);
+                if (stat.isFile()) {
+                  records.push({
+                    pcName: pc,
+                    fileName: file,
+                    size: stat.size,
+                    createdAt: stat.birthtime,
+                    url: `/media/${encodeURIComponent(pc)}/${encodeURIComponent(file)}`
+                  });
+                }
+              });
+            }
+          });
+        } catch(e) {
+          console.error("Error reading records directory", e);
+        }
+      }
+      
+      // Urutkan dari yang terbaru
+      records.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+      res.json(records);
+    });
+
+    // API: Hapus file rekaman tunggal
+    this.app.delete('/api/records', (req, res) => {
+      const { pcName, fileName } = req.body || {};
+      if (!pcName || !fileName) return res.status(400).send({ success: false, error: 'Bad Request' });
+      
+      const fs = require('fs');
+      const path = require('path');
+      const os = require('os');
+      const recordDir = this.configManager.config.recordDir || path.join(os.homedir(), 'Documents', 'AudioMonitor-Recordings-Server');
+      
+      // Mencegah path traversal attack
+      const safePcName = path.basename(pcName);
+      const safeFileName = path.basename(fileName);
+      
+      const filePath = path.join(recordDir, safePcName, safeFileName);
+      if (fs.existsSync(filePath)) {
+        try {
+          fs.unlinkSync(filePath);
+          res.json({ success: true });
+        } catch (e) {
+          res.status(500).json({ success: false, error: e.message });
+        }
+      } else {
+        res.status(404).json({ success: false, error: 'File not found' });
+      }
     });
 
     // API: Menyimpan pengaturan kunci (Token & Chat ID) Telegram

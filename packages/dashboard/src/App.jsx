@@ -70,10 +70,13 @@ function App() {
   const [filterStatus, setFilterStatus] = useState('ALL');
 
   // Logs View State
-  const [currentView, setCurrentView] = useState('live'); // 'live', 'logs', 'settings'
+  const [currentView, setCurrentView] = useState('live'); // 'live', 'logs', 'records', 'settings'
   const [logs, setLogs] = useState([]);
+  const [records, setRecords] = useState([]);
+  const [playingAudio, setPlayingAudio] = useState(null);
   const [systemLogs, setSystemLogs] = useState('');
   const [showSystemLogs, setShowSystemLogs] = useState(false);
+
 
   // Incident Filter State
   const getDefaultStartDate = () => { const d = new Date(); d.setDate(d.getDate() - 7); return d.toISOString().slice(0, 10); };
@@ -257,10 +260,23 @@ function App() {
     fetchConfig();
   }, []);
 
+  const fetchRecords = async () => {
+    try {
+      const res = await apiFetch('/api/records');
+      if (res.ok) {
+        setRecords(await res.json());
+      }
+    } catch (e) {
+      console.error('Failed to fetch records', e);
+    }
+  };
+
   useEffect(() => {
     if (isAuthenticated && currentView === 'logs') {
       fetchLogs({ startDate: incidentStartDate, endDate: incidentEndDate });
       fetchPcNames();
+    } else if (isAuthenticated && currentView === 'records') {
+      fetchRecords();
     } else if (isAuthenticated && currentView === 'settings') {
       fetchConfig();
     }
@@ -661,6 +677,7 @@ function App() {
         <div className="nav-links">
           <button className={`nav-btn ${currentView === 'live' ? 'active' : ''}`} onClick={() => setCurrentView('live')}>Live Status</button>
           <button className={`nav-btn ${currentView === 'logs' ? 'active' : ''}`} onClick={() => setCurrentView('logs')}>Incident Logs</button>
+          <button className={`nav-btn ${currentView === 'records' ? 'active' : ''}`} onClick={() => setCurrentView('records')}><i className="fa-solid fa-file-audio"></i> File Rekaman</button>
           <button className={`nav-btn ${currentView === 'settings' ? 'active' : ''}`} onClick={() => setCurrentView('settings')}>Settings</button>
         </div>
         <div className={`server-status ${isConnected ? 'connected' : 'disconnected'}`}>
@@ -1115,6 +1132,71 @@ function App() {
           </div>
           );
         })()}
+
+        {currentView === 'records' && (
+          <div className="settings-layout" style={{ maxWidth: '1000px' }}>
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <h1 className="settings-header" style={{ marginBottom: 0 }}>File Rekaman</h1>
+                <button className="btn-filter secondary" onClick={fetchRecords}><i className="fa-solid fa-rotate"></i> Muat Ulang</button>
+              </div>
+              <p className="settings-desc">Daftar file rekaman audio dari insiden yang disimpan oleh Agent.</p>
+            </div>
+            
+            {/* Audio Player */}
+            {playingAudio && (
+              <div className="settings-card" style={{ marginBottom: '16px', background: 'rgba(59, 130, 246, 0.1)', borderColor: 'rgba(59, 130, 246, 0.3)' }}>
+                <div className="settings-card-content" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ fontWeight: 600, color: 'var(--accent)' }}>
+                      <i className="fa-solid fa-volume-high" style={{ marginRight: '8px' }}></i>
+                      Memutar: {playingAudio.name}
+                    </div>
+                    <button className="btn-filter secondary" style={{ padding: '4px 8px' }} onClick={() => setPlayingAudio(null)}><i className="fa-solid fa-xmark"></i> Tutup</button>
+                  </div>
+                  <audio controls autoPlay src={playingAudio.url} style={{ width: '100%', outline: 'none' }} />
+                </div>
+              </div>
+            )}
+
+            <div className="settings-card">
+              <div className="settings-card-accent purple"></div>
+              <div className="settings-card-content" style={{ padding: '0' }}>
+                <table className="logs-table">
+                  <thead>
+                    <tr>
+                      <th>Nama PC</th>
+                      <th>Nama File (Waktu)</th>
+                      <th>Ukuran</th>
+                      <th style={{ textAlign: 'center' }}>Aksi</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {records.map((rec, i) => (
+                      <tr key={i}>
+                        <td><strong>{rec.pcName}</strong></td>
+                        <td>{rec.fileName}<br/><span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>{new Date(rec.createdAt).toLocaleString()}</span></td>
+                        <td>{(rec.size / 1024 / 1024).toFixed(2)} MB</td>
+                        <td style={{ textAlign: 'center' }}>
+                          <button 
+                            className="btn-filter primary" 
+                            style={{ padding: '4px 12px', fontSize: '0.8rem' }}
+                            onClick={() => setPlayingAudio({ url: rec.url, name: `${rec.pcName} - ${rec.fileName}` })}
+                          >
+                            <i className="fa-solid fa-play"></i> Play
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                    {records.length === 0 && (
+                      <tr><td colSpan="4" style={{textAlign: 'center', color: 'var(--text-muted)'}}>Belum ada file rekaman yang tersimpan di server.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
 
         {currentView === 'settings' && (
           <div className="settings-layout">
