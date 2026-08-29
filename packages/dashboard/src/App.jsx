@@ -73,7 +73,8 @@ function App() {
   const [currentView, setCurrentView] = useState('live'); // 'live', 'logs', 'records', 'settings'
   const [logs, setLogs] = useState([]);
   const [records, setRecords] = useState([]);
-  const [playingAudio, setPlayingAudio] = useState(null);
+  const [playingSession, setPlayingSession] = useState(null); // { folderName, pcName, dateStr, timeStr, parts: [] }
+  const [currentPartIndex, setCurrentPartIndex] = useState(0);
   const [recordPcFilter, setRecordPcFilter] = useState('');
   const [systemLogs, setSystemLogs] = useState('');
   const [showSystemLogs, setShowSystemLogs] = useState(false);
@@ -1148,7 +1149,7 @@ function App() {
         })()}
 
         {currentView === 'records' && (
-          <div className="settings-layout" style={{ maxWidth: '1000px' }}>
+          <div className="settings-layout" style={{ maxWidth: '1050px' }}>
             <div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <h1 className="settings-header" style={{ marginBottom: 0 }}>File Rekaman</h1>
@@ -1161,28 +1162,70 @@ function App() {
                   <button className="btn-filter secondary" onClick={fetchRecords}><i className="fa-solid fa-rotate"></i> Muat Ulang</button>
                 </div>
               </div>
-              <p className="settings-desc">Daftar file rekaman audio dari insiden yang disimpan oleh Agent.</p>
+              <p className="settings-desc">Daftar rekaman insiden suara berdasarkan sesi kejadian. Potongan audio (part) dapat diputar berurutan secara otomatis.</p>
             </div>
             
-            {/* Audio Player */}
-            {playingAudio && (
-              <div className="settings-card" style={{ marginBottom: '16px', background: 'rgba(59, 130, 246, 0.1)', borderColor: 'rgba(59, 130, 246, 0.3)' }}>
-                <div className="settings-card-content" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div style={{ fontWeight: 600, color: 'var(--accent)' }}>
-                      <i className="fa-solid fa-volume-high" style={{ marginRight: '8px' }}></i>
-                      Memutar: {playingAudio.name}
+            {/* Smart Audio Playlist Player */}
+            {playingSession && playingSession.parts && playingSession.parts[currentPartIndex] && (
+              <div className="settings-card playlist-player-card" style={{ marginBottom: '20px', background: 'rgba(59, 130, 246, 0.08)', borderColor: 'rgba(59, 130, 246, 0.35)' }}>
+                <div className="settings-card-content" style={{ display: 'flex', flexDirection: 'column', gap: '14px', padding: '18px 24px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                    <div>
+                      <div style={{ fontWeight: 700, color: 'var(--accent)', fontSize: '1rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <i className="fa-solid fa-volume-high"></i>
+                        <span>{playingSession.pcName}</span>
+                        <span style={{ color: 'var(--text-muted)', fontWeight: 'normal', fontSize: '0.85rem' }}>
+                          &bull; {playingSession.isParsed ? `${playingSession.dateStr} (${playingSession.timeStr})` : new Date(playingSession.createdAt).toLocaleString()}
+                        </span>
+                      </div>
+                      <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                        Memutar <strong>Part {currentPartIndex + 1}</strong> dari {playingSession.parts.length} ({playingSession.parts[currentPartIndex].fileName})
+                      </div>
                     </div>
-                    <button className="btn-filter secondary" style={{ padding: '4px 8px' }} onClick={() => setPlayingAudio(null)}><i className="fa-solid fa-xmark"></i> Tutup</button>
+                    
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <button 
+                        className="btn-filter secondary" 
+                        style={{ padding: '6px 12px', fontSize: '0.8rem' }}
+                        disabled={currentPartIndex === 0}
+                        onClick={() => setCurrentPartIndex(p => Math.max(0, p - 1))}
+                        title="Part Sebelumnya"
+                      >
+                        <i className="fa-solid fa-backward-step"></i> Prev
+                      </button>
+                      <button 
+                        className="btn-filter secondary" 
+                        style={{ padding: '6px 12px', fontSize: '0.8rem' }}
+                        disabled={currentPartIndex >= playingSession.parts.length - 1}
+                        onClick={() => setCurrentPartIndex(p => Math.min(playingSession.parts.length - 1, p + 1))}
+                        title="Part Berikutnya"
+                      >
+                        Next <i className="fa-solid fa-forward-step"></i>
+                      </button>
+                      <button 
+                        className="btn-filter secondary" 
+                        style={{ padding: '6px 10px', fontSize: '0.8rem' }} 
+                        onClick={() => setPlayingSession(null)}
+                      >
+                        <i className="fa-solid fa-xmark"></i> Tutup
+                      </button>
+                    </div>
                   </div>
+
                   <audio 
+                    key={playingSession.parts[currentPartIndex].url}
                     controls 
                     autoPlay 
-                    src={playingAudio.url} 
+                    src={playingSession.parts[currentPartIndex].url} 
                     style={{ width: '100%', outline: 'none' }} 
+                    onEnded={() => {
+                      if (currentPartIndex < playingSession.parts.length - 1) {
+                        setCurrentPartIndex(p => p + 1);
+                      }
+                    }}
                     onError={() => {
                       customAlert('Gagal memuat file rekaman audio. File mungkin telah dipindahkan atau dihapus dari server.', 'Gagal Memutar Audio');
-                      setPlayingAudio(null);
+                      setPlayingSession(null);
                     }}
                   />
                 </div>
@@ -1190,16 +1233,38 @@ function App() {
             )}
 
             {(() => {
-              // Kelompokkan records berdasarkan pcName
-              const grouped = {};
+              // 1. Group records by PC
+              // 2. Inside each PC, group by folderName (Session)
+              const pcGrouped = {};
               records.forEach(r => {
-                // Apply filter jika ada
                 if (recordPcFilter && r.pcName !== recordPcFilter) return;
+                if (!pcGrouped[r.pcName]) pcGrouped[r.pcName] = {};
                 
-                if (!grouped[r.pcName]) grouped[r.pcName] = [];
-                grouped[r.pcName].push(r);
+                const sessionKey = r.folderName;
+                if (!pcGrouped[r.pcName][sessionKey]) {
+                  pcGrouped[r.pcName][sessionKey] = {
+                    folderName: r.folderName,
+                    pcName: r.pcName,
+                    isParsed: r.isParsed,
+                    dateStr: r.dateStr,
+                    timeStr: r.timeStr,
+                    createdAt: r.createdAt,
+                    totalSize: 0,
+                    parts: []
+                  };
+                }
+                pcGrouped[r.pcName][sessionKey].totalSize += (r.size || 0);
+                pcGrouped[r.pcName][sessionKey].parts.push(r);
               });
-              const pcNames = Object.keys(grouped);
+
+              // Sort parts inside each session by fileName
+              Object.values(pcGrouped).forEach(sessions => {
+                Object.values(sessions).forEach(sess => {
+                  sess.parts.sort((a, b) => (a.fileName || '').localeCompare(b.fileName || ''));
+                });
+              });
+
+              const pcNames = Object.keys(pcGrouped);
 
               if (pcNames.length === 0) {
                 return (
@@ -1213,57 +1278,99 @@ function App() {
                 );
               }
 
-              return pcNames.map(pc => (
-                <div className="settings-card" key={pc} style={{ marginBottom: '16px' }}>
-                  <div className="settings-card-accent purple"></div>
-                  <div className="settings-card-content" style={{ padding: '0' }}>
-                    <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', backgroundColor: 'rgba(255,255,255,0.02)' }}>
-                      <h3 style={{ margin: 0, display: 'flex', alignItems: 'center' }}>
-                        <i className="fa-solid fa-desktop" style={{ marginRight: '8px', color: 'var(--accent)' }}></i> 
-                        {pc} 
-                        <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: 'normal', marginLeft: '12px' }}>
-                          ({grouped[pc].length} file)
-                        </span>
-                      </h3>
+              return pcNames.map(pc => {
+                const sessions = Object.values(pcGrouped[pc]).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+                const totalPcParts = sessions.reduce((acc, s) => acc + s.parts.length, 0);
+
+                return (
+                  <div className="settings-card" key={pc} style={{ marginBottom: '24px' }}>
+                    <div className="settings-card-accent purple"></div>
+                    <div className="settings-card-content" style={{ padding: '0' }}>
+                      <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', backgroundColor: 'rgba(255,255,255,0.02)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <h3 style={{ margin: 0, display: 'flex', alignItems: 'center' }}>
+                          <i className="fa-solid fa-desktop" style={{ marginRight: '8px', color: 'var(--accent)' }}></i> 
+                          {pc} 
+                          <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: 'normal', marginLeft: '12px' }}>
+                            ({sessions.length} Sesi Kejadian &bull; {totalPcParts} Total Potongan)
+                          </span>
+                        </h3>
+                      </div>
+
+                      <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                        {sessions.map((session, sIdx) => {
+                          const isSessionActive = playingSession?.folderName === session.folderName;
+
+                          return (
+                            <div 
+                              key={session.folderName || sIdx} 
+                              className={`record-session-box ${isSessionActive ? 'active-playing' : ''}`}
+                            >
+                              <div className="session-box-header">
+                                <div>
+                                  <div className="session-time-title">
+                                    <i className="fa-solid fa-calendar-day" style={{ marginRight: '6px', color: 'var(--accent)' }}></i>
+                                    <strong>{session.isParsed ? session.dateStr : new Date(session.createdAt).toLocaleDateString()}</strong>
+                                    <span className="session-time-badge">
+                                      <i className="fa-solid fa-clock" style={{ marginRight: '4px' }}></i>
+                                      {session.isParsed ? session.timeStr : new Date(session.createdAt).toLocaleTimeString()}
+                                    </span>
+                                    {!session.isParsed && <span style={{ fontSize: "0.75rem", color: "var(--warning)", marginLeft: "8px" }}>Format lama</span>}
+                                  </div>
+                                  <div className="session-meta">
+                                    Total: {session.parts.length} Potongan &bull; {(session.totalSize / 1024 / 1024).toFixed(2)} MB
+                                  </div>
+                                </div>
+
+                                <div>
+                                  <button 
+                                    className="btn-filter primary"
+                                    style={{ padding: '6px 14px', fontSize: '0.85rem' }}
+                                    onClick={() => {
+                                      setPlayingSession(session);
+                                      setCurrentPartIndex(0);
+                                    }}
+                                  >
+                                    <i className="fa-solid fa-play"></i> Putar Sesi Ini
+                                  </button>
+                                </div>
+                              </div>
+
+                              <div className="session-parts-list">
+                                <span className="parts-label">Pilih Potongan:</span>
+                                <div className="part-chips-wrapper">
+                                  {session.parts.map((part, pIdx) => {
+                                    const isPartPlaying = isSessionActive && currentPartIndex === pIdx;
+
+                                    return (
+                                      <button
+                                        key={part.url || pIdx}
+                                        className={`part-chip-btn ${isPartPlaying ? 'playing' : ''}`}
+                                        onClick={() => {
+                                          setPlayingSession(session);
+                                          setCurrentPartIndex(pIdx);
+                                        }}
+                                        title={`Putar ${part.fileName}`}
+                                      >
+                                        {isPartPlaying ? (
+                                          <i className="fa-solid fa-volume-high" style={{ color: 'var(--accent)' }}></i>
+                                        ) : (
+                                          <i className="fa-solid fa-circle-play"></i>
+                                        )}
+                                        <span>Part {pIdx + 1}</span>
+                                        <span className="chip-size">({(part.size / 1024 / 1024).toFixed(2)} MB)</span>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
-                    <table className="logs-table">
-                      <thead>
-                        <tr>
-                          <th>Waktu Insiden</th>
-                          <th>File Rekaman</th>
-                          <th>Ukuran</th>
-                          <th style={{ textAlign: 'center' }}>Aksi</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {grouped[pc].map((rec, i) => (
-                          <tr key={rec.url || `${rec.fileName}-${i}`}>
-                            <td>
-                              <strong>{rec.isParsed ? rec.dateStr : new Date(rec.createdAt).toLocaleDateString()}</strong>
-                              <br/>
-                              <span style={{ color: "var(--text-muted)" }}>{rec.isParsed ? rec.timeStr : new Date(rec.createdAt).toLocaleTimeString()}</span>
-                            </td>
-                            <td>
-                              {rec.fileName}
-                              {!rec.isParsed && <><br/><span style={{ fontSize: "0.75rem", color: "var(--warning)" }}>Format folder lama</span></>}
-                            </td>
-                            <td>{(rec.size / 1024 / 1024).toFixed(2)} MB</td>
-                            <td style={{ textAlign: 'center' }}>
-                              <button 
-                                className="btn-filter primary" 
-                                style={{ padding: '4px 12px', fontSize: '0.8rem' }}
-                                onClick={() => setPlayingAudio({ url: rec.url, name: `${rec.pcName} (${rec.isParsed ? rec.timeStr : rec.fileName})` })}
-                              >
-                                <i className="fa-solid fa-play"></i> Play
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
                   </div>
-                </div>
-              ));
+                );
+              });
             })()}
           </div>
         )}
