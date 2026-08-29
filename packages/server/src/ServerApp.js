@@ -121,6 +121,28 @@ class ServerApp {
       const targetDir = path.join(baseDir, sessionFolder);
       
       try {
+        // Jika sessionFolder memiliki akhiran waktu stop (_to_...), gabungkan file dari folder sebelum di-rename jika ada
+        if (sessionFolder.includes('_to_')) {
+          const baseSessionFolder = sessionFolder.replace(/_to_\d{2}-\d{2}-\d{2}$/i, '');
+          const oldDir = path.join(baseDir, baseSessionFolder);
+          if (fs.existsSync(oldDir) && oldDir !== targetDir) {
+            try {
+              if (!fs.existsSync(targetDir)) {
+                fs.mkdirSync(targetDir, { recursive: true });
+              }
+              const oldFiles = fs.readdirSync(oldDir);
+              for (const f of oldFiles) {
+                const oldFilePath = path.join(oldDir, f);
+                const newFilePath = path.join(targetDir, f);
+                fs.renameSync(oldFilePath, newFilePath);
+              }
+              try { fs.rmdirSync(oldDir); } catch(e) {}
+            } catch(mergeErr) {
+              logger.warn(`[Upload] Gagal menggabungkan folder sesi lama: ${mergeErr.message}`);
+            }
+          }
+        }
+
         if (!fs.existsSync(targetDir)) {
           fs.mkdirSync(targetDir, { recursive: true });
         }
@@ -264,6 +286,8 @@ class ServerApp {
                   let realPcName = pc;
                   let uuid = '';
                   let isParsed = false;
+                  let isCompleted = false;
+                  let baseSessionKey = pc;
                   let dateStr = '';
                   let timeStr = '';
                   
@@ -273,6 +297,8 @@ class ServerApp {
                     const datePart = match[3];
                     const startTime = match[4].replace(/-/g, ':');
                     const endTime = match[5] ? match[5].replace(/-/g, ':') : 'Berlanjut...';
+                    isCompleted = !!match[5];
+                    baseSessionKey = `${uuid}_${datePart}_${match[4]}`;
                     
                     realPcName = (this.configManager.getPcName ? this.configManager.getPcName(uuid) : this.configManager.config.pcMapping?.[uuid]) || pcNamePart.replace(/_/g, ' ') || uuid;
                     dateStr = datePart;
@@ -282,6 +308,8 @@ class ServerApp {
 
                   records.push({
                     folderName: pc, // original folder name for URL construction
+                    baseSessionKey,
+                    isCompleted,
                     pcName: realPcName,
                     uuid,
                     isParsed,

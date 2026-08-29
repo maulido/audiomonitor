@@ -1546,13 +1546,16 @@ function App() {
                   pcGrouped[r.pcName].uuid = r.uuid;
                 }
                 
-                const sessionKey = r.folderName;
+                // Gunakan baseSessionKey agar part sebelum & sesudah rename tetap bersatu dalam 1 sesi kejadian
+                const sessionKey = r.baseSessionKey || (r.folderName ? r.folderName.replace(/_to_\d{2}-\d{2}-\d{2}$/i, '') : r.folderName);
                 if (!pcGrouped[r.pcName].sessions[sessionKey]) {
                   pcGrouped[r.pcName].sessions[sessionKey] = {
+                    sessionKey,
                     folderName: r.folderName,
                     pcName: r.pcName,
                     uuid: r.uuid,
                     isParsed: r.isParsed,
+                    isCompleted: r.isCompleted || (r.folderName && r.folderName.includes('_to_')),
                     dateStr: r.dateStr,
                     timeStr: r.timeStr,
                     createdAt: r.createdAt,
@@ -1560,8 +1563,18 @@ function App() {
                     parts: []
                   };
                 }
-                pcGrouped[r.pcName].sessions[sessionKey].totalSize += (r.size || 0);
-                pcGrouped[r.pcName].sessions[sessionKey].parts.push(r);
+                
+                const sess = pcGrouped[r.pcName].sessions[sessionKey];
+                // Jika file ini berasal dari folder yang sudah ada jam stop-nya, perbarui info waktu sesi
+                const isThisRecordCompleted = r.isCompleted || (r.folderName && r.folderName.includes('_to_'));
+                if (isThisRecordCompleted && !sess.isCompleted) {
+                  sess.isCompleted = true;
+                  sess.timeStr = r.timeStr;
+                  sess.folderName = r.folderName;
+                }
+
+                sess.totalSize += (r.size || 0);
+                sess.parts.push(r);
               });
 
               // Sort parts inside each session by fileName
