@@ -290,43 +290,63 @@ function App() {
       return;
     }
 
-    setPartDurations(new Array(playingSession.parts.length).fill(0));
+    // Default estimation from file size (~128kbps Opus = ~16KB/s)
+    const initialEstimated = playingSession.parts.map(p => {
+      if (p.size && p.size > 0) {
+        return Math.max(1, Math.round(p.size / 16000));
+      }
+      return 600;
+    });
+
+    setPartDurations(initialEstimated);
     setLocalCurrentTime(0);
     setCurrentPartIndex(0);
     pendingSeekOffsetRef.current = 0;
     setIsPlaying(true);
 
     let isCancelled = false;
-    const probeAll = async () => {
+
+    // Decode exact sample-accurate durations with AudioContext
+    const probeExactDurations = async () => {
       const results = await Promise.all(
-        playingSession.parts.map(p => new Promise(resolve => {
-          const tempAudio = new Audio();
-          tempAudio.src = p.url;
-          tempAudio.onloadedmetadata = () => {
-            resolve(tempAudio.duration && !isNaN(tempAudio.duration) ? tempAudio.duration : 0);
-          };
-          tempAudio.onerror = () => resolve(0);
-        }))
+        playingSession.parts.map(async (p, idx) => {
+          try {
+            const res = await fetch(p.url);
+            const buf = await res.arrayBuffer();
+            const ctx = new (window.AudioContext || window.webkitAudioContext)();
+            const decoded = await ctx.decodeAudioData(buf);
+            const d = decoded.duration;
+            ctx.close();
+            if (d && isFinite(d) && !isNaN(d) && d > 0) {
+              return d;
+            }
+          } catch (err) {
+            console.warn('Could not decode audio duration via AudioContext:', err);
+          }
+          return initialEstimated[idx] || 0;
+        })
       );
+
       if (!isCancelled) {
         setPartDurations(results);
       }
     };
-    probeAll();
+
+    probeExactDurations();
 
     return () => {
       isCancelled = true;
     };
   }, [playingSession]);
 
-  const totalSessionDuration = partDurations.reduce((acc, d) => acc + d, 0);
+  const totalSessionDuration = partDurations.reduce((acc, d) => acc + (isFinite(d) ? d : 0), 0);
 
   const startOffsets = useMemo(() => {
     const offsets = [];
     let currentOffset = 0;
     for (let i = 0; i < partDurations.length; i++) {
       offsets.push(currentOffset);
-      currentOffset += (partDurations[i] || 0);
+      currentOffset += (isFinite(partDurations[i]) ? partDurations[i] : 0);
     }
     return offsets;
   }, [partDurations]);
@@ -342,7 +362,7 @@ function App() {
     let targetLocalOffset = 0;
 
     for (let i = 0; i < partDurations.length; i++) {
-      const dur = partDurations[i] || 0;
+      const dur = isFinite(partDurations[i]) ? partDurations[i] : 0;
       if (targetGlobalTime < accumulated + dur || i === partDurations.length - 1) {
         targetPartIdx = i;
         targetLocalOffset = Math.max(0, targetGlobalTime - accumulated);
@@ -364,7 +384,8 @@ function App() {
 
   const handleAudioLoadedMetadata = (e) => {
     const audio = e.target;
-    if (audio.duration && !isNaN(audio.duration)) {
+    // Only update if duration is finite (ignore Infinity from WebM stream headers)
+    if (audio.duration && isFinite(audio.duration) && !isNaN(audio.duration) && audio.duration > 0) {
       setPartDurations(prev => {
         const next = [...prev];
         next[currentPartIndex] = audio.duration;
@@ -406,7 +427,7 @@ function App() {
   };
 
   const formatPlaybackTime = (sec) => {
-    if (isNaN(sec) || sec < 0) return '00:00';
+    if (isNaN(sec) || !isFinite(sec) || sec < 0) return '00:00';
     const h = Math.floor(sec / 3600);
     const m = Math.floor((sec % 3600) / 60);
     const s = Math.floor(sec % 60);
