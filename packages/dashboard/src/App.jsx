@@ -677,7 +677,7 @@ function App() {
         <div className="nav-links">
           <button className={`nav-btn ${currentView === 'live' ? 'active' : ''}`} onClick={() => setCurrentView('live')}>Live Status</button>
           <button className={`nav-btn ${currentView === 'logs' ? 'active' : ''}`} onClick={() => setCurrentView('logs')}>Incident Logs</button>
-          <button className={`nav-btn ${currentView === 'records' ? 'active' : ''}`} onClick={() => setCurrentView('records')}><i className="fa-solid fa-file-audio"></i> File Rekaman</button>
+          <button className={`nav-btn ${currentView === 'records' ? 'active' : ''}`} onClick={() => setCurrentView('records')}>File Rekaman</button>
           <button className={`nav-btn ${currentView === 'settings' ? 'active' : ''}`} onClick={() => setCurrentView('settings')}>Settings</button>
         </div>
         <div className={`server-status ${isConnected ? 'connected' : 'disconnected'}`}>
