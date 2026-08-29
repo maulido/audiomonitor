@@ -24,7 +24,7 @@ class ConfigManager {
       basePath = path.dirname(process.execPath);
     }
     
-    this.configPath = path.join(basePath, configFilePath);
+    this.configPath = path.isAbsolute(configFilePath) ? configFilePath : path.join(basePath, configFilePath);
     
     // Struktur baku sistem (Defaults)
     this.defaultConfig = {

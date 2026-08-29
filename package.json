@@ -8,6 +8,7 @@
   "scripts": {
     "start:server": "npm run start --workspace=packages/server",
     "start:dashboard": "npm run dev --workspace=packages/dashboard",
-    "start:agent": "npm run dev --workspace=packages/agent"
+    "start:agent": "npm run dev --workspace=packages/agent",
+    "test": "node tests/whitebox.test.js"
   }
 }

@@ -25,7 +25,7 @@ class DatabaseManager {
       fs.mkdirSync(dbDir, { recursive: true });
     }
     
-    this.dbPath = path.join(dbDir, dbName);
+    this.dbPath = path.isAbsolute(dbName) ? dbName : path.join(dbDir, dbName);
     this.incidents = [];
     this.nextId = 1;
     this.loadDb();
