@@ -6,7 +6,15 @@ let tray = null;
 let serverApp = null;
 const port = 4000;
 
-app.whenReady().then(() => {
+const gotTheLock = app.requestSingleInstanceLock();
+if (!gotTheLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    shell.openExternal(`http://localhost:${port}`);
+  });
+
+  app.whenReady().then(() => {
   if (app.dock) app.dock.hide();
   
   serverApp = new ServerApp(port);
@@ -76,3 +84,4 @@ app.whenReady().then(() => {
 app.on('window-all-closed', (e) => {
   e.preventDefault();
 });
+}

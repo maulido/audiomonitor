@@ -31,6 +31,18 @@ let mainWindow = null;
 let tray = null;
 let isQuitting = false;
 
+const gotTheLock = app.requestSingleInstanceLock();
+if (!gotTheLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+    }
+  });
+
 /**
  * Fungsi ini bertugas membaca UUID dari file konfigurasi lokal.
  * Jika file atau UUID tidak ditemukan, maka akan membuat UUID acak baru
@@ -680,3 +692,4 @@ ipcMain.handle('install-update', async (event, downloadUrl) => {
 
   return await downloadFile(downloadUrl);
 });
+}
