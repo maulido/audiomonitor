@@ -633,7 +633,161 @@ class ServerApp {
       res.json({ success: true, message: 'Perintah pembaruan disiarkan ke Agent', downloadUrl: fullDownloadUrl });
     });
 
-    // API: Upload installer Agent baru ke Server
+    // API: Cek Rilis Terbaru di GitHub Releases
+    this.app.get('/api/updates/check-github', async (req, res) => {
+      const https = require('https');
+      const options = {
+        hostname: 'api.github.com',
+        path: '/repos/maulido/audiomonitor/releases/latest',
+        method: 'GET',
+        headers: {
+          'User-Agent': 'AudioMonitor-Server',
+          'Accept': 'application/vnd.github.v3+json'
+        }
+      };
+
+      const request = https.request(options, (response) => {
+        let body = '';
+        response.on('data', chunk => body += chunk);
+        response.on('end', () => {
+          try {
+            if (response.statusCode === 200) {
+              const release = JSON.parse(body);
+              const tag = release.tag_name || '';
+              const version = tag.replace(/^v/i, '');
+              const agentAsset = (release.assets || []).find(a => 
+                a.name.toLowerCase().includes('agent') && a.name.toLowerCase().endsWith('.exe')
+              ) || (release.assets || []).find(a => a.name.toLowerCase().endsWith('.exe'));
+
+              res.json({
+                success: true,
+                hasRelease: true,
+                tag: release.tag_name,
+                version,
+                name: release.name,
+                publishedAt: release.published_at,
+                body: release.body,
+                asset: agentAsset ? {
+                  name: agentAsset.name,
+                  size: agentAsset.size,
+                  downloadUrl: agentAsset.browser_download_url
+                } : null
+              });
+            } else if (response.statusCode === 404) {
+              res.json({ success: true, hasRelease: false, message: 'Belum ada rilis di GitHub' });
+            } else {
+              res.status(response.statusCode).json({ success: false, error: `GitHub API error (${response.statusCode})` });
+            }
+          } catch (e) {
+            res.status(500).json({ success: false, error: e.message });
+          }
+        });
+      });
+
+      request.on('error', (err) => {
+        res.status(500).json({ success: false, error: err.message });
+      });
+      request.end();
+    });
+
+    // API: Mengunduh Installer dari GitHub langsung ke Server
+    this.app.post('/api/updates/download-github', async (req, res) => {
+      const { downloadUrl, fileName } = req.body || {};
+      if (!downloadUrl) return res.status(400).json({ success: false, error: 'Download URL diperlukan' });
+
+      const https = require('https');
+      const http = require('http');
+      const updatesDir = getUpdatesDir();
+      const safeName = path.basename(fileName || 'AudioMonitor_Agent_Installer.exe').replace(/[^a-zA-Z0-9_\-\.]/g, '');
+      const destPath = path.join(updatesDir, safeName);
+      const tempDest = `${destPath}.tmp_${Date.now()}`;
+
+      const downloadFile = (url, depth = 0) => {
+        if (depth > 5) return Promise.reject(new Error('Terlalu banyak redirect'));
+        return new Promise((resolve, reject) => {
+          const parsed = new URL(url);
+          const client = parsed.protocol === 'https:' ? https : http;
+          client.get(url, { headers: { 'User-Agent': 'AudioMonitor-Server' } }, (response) => {
+            if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
+              return resolve(downloadFile(response.headers.location, depth + 1));
+            }
+            if (response.statusCode !== 200) {
+              return reject(new Error(`Gagal mengunduh file: HTTP ${response.statusCode}`));
+            }
+
+            const fileStream = fs.createWriteStream(tempDest);
+            response.pipe(fileStream);
+            fileStream.on('finish', () => {
+              fileStream.close(() => {
+                try {
+                  if (fs.existsSync(destPath)) fs.unlinkSync(destPath);
+                  fs.renameSync(tempDest, destPath);
+                  resolve();
+                } catch (err) {
+                  reject(err);
+                }
+              });
+            });
+            fileStream.on('error', (err) => {
+              try { fs.unlinkSync(tempDest); } catch(e) {}
+              reject(err);
+            });
+          }).on('error', reject);
+        });
+      };
+
+      try {
+        logger.info(`[UpdateHub] Memulai pengunduhan installer dari GitHub: ${downloadUrl}`);
+        await downloadFile(downloadUrl);
+        logger.info(`[UpdateHub] Sukses mengunduh installer ke: ${destPath}`);
+        res.json({ success: true, fileName: safeName, path: destPath });
+      } catch (err) {
+        logger.error(`[UpdateHub] Gagal mengunduh installer dari GitHub: ${err.message}`);
+        try { if (fs.existsSync(tempDest)) fs.unlinkSync(tempDest); } catch(e) {}
+        res.status(500).json({ success: false, error: err.message });
+      }
+    });
+
+    // API: Upload installer Agent baru langsung dari Web Dashboard ke Server
+    this.app.post('/api/updates/upload-agent', (req, res) => {
+      const rawFileName = req.headers['x-file-name'] || 'AudioMonitor_Agent_Installer.exe';
+      let safeFileName = '';
+      try {
+        safeFileName = path.basename(decodeURIComponent(rawFileName)).replace(/[^a-zA-Z0-9_\-\.]/g, '');
+      } catch(e) {
+        safeFileName = path.basename(rawFileName).replace(/[^a-zA-Z0-9_\-\.]/g, '');
+      }
+
+      if (!safeFileName.toLowerCase().endsWith('.exe')) {
+        return res.status(400).json({ success: false, error: 'Hanya file installer (.exe) yang diperbolehkan' });
+      }
+
+      const updatesDir = getUpdatesDir();
+      const filePath = path.join(updatesDir, safeFileName);
+      const tempPath = `${filePath}.tmp_${Date.now()}`;
+
+      const writeStream = fs.createWriteStream(tempPath);
+      req.pipe(writeStream);
+
+      writeStream.on('finish', () => {
+        try {
+          if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+          fs.renameSync(tempPath, filePath);
+          logger.info(`[UpdateHub] Berhasil menerima upload installer Agent: ${safeFileName}`);
+          res.json({ success: true, fileName: safeFileName, path: filePath });
+        } catch (e) {
+          res.status(500).json({ success: false, error: e.message });
+        }
+      });
+
+      writeStream.on('error', (err) => {
+        try { fs.unlinkSync(tempPath); } catch(e) {}
+        logger.error(`[UpdateHub] Gagal menyimpan file upload update: ${err.message}`);
+        res.status(500).json({ success: false, error: err.message });
+      });
+    });
+
+    // API: Upload installer Agent baru ke Server (Legacy endpoint)
     this.app.post('/internal/upload-update', (req, res) => {
       const rawFileName = req.headers['x-file-name'] || 'AudioMonitor_Agent_Installer.exe';
       const safeFileName = path.basename(rawFileName).replace(/[^a-zA-Z0-9_\-\.]/g, '');

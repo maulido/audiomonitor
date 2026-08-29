@@ -122,6 +122,11 @@ function App() {
   const [agentUpdateProgress, setAgentUpdateProgress] = useState({});
   const [serverUpdateInfo, setServerUpdateInfo] = useState(null);
   const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
+  const [githubReleaseInfo, setGithubReleaseInfo] = useState(null);
+  const [isCheckingGithub, setIsCheckingGithub] = useState(false);
+  const [isDownloadingGithub, setIsDownloadingGithub] = useState(false);
+  const [isUploadingInstaller, setIsUploadingInstaller] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
 
   // Auth State
   const [pin, setPin] = useState(sessionStorage.getItem('dashboardPin') || '');
@@ -293,9 +298,111 @@ function App() {
     }
   };
 
+  const checkGithubRelease = async () => {
+    setIsCheckingGithub(true);
+    try {
+      const res = await apiFetch('/api/updates/check-github');
+      if (res.ok) {
+        const data = await res.json();
+        setGithubReleaseInfo(data);
+        if (!data.hasRelease) {
+          await customAlert('Tidak ada rilis yang ditemukan di repositori GitHub.', 'Info');
+        }
+      } else {
+        await customAlert('Gagal memeriksa rilis GitHub. Pastikan komputer Server terhubung ke internet.', 'Koneksi Gagal');
+      }
+    } catch (e) {
+      await customAlert(`Gagal memeriksa rilis GitHub: ${e.message}`, 'Error');
+    } finally {
+      setIsCheckingGithub(false);
+    }
+  };
+
+  const downloadGithubRelease = async () => {
+    if (!githubReleaseInfo?.asset?.downloadUrl) {
+      await customAlert('File installer Agent tidak ditemukan pada rilis GitHub ini.', 'Peringatan');
+      return;
+    }
+
+    const confirmed = await customConfirm(
+      `Unduh installer ${githubReleaseInfo.asset.name} (${(githubReleaseInfo.asset.size / 1024 / 1024).toFixed(1)} MB) dari GitHub ke Server?`,
+      'Konfirmasi Unduhan'
+    );
+    if (!confirmed) return;
+
+    setIsDownloadingGithub(true);
+    try {
+      const res = await apiFetch('/api/updates/download-github', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          downloadUrl: githubReleaseInfo.asset.downloadUrl,
+          fileName: githubReleaseInfo.asset.name
+        })
+      });
+      if (res.ok) {
+        await customAlert('Installer Agent berhasil diunduh ke Server dan siap disebarkan ke seluruh PC Agent!', 'Sukses');
+        await checkServerUpdates();
+      } else {
+        const err = await res.json();
+        await customAlert(`Gagal mengunduh installer: ${err.error || 'Server error'}`, 'Gagal');
+      }
+    } catch (e) {
+      await customAlert(`Koneksi gagal: ${e.message}`, 'Error');
+    } finally {
+      setIsDownloadingGithub(false);
+    }
+  };
+
+  const handleUploadInstaller = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.name.toLowerCase().endsWith('.exe')) {
+      await customAlert('Hanya file installer (.exe) yang diperbolehkan.', 'Format Salah');
+      return;
+    }
+
+    const confirmed = await customConfirm(
+      `Upload file ${file.name} (${(file.size / 1024 / 1024).toFixed(1)} MB) langsung ke Server?`,
+      'Konfirmasi Upload'
+    );
+    if (!confirmed) {
+      e.target.value = '';
+      return;
+    }
+
+    setIsUploadingInstaller(true);
+    setUploadProgress(0);
+
+    try {
+      const res = await fetch(`${SERVER_URL}/api/updates/upload-agent`, {
+        method: 'POST',
+        headers: {
+          'x-pin': pin,
+          'x-file-name': encodeURIComponent(file.name)
+        },
+        body: file
+      });
+
+      if (res.ok) {
+        await customAlert(`File ${file.name} berhasil di-upload ke Server dan siap disebarkan!`, 'Upload Berhasil');
+        await checkServerUpdates();
+      } else {
+        const err = await res.json();
+        await customAlert(`Gagal upload: ${err.error || 'Server error'}`, 'Upload Gagal');
+      }
+    } catch (err) {
+      await customAlert(`Koneksi error saat upload: ${err.message}`, 'Error');
+    } finally {
+      setIsUploadingInstaller(false);
+      e.target.value = '';
+    }
+  };
+
   const triggerAgentUpdate = async (targetUuid = 'all') => {
     if (!serverUpdateInfo || !serverUpdateInfo.hasUpdate) {
-      await customAlert('Tidak ada file update Agent yang tersedia di Server.\nLetakkan file AudioMonitor_Agent_Installer_vX.Y.Z.exe di folder Server: Documents/AudioMonitor-Updates/agent/', 'Pembaruan Tidak Ditemukan');
+      await customAlert('Tidak ada file update Agent yang tersedia di Server.\nSilakan gunakan tombol "Cek GitHub" atau "Upload File" di tab Settings.', 'Pembaruan Tidak Ditemukan');
       return;
     }
 
@@ -1912,23 +2019,77 @@ function App() {
               </div>
             </div>
 
-            {/* Centralized Update Management Card */}
+            {/* Centralized Update Management Card (Hybrid: GitHub + Direct Upload + LAN Broadcast) */}
             <div className="settings-card">
               <div className="settings-card-accent blue"></div>
               <div className="settings-card-content">
                 <h2 className="settings-card-title">
                   <i className="fa-solid fa-cloud-arrow-down" style={{ marginRight: '8px' }}></i>
-                  Pembaruan Aplikasi Terpusat (LAN Auto-Update)
+                  Pembaruan Aplikasi Terpusat (LAN Auto-Update Hub)
                 </h2>
                 <p className="settings-card-subtitle">
-                  Perbarui seluruh PC Agent di jaringan lokal tanpa harus mendatangi komputer satu per satu.
+                  Kelola dan sebarkan pembaruan versi Agent ke seluruh komputer di jaringan lokal tanpa menyalin file manual ke komputer server.
                 </p>
 
-                <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px', padding: '16px', marginBottom: '16px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+                {/* Grid 2 Opsi Sumber: GitHub Sync & Direct Upload */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px', marginBottom: '20px' }}>
+                  
+                  {/* Opsi 1: GitHub 1-Click Sync */}
+                  <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px', padding: '16px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold', fontSize: '0.95rem', color: '#60a5fa', marginBottom: '8px' }}>
+                      <i className="fa-brands fa-github" style={{ fontSize: '1.2rem' }}></i>
+                      1-Klik Unduh dari GitHub
+                    </div>
+                    <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: '0 0 12px 0', lineHeight: '1.4' }}>
+                      Server akan memeriksa dan mengunduh rilis installer terbaru langsung dari repositori GitHub.
+                    </p>
+
+                    {githubReleaseInfo && githubReleaseInfo.hasRelease && (
+                      <div style={{ background: 'rgba(59, 130, 246, 0.1)', border: '1px solid rgba(59, 130, 246, 0.2)', borderRadius: '6px', padding: '10px', marginBottom: '12px', fontSize: '0.8rem' }}>
+                        <div><strong>Rilis:</strong> {githubReleaseInfo.name || githubReleaseInfo.tag}</div>
+                        <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginTop: '2px' }}>
+                          File: {githubReleaseInfo.asset ? `${githubReleaseInfo.asset.name} (${(githubReleaseInfo.asset.size / 1024 / 1024).toFixed(1)} MB)` : 'Tidak ada installer .exe'}
+                        </div>
+                      </div>
+                    )}
+
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                      <button className="btn-filter secondary" onClick={checkGithubRelease} disabled={isCheckingGithub}>
+                        <i className={`fa-solid fa-arrows-rotate ${isCheckingGithub ? 'fa-spin' : ''}`}></i> {isCheckingGithub ? 'Memeriksa...' : 'Cek Rilis GitHub'}
+                      </button>
+                      {githubReleaseInfo?.asset && (
+                        <button className="btn-filter primary" onClick={downloadGithubRelease} disabled={isDownloadingGithub}>
+                          <i className={`fa-solid fa-download ${isDownloadingGithub ? 'fa-bounce' : ''}`}></i> {isDownloadingGithub ? 'Mengunduh...' : 'Unduh ke Server'}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Opsi 2: Upload File .exe via Browser */}
+                  <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px', padding: '16px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold', fontSize: '0.95rem', color: '#34d399', marginBottom: '8px' }}>
+                      <i className="fa-solid fa-file-arrow-up" style={{ fontSize: '1.1rem' }}></i>
+                      Upload File Installer Manual
+                    </div>
+                    <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: '0 0 12px 0', lineHeight: '1.4' }}>
+                      Pilih file <code>.exe</code> dari komputer Anda untuk dikirimkan langsung ke Server tanpa perlu buka explorer Server.
+                    </p>
+
+                    <label className={`btn-filter secondary ${isUploadingInstaller ? 'disabled' : ''}`} style={{ display: 'inline-flex', alignItems: 'center', cursor: 'pointer' }}>
+                      <i className={`fa-solid fa-upload ${isUploadingInstaller ? 'fa-spin' : ''}`} style={{ marginRight: '6px' }}></i>
+                      {isUploadingInstaller ? 'Mengupload File...' : 'Pilih File Installer (.exe)'}
+                      <input type="file" accept=".exe" onChange={handleUploadInstaller} style={{ display: 'none' }} disabled={isUploadingInstaller} />
+                    </label>
+                  </div>
+
+                </div>
+
+                {/* Status Distribusi Installer di Server */}
+                <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '8px', padding: '16px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
                     <div>
                       <div style={{ fontWeight: 'bold', fontSize: '0.95rem' }}>
-                        Status Paket Installer di Server:
+                        Paket Installer yang Siap di Server:
                       </div>
                       <div style={{ fontSize: '0.85rem', color: serverUpdateInfo?.hasUpdate ? 'var(--success)' : 'var(--text-muted)', marginTop: '4px' }}>
                         {serverUpdateInfo?.hasUpdate ? (
@@ -1938,8 +2099,8 @@ function App() {
                           </>
                         ) : (
                           <>
-                            <i className="fa-solid fa-circle-info" style={{ marginRight: '6px' }}></i>
-                            Belum ada file installer Agent di folder Server <code>Documents/AudioMonitor-Updates/agent/</code>
+                            <i className="fa-solid fa-circle-exclamation" style={{ marginRight: '6px', color: 'var(--warning)' }}></i>
+                            Belum ada file installer di Server. Silakan unduh dari GitHub atau upload file di atas.
                           </>
                         )}
                       </div>
@@ -1947,16 +2108,17 @@ function App() {
 
                     <div style={{ display: 'flex', gap: '8px' }}>
                       <button className="btn-filter secondary" onClick={checkServerUpdates} disabled={isCheckingUpdate}>
-                        <i className={`fa-solid fa-rotate ${isCheckingUpdate ? 'fa-spin' : ''}`}></i> Cek Ulang
+                        <i className={`fa-solid fa-rotate ${isCheckingUpdate ? 'fa-spin' : ''}`}></i> Refresh
                       </button>
                       {serverUpdateInfo?.hasUpdate && (
-                        <button className="btn-filter primary" onClick={() => triggerAgentUpdate('all')}>
-                          <i className="fa-solid fa-rocket"></i> Perbarui Semua PC Agent
+                        <button className="btn-filter primary" onClick={() => triggerAgentUpdate('all')} style={{ padding: '8px 16px', fontSize: '0.9rem' }}>
+                          <i className="fa-solid fa-rocket"></i> Sebarkan ke Seluruh PC Agent
                         </button>
                       )}
                     </div>
                   </div>
                 </div>
+
               </div>
             </div>
 
