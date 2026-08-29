@@ -125,6 +125,13 @@ function App() {
   const [incidentPcNames, setIncidentPcNames] = useState([]);
   const [incidentPage, setIncidentPage] = useState(1);
   const logsPerPage = 15;
+
+  useEffect(() => {
+    const totalPages = Math.ceil(logs.length / logsPerPage) || 1;
+    if (incidentPage > totalPages) {
+      setIncidentPage(totalPages);
+    }
+  }, [logs.length]);
   
   
   // Settings State
@@ -610,8 +617,10 @@ function App() {
       });
     }
     if (pendingSeekOffsetRef.current !== null) {
-      audio.currentTime = pendingSeekOffsetRef.current;
-      setLocalCurrentTime(pendingSeekOffsetRef.current);
+      const dur = (audio.duration && isFinite(audio.duration) && !isNaN(audio.duration)) ? audio.duration : 0;
+      const safeOffset = dur > 0 ? Math.max(0, Math.min(pendingSeekOffsetRef.current, dur - 0.1)) : Math.max(0, pendingSeekOffsetRef.current);
+      audio.currentTime = safeOffset;
+      setLocalCurrentTime(safeOffset);
       pendingSeekOffsetRef.current = null;
     }
     audio.playbackRate = playbackRate;
@@ -1079,6 +1088,10 @@ function App() {
       if (alarmIntervalRef.current) {
         clearInterval(alarmIntervalRef.current);
         alarmIntervalRef.current = null;
+      }
+      if (audioCtxRef.current && audioCtxRef.current.state !== 'closed') {
+        audioCtxRef.current.close().catch(() => {});
+        audioCtxRef.current = null;
       }
     };
   }, [totalBahaya, enableBeep, isMonitoringActive]);
@@ -1791,7 +1804,7 @@ function App() {
 
                           return (
                             <div 
-                              key={p.url || idx} 
+                              key={`${p.url || ''}-${idx}`} 
                               className={`timeline-segment ${isPartActive ? 'active' : ''}`} 
                               style={{ width: `${pPct}%` }}
                               onClick={() => handleGlobalSeek(startOffsets[idx] || 0)}
@@ -2013,7 +2026,7 @@ function App() {
 
                                     return (
                                       <button
-                                        key={part.url || pIdx}
+                                        key={`${part.url || ''}-${pIdx}`}
                                         className={`part-chip-btn ${isPartPlaying ? 'playing' : ''}`}
                                         onClick={() => {
                                           if (playingSession?.folderName !== session.folderName) {
@@ -2131,7 +2144,15 @@ function App() {
                         max="365" 
                         className="form-input" 
                         value={logRetentionDays} 
-                        onChange={(e) => setLogRetentionDays(Math.max(1, parseInt(e.target.value, 10) || 1))} 
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setLogRetentionDays(val === '' ? '' : parseInt(val, 10));
+                        }}
+                        onBlur={() => {
+                          if (logRetentionDays === '' || isNaN(logRetentionDays) || logRetentionDays < 1) {
+                            setLogRetentionDays(30);
+                          }
+                        }}
                         placeholder="30" 
                         style={{ width: '130px' }}
                       />

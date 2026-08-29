@@ -159,22 +159,6 @@ function createTray() {
   });
 }
 
-
-// Memastikan hanya ada 1 instansi aplikasi yang berjalan (Single Instance Lock)
-const gotTheLock = app.requestSingleInstanceLock();
-if (!gotTheLock) {
-  app.quit();
-  process.exit(0);
-} else {
-  app.on('second-instance', (event, commandLine, workingDirectory) => {
-    if (mainWindow) {
-      if (mainWindow.isMinimized()) mainWindow.restore();
-      if (!mainWindow.isVisible()) mainWindow.show();
-      mainWindow.focus();
-    }
-  });
-}
-
 // Inisialisasi utama Electron
 ipcMain.handle('get-windows-audio-devices', async () => {
   if (process.platform !== 'win32') return {};
@@ -404,11 +388,17 @@ function uploadToServer(filePath, serverUrl, agentName, sessionFolder) {
       });
     });
     
+    const readStream = fs.createReadStream(filePath);
+    readStream.on('error', (rErr) => {
+      writeAgentLog('ERROR', `Read stream error ${fileName}: ${rErr.message}`);
+      req.destroy();
+    });
+
     req.on('error', (err) => {
       writeAgentLog('ERROR', `Koneksi gagal saat mengunggah ${fileName} ke Server: ${err.message}`);
+      try { readStream.destroy(); } catch (e) {}
     });
     
-    const readStream = fs.createReadStream(filePath);
     readStream.pipe(req);
   } catch (err) {
     writeAgentLog('ERROR', `Error fungsi uploadToServer: ${err.message}`);
