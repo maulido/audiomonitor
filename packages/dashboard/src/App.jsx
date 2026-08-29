@@ -74,6 +74,7 @@ function App() {
   const [logs, setLogs] = useState([]);
   const [records, setRecords] = useState([]);
   const [playingAudio, setPlayingAudio] = useState(null);
+  const [recordPcFilter, setRecordPcFilter] = useState('');
   const [systemLogs, setSystemLogs] = useState('');
   const [showSystemLogs, setShowSystemLogs] = useState(false);
 
@@ -808,6 +809,13 @@ function App() {
     }); 
   }}><i className="fa-solid fa-gear"></i></button>
 
+      <button className="icon-btn" title="Lihat File Rekaman PC ini" onClick={() => {
+        setRecordPcFilter(agent.pcName || agent.uuid);
+        setCurrentView('records');
+      }}>
+        <i className="fa-solid fa-file-audio"></i>
+      </button>
+
       <button 
         className="icon-btn" 
         title={agent.isRecording ? 'Stop Recording (Manual)' : 'Start Recording (Manual)'} 
@@ -1138,7 +1146,14 @@ function App() {
             <div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <h1 className="settings-header" style={{ marginBottom: 0 }}>File Rekaman</h1>
-                <button className="btn-filter secondary" onClick={fetchRecords}><i className="fa-solid fa-rotate"></i> Muat Ulang</button>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  {recordPcFilter && (
+                    <button className="btn-filter primary" onClick={() => setRecordPcFilter('')}>
+                      <i className="fa-solid fa-filter-circle-xmark"></i> Hapus Filter: {recordPcFilter}
+                    </button>
+                  )}
+                  <button className="btn-filter secondary" onClick={fetchRecords}><i className="fa-solid fa-rotate"></i> Muat Ulang</button>
+                </div>
               </div>
               <p className="settings-desc">Daftar file rekaman audio dari insiden yang disimpan oleh Agent.</p>
             </div>
@@ -1163,6 +1178,9 @@ function App() {
               // Kelompokkan records berdasarkan pcName
               const grouped = {};
               records.forEach(r => {
+                // Apply filter jika ada
+                if (recordPcFilter && r.pcName !== recordPcFilter) return;
+                
                 if (!grouped[r.pcName]) grouped[r.pcName] = [];
                 grouped[r.pcName].push(r);
               });
