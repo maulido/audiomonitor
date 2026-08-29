@@ -76,6 +76,8 @@ function App() {
   const [playingSession, setPlayingSession] = useState(null); // { folderName, pcName, dateStr, timeStr, parts: [] }
   const [currentPartIndex, setCurrentPartIndex] = useState(0);
   const [recordPcFilter, setRecordPcFilter] = useState('');
+  const [recordStartDate, setRecordStartDate] = useState('');
+  const [recordEndDate, setRecordEndDate] = useState('');
   const [systemLogs, setSystemLogs] = useState('');
   const [showSystemLogs, setShowSystemLogs] = useState(false);
 
@@ -1153,16 +1155,93 @@ function App() {
             <div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <h1 className="settings-header" style={{ marginBottom: 0 }}>File Rekaman</h1>
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  {recordPcFilter && (
-                    <button className="btn-filter primary" onClick={() => setRecordPcFilter('')}>
-                      <i className="fa-solid fa-filter-circle-xmark"></i> Hapus Filter: {recordPcFilter}
-                    </button>
-                  )}
-                  <button className="btn-filter secondary" onClick={fetchRecords}><i className="fa-solid fa-rotate"></i> Muat Ulang</button>
-                </div>
+                <button className="btn-filter secondary" onClick={fetchRecords}><i className="fa-solid fa-rotate"></i> Muat Ulang</button>
               </div>
               <p className="settings-desc">Daftar rekaman insiden suara berdasarkan sesi kejadian. Potongan audio (part) dapat diputar berurutan secara otomatis.</p>
+            </div>
+
+            {/* Quick Filters */}
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '-16px', flexWrap: 'wrap' }}>
+              <button className="btn-filter secondary" onClick={() => {
+                const today = new Date().toISOString().slice(0, 10);
+                setRecordStartDate(today);
+                setRecordEndDate(today);
+              }}>Hari Ini</button>
+              <button className="btn-filter secondary" onClick={() => {
+                const end = new Date().toISOString().slice(0, 10);
+                const start = new Date();
+                start.setDate(start.getDate() - 7);
+                setRecordStartDate(start.toISOString().slice(0, 10));
+                setRecordEndDate(end);
+              }}>7 Hari Terakhir</button>
+              <button className="btn-filter secondary" onClick={() => {
+                const end = new Date().toISOString().slice(0, 10);
+                const start = new Date();
+                start.setDate(start.getDate() - 30);
+                setRecordStartDate(start.toISOString().slice(0, 10));
+                setRecordEndDate(end);
+              }}>30 Hari Terakhir</button>
+              {(recordStartDate || recordEndDate || recordPcFilter) && (
+                <button className="btn-filter primary" onClick={() => {
+                  setRecordStartDate('');
+                  setRecordEndDate('');
+                  setRecordPcFilter('');
+                }}>
+                  <i className="fa-solid fa-filter-circle-xmark"></i> Tampilkan Semua
+                </button>
+              )}
+            </div>
+
+            {/* Filter Bar */}
+            <div className="settings-card">
+              <div className="settings-card-accent blue"></div>
+              <div className="settings-card-content" style={{ padding: '0' }}>
+                <div className="incident-filter-bar">
+                  <div className="incident-filter-group">
+                    <label>Tanggal Mulai</label>
+                    <input 
+                      type="date" 
+                      className="incident-filter-input" 
+                      value={recordStartDate} 
+                      onChange={e => setRecordStartDate(e.target.value)} 
+                    />
+                  </div>
+                  <div className="incident-filter-group">
+                    <label>Tanggal Akhir</label>
+                    <input 
+                      type="date" 
+                      className="incident-filter-input" 
+                      value={recordEndDate} 
+                      onChange={e => setRecordEndDate(e.target.value)} 
+                    />
+                  </div>
+                  <div className="incident-filter-group">
+                    <label>Filter PC</label>
+                    <select 
+                      className="incident-filter-input" 
+                      value={recordPcFilter} 
+                      onChange={e => setRecordPcFilter(e.target.value)}
+                    >
+                      <option value="">Semua PC</option>
+                      {[...new Set(records.map(r => r.pcName).filter(Boolean))].sort().map(name => (
+                        <option key={name} value={name}>{name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="incident-filter-actions">
+                    <button 
+                      className="btn-filter secondary" 
+                      onClick={() => {
+                        setRecordStartDate('');
+                        setRecordEndDate('');
+                        setRecordPcFilter('');
+                      }}
+                    >
+                      <i className="fa-solid fa-rotate-left"></i> Reset
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
             
             {/* Smart Audio Playlist Player */}
@@ -1238,6 +1317,14 @@ function App() {
               const pcGrouped = {};
               records.forEach(r => {
                 if (recordPcFilter && r.pcName !== recordPcFilter) return;
+
+                const dateStr = r.isParsed 
+                  ? r.dateStr 
+                  : new Date(r.createdAt).toISOString().slice(0, 10);
+
+                if (recordStartDate && dateStr < recordStartDate) return;
+                if (recordEndDate && dateStr > recordEndDate) return;
+
                 if (!pcGrouped[r.pcName]) pcGrouped[r.pcName] = {};
                 
                 const sessionKey = r.folderName;
