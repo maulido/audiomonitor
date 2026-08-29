@@ -183,8 +183,6 @@ class ServerApp {
           if (fd !== null) try { fs.closeSync(fd); } catch(e) {}
         }
       }
-        }
-      }
       
       res.sendFile(fullPath, (err) => {
         if (err && !res.headersSent && err.code !== 'ECONNABORTED' && err.status !== 304) {
