@@ -9,6 +9,7 @@ const ConfigManager = require('./ConfigManager');
 const DatabaseManager = require('./DatabaseManager');
 const AlertManager = require('./AlertManager');
 const TelemetryHub = require('./TelemetryHub');
+const TranscriptionManager = require('./TranscriptionManager');
 const logger = require('./utils/logger');
 
 /**
@@ -32,10 +33,13 @@ class ServerApp {
     
     // AlertManager butuh akses ke Config (untuk token) & DB (untuk simpan log)
     this.alertManager = new AlertManager(this.configManager, this.dbManager);
-      this.dbManager.autoCleanup(this.configManager.config.logRetentionDays || 30);
+    this.dbManager.autoCleanup(this.configManager.config.logRetentionDays || 30);
     
     // TelemetryHub mengatur lalu-lintas WebSocket
     this.telemetryHub = new TelemetryHub(this.server, this.configManager, this.alertManager);
+
+    // TranscriptionManager mengelola integrasi Speech-to-Text Whisper
+    this.transcriptionManager = new TranscriptionManager(this.configManager, this.dbManager, this.alertManager, this.telemetryHub);
 
     this.setupMiddleware();
     this.setupRoutes();
@@ -286,6 +290,9 @@ class ServerApp {
         
         writeStream.on('finish', () => {
           logger.info(`[Upload] Berhasil menerima file rekaman dari ${agentName}: ${fileName} -> ${filePath}`);
+          if (this.transcriptionManager) {
+            this.transcriptionManager.enqueueFile(filePath, sessionFolder, fileName, agentName);
+          }
           sendResponse(200, { success: true, message: 'Upload selesai', path: filePath });
         });
         
@@ -441,37 +448,65 @@ class ServerApp {
                     isParsed = true;
                   }
 
-                  records.push({
-                    folderName: pc, // original folder name for URL construction
-                    baseSessionKey,
-                    isCompleted,
-                    pcName: realPcName,
-                    uuid,
-                    isParsed,
-                    dateStr,
-                    timeStr,
-                    fileName: file,
-                    size: stat.size,
-                    createdAt: stat.birthtime && stat.birthtime.getTime() > 0 ? stat.birthtime : stat.mtime,
-                    url: `/media/${encodeURIComponent(pc)}/${encodeURIComponent(file)}`
-                  });
-                } catch (fileErr) {
-                  logger.warn(`Gagal membaca file rekaman ${file}: ${fileErr.message}`);
+                    const transcriptFile = path.join(pcPath, `${file}.transcript.json`);
+                    const hasTranscript = fs.existsSync(transcriptFile);
+                    let transcriptSnippet = '';
+                    let keywordsFound = [];
+                    let transcriptDuration = 0;
+
+                    if (hasTranscript) {
+                      try {
+                        const tData = JSON.parse(fs.readFileSync(transcriptFile, 'utf8'));
+                        if (tData.text) {
+                          const cleanT = tData.text.trim();
+                          transcriptSnippet = cleanT.length > 180 ? cleanT.substring(0, 180) + '...' : cleanT;
+                        }
+                        if (Array.isArray(tData.keywordsFound) && tData.keywordsFound.length > 0) {
+                          keywordsFound = tData.keywordsFound;
+                        }
+                        if (typeof tData.duration === 'number' && tData.duration > 0) {
+                          transcriptDuration = tData.duration;
+                        }
+                      } catch (tErr) {}
+                    }
+
+                    records.push({
+                      folderName: pc, // original folder name for URL construction
+                      baseSessionKey,
+                      isCompleted,
+                      pcName: realPcName,
+                      uuid,
+                      isParsed,
+                      dateStr,
+                      timeStr,
+                      startTime: match ? match[4] : '',
+                      endTime: match && match[5] ? match[5] : '',
+                      fileName: file,
+                      size: stat.size,
+                      hasTranscript,
+                      transcriptSnippet,
+                      keywordsFound,
+                      transcriptDuration,
+                      createdAt: stat.birthtime && stat.birthtime.getTime() > 0 ? stat.birthtime : stat.mtime,
+                      url: `/media/${encodeURIComponent(pc)}/${encodeURIComponent(file)}`
+                    });
+                  } catch (fileErr) {
+                    logger.warn(`Gagal membaca file rekaman ${file}: ${fileErr.message}`);
+                  }
                 }
+              } catch (folderErr) {
+                logger.warn(`Gagal membaca folder rekaman ${pc}: ${folderErr.message}`);
               }
-            } catch (folderErr) {
-              logger.warn(`Gagal membaca folder rekaman ${pc}: ${folderErr.message}`);
             }
+          } catch(e) {
+            logger.error("Error reading records directory", e);
           }
-        } catch(e) {
-          logger.error("Error reading records directory", e);
         }
-      }
-      
-      // Urutkan dari yang terbaru
-      records.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-      res.json(records);
-    });
+        
+        // Urutkan dari yang terbaru
+        records.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+        res.json(records);
+      });
 
     // API: Hapus file rekaman tunggal
     this.app.delete('/api/records', (req, res) => {
@@ -500,6 +535,11 @@ class ServerApp {
       if (fs.existsSync(filePath)) {
         try {
           fs.unlinkSync(filePath);
+          // Hapus juga file transkrip jika ada
+          const transcriptPath = `${filePath}.transcript.json`;
+          if (fs.existsSync(transcriptPath)) {
+            try { fs.unlinkSync(transcriptPath); } catch (e) {}
+          }
           res.json({ success: true });
         } catch (e) {
           res.status(500).json({ success: false, error: e.message });
@@ -507,6 +547,137 @@ class ServerApp {
       } else {
         res.status(404).json({ success: false, error: 'File not found' });
       }
+    });
+
+    // API: Ambil transkrip untuk file atau seluruh sesi rekaman
+    this.app.get('/api/records/transcript', (req, res) => {
+      const { folder, file } = req.query || {};
+      if (!folder || typeof folder !== 'string') return res.status(400).json({ success: false, error: 'Folder parameter is required' });
+
+      const baseDir = path.resolve(this.configManager.config.recordDir || path.join(os.homedir(), 'Documents', 'AudioMonitor-Recordings-Server'));
+      const safeFolder = path.basename(folder).replace(/[^a-zA-Z0-9_\-\. ]/g, '').trim();
+      if (!safeFolder || safeFolder === '.' || safeFolder === '..' || safeFolder.startsWith('..')) {
+        return res.status(400).json({ success: false, error: 'Invalid folder path' });
+      }
+
+      const folderPath = path.resolve(baseDir, safeFolder);
+      const relFolder = path.relative(baseDir, folderPath);
+      if (relFolder.startsWith('..') || path.isAbsolute(relFolder)) {
+        return res.status(403).json({ success: false, error: 'Forbidden' });
+      }
+
+      if (file) {
+        if (typeof file !== 'string') return res.status(400).json({ success: false, error: 'Invalid file parameter' });
+        const safeFile = path.basename(file).replace(/[^a-zA-Z0-9_\-\.]/g, '').trim();
+        if (!safeFile || safeFile === '.' || safeFile === '..' || safeFile.startsWith('..')) {
+          return res.status(400).json({ success: false, error: 'Invalid file name' });
+        }
+
+        const filePath = path.resolve(folderPath, safeFile);
+        const relFile = path.relative(baseDir, filePath);
+        if (relFile.startsWith('..') || path.isAbsolute(relFile)) {
+          return res.status(403).json({ success: false, error: 'Forbidden' });
+        }
+
+        const transcript = this.transcriptionManager.getTranscriptForFile(filePath);
+        if (!transcript) return res.status(404).json({ success: false, error: 'Transcript not found' });
+        return res.json({ success: true, transcript });
+      } else {
+        const sessionTranscript = this.transcriptionManager.getTranscriptForSession(folderPath);
+        if (!sessionTranscript) return res.status(404).json({ success: false, error: 'Transcript not found' });
+        return res.json({ success: true, transcript: sessionTranscript });
+      }
+    });
+
+    // API: Pemicu manual transkripsi file audio
+    this.app.post('/api/records/transcribe', async (req, res) => {
+      const { folder, file, pcName } = req.body || {};
+      if (!folder || !file || typeof folder !== 'string' || typeof file !== 'string') {
+        return res.status(400).json({ success: false, error: 'folder and file parameters are required' });
+      }
+
+      const baseDir = path.resolve(this.configManager.config.recordDir || path.join(os.homedir(), 'Documents', 'AudioMonitor-Recordings-Server'));
+      const safeFolder = path.basename(folder).replace(/[^a-zA-Z0-9_\-\. ]/g, '').trim();
+      const safeFile = path.basename(file).replace(/[^a-zA-Z0-9_\-\.]/g, '').trim();
+
+      if (!safeFolder || safeFolder === '.' || safeFolder === '..' || safeFolder.startsWith('..') ||
+          !safeFile || safeFile === '.' || safeFile === '..' || safeFile.startsWith('..')) {
+        return res.status(400).json({ success: false, error: 'Invalid path parameters' });
+      }
+
+      const filePath = path.resolve(baseDir, safeFolder, safeFile);
+      const relFile = path.relative(baseDir, filePath);
+      if (relFile.startsWith('..') || path.isAbsolute(relFile)) {
+        return res.status(403).json({ success: false, error: 'Forbidden' });
+      }
+
+      if (!fs.existsSync(filePath)) {
+        return res.status(404).json({ success: false, error: 'Audio file not found' });
+      }
+
+      try {
+        const result = await this.transcriptionManager.transcribeFile(filePath, safeFolder, safeFile, pcName);
+        res.json({ success: true, transcript: result });
+      } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+      }
+    });
+
+    // API: Cari kata kunci di transkrip rekaman dengan filter tanggal dan PC
+    this.app.get('/api/records/search-transcript', (req, res) => {
+      const { q, startDate, endDate, pcFilter } = req.query || {};
+      if (!q || typeof q !== 'string') return res.json({ success: true, results: [] });
+
+      const cleanQuery = q.trim().substring(0, 200);
+      if (!cleanQuery) return res.json({ success: true, results: [] });
+
+      const baseDir = path.resolve(this.configManager.config.recordDir || path.join(os.homedir(), 'Documents', 'AudioMonitor-Recordings-Server'));
+      const results = this.transcriptionManager.searchTranscripts(cleanQuery, baseDir, {
+        startDate: typeof startDate === 'string' ? startDate : '',
+        endDate: typeof endDate === 'string' ? endDate : '',
+        pcFilter: typeof pcFilter === 'string' ? pcFilter : ''
+      });
+      res.json({ success: true, results });
+    });
+
+    // API: Mengambil konfigurasi Speech-to-Text Whisper
+    this.app.get('/api/config/transcription', (req, res) => {
+      res.json({ success: true, transcription: this.configManager.getTranscriptionConfig() });
+    });
+
+    // API: Menyimpan konfigurasi Speech-to-Text Whisper
+    this.app.post('/api/config/transcription', (req, res) => {
+      const { enabled, apiUrl, apiKey, language, autoTranscribe, alertKeywords } = req.body || {};
+      
+      const updateData = {};
+      if (enabled !== undefined) updateData.enabled = !!enabled;
+      if (apiUrl !== undefined) {
+        const cleanUrl = String(apiUrl).trim();
+        updateData.apiUrl = cleanUrl;
+      }
+      if (apiKey !== undefined) updateData.apiKey = String(apiKey).trim();
+      if (language !== undefined) updateData.language = String(language).trim();
+      if (autoTranscribe !== undefined) updateData.autoTranscribe = !!autoTranscribe;
+      if (alertKeywords !== undefined) {
+        if (Array.isArray(alertKeywords)) {
+          updateData.alertKeywords = Array.from(new Set(alertKeywords.map(k => String(k).trim().toLowerCase()).filter(Boolean)));
+        } else if (typeof alertKeywords === 'string') {
+          updateData.alertKeywords = Array.from(new Set(alertKeywords.split(',').map(k => k.trim().toLowerCase()).filter(Boolean)));
+        }
+      }
+
+      this.configManager.setTranscriptionConfig(updateData);
+      res.json({ success: true, transcription: this.configManager.getTranscriptionConfig() });
+    });
+
+    // API: Menguji konektivitas ke Whisper API
+    this.app.post('/api/transcription/test-api', async (req, res) => {
+      const { apiUrl, apiKey } = req.body || {};
+      const targetUrl = (apiUrl !== undefined && apiUrl !== null) ? String(apiUrl).trim() : this.configManager.getTranscriptionConfig().apiUrl;
+      const targetKey = apiKey !== undefined ? String(apiKey).trim() : this.configManager.getTranscriptionConfig().apiKey;
+
+      const result = await this.transcriptionManager.testConnection(targetUrl, targetKey);
+      res.json(result);
     });
 
     // API: Menyimpan pengaturan kunci (Token & Chat ID) Telegram
@@ -617,7 +788,7 @@ class ServerApp {
 
     // Helper direktori penyimpanan pembaruan Agent di server
     const getUpdatesDir = () => {
-      const dir = path.join(os.homedir(), 'Documents', 'AudioMonitor-Updates', 'agent');
+      const dir = this.configManager?.config?.updatesDir || path.join(os.homedir(), 'Documents', 'AudioMonitor-Updates', 'agent');
       if (!fs.existsSync(dir)) {
         try { fs.mkdirSync(dir, { recursive: true }); } catch (e) {}
       }
@@ -754,7 +925,10 @@ class ServerApp {
               const version = tag.replace(/^v/i, '');
               const agentAsset = (release.assets || []).find(a => 
                 a.name.toLowerCase().includes('agent') && a.name.toLowerCase().endsWith('.exe')
-              ) || (release.assets || []).find(a => a.name.toLowerCase().endsWith('.exe'));
+              );
+              const serverAsset = (release.assets || []).find(a => 
+                a.name.toLowerCase().includes('server') && a.name.toLowerCase().endsWith('.exe')
+              );
 
               res.json({
                 success: true,
@@ -768,6 +942,11 @@ class ServerApp {
                   name: agentAsset.name,
                   size: agentAsset.size,
                   downloadUrl: agentAsset.browser_download_url
+                } : null,
+                serverAsset: serverAsset ? {
+                  name: serverAsset.name,
+                  size: serverAsset.size,
+                  downloadUrl: serverAsset.browser_download_url
                 } : null
               });
             } else if (response.statusCode === 404) {
@@ -955,6 +1134,141 @@ class ServerApp {
       writeStream.on('error', (err) => {
         logger.error(`[UpdateHub] Gagal menyimpan file update: ${err.message}`);
         res.status(500).json({ success: false, error: err.message });
+      });
+    });
+
+    // API: Eksekusi 1-Klik Pembaruan Mandiri Server (Server Self-Update)
+    this.app.post('/api/updates/server-self-update', async (req, res) => {
+      const { downloadUrl, fileName } = req.body || {};
+      if (!downloadUrl) return res.status(400).json({ success: false, error: 'Download URL diperlukan' });
+
+      const https = require('https');
+      const http = require('http');
+      const os = require('os');
+      const { spawn } = require('child_process');
+      const tempDir = os.tmpdir();
+      const safeName = 'AudioMonitor_Server_Update.exe';
+      const destPath = path.join(tempDir, safeName);
+      const tempDest = `${destPath}.tmp_${Date.now()}`;
+
+      const downloadFile = (url, depth = 0) => {
+        if (depth > 5) return Promise.reject(new Error('Terlalu banyak redirect'));
+        return new Promise((resolve, reject) => {
+          let parsed;
+          try { parsed = new URL(url); } catch (e) { return reject(new Error(`Invalid URL: ${url}`)); }
+          const client = parsed.protocol === 'https:' ? https : http;
+          const request = client.get(url, { headers: { 'User-Agent': 'AudioMonitor-Server' } }, (response) => {
+            if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
+              response.resume();
+              const redirectUrl = new URL(response.headers.location, url).href;
+              return resolve(downloadFile(redirectUrl, depth + 1));
+            }
+            if (response.statusCode !== 200) {
+              response.resume();
+              return reject(new Error(`HTTP ${response.statusCode}`));
+            }
+            const fileStream = fs.createWriteStream(tempDest);
+            response.pipe(fileStream);
+            fileStream.on('finish', () => {
+              fileStream.close(() => {
+                try {
+                  if (fs.existsSync(destPath)) {
+                    try { fs.unlinkSync(destPath); } catch (e) {}
+                  }
+                  try {
+                    fs.renameSync(tempDest, destPath);
+                  } catch (rnErr) {
+                    fs.copyFileSync(tempDest, destPath);
+                    try { fs.unlinkSync(tempDest); } catch (e) {}
+                  }
+                  resolve();
+                } catch (err) {
+                  reject(err);
+                }
+              });
+            });
+            fileStream.on('error', (err) => {
+              try { fs.unlinkSync(tempDest); } catch (e) {}
+              reject(err);
+            });
+          });
+          request.setTimeout(45000, () => request.destroy(new Error('Download timeout (45s)')));
+          request.on('error', reject);
+        });
+      };
+
+      try {
+        logger.info(`[ServerUpdate] Mengunduh pembaruan server dari: ${downloadUrl}`);
+        await downloadFile(downloadUrl);
+        logger.info(`[ServerUpdate] Unduhan server selesai. Menjalankan installer dan me-restart server...`);
+
+        res.json({ success: true, message: 'Installer server berhasil diunduh. Server sedang memperbarui diri...' });
+
+        setTimeout(() => {
+          try {
+            const child = spawn(destPath, ['/S'], {
+              detached: true,
+              stdio: 'ignore'
+            });
+            child.unref();
+            process.exit(0);
+          } catch (spawnErr) {
+            logger.error(`[ServerUpdate] Gagal mengeksekusi installer: ${spawnErr.message}`);
+          }
+        }, 1000);
+      } catch (err) {
+        logger.error(`[ServerUpdate] Gagal mengunduh installer server: ${err.message}`);
+        try { if (fs.existsSync(tempDest)) fs.unlinkSync(tempDest); } catch (e) {}
+        if (!res.headersSent) res.status(500).json({ success: false, error: err.message });
+      }
+    });
+
+    // API: Upload installer Server baru langsung dari browser dan jalankan self-update
+    this.app.post('/api/updates/upload-server', (req, res) => {
+      const os = require('os');
+      const { spawn } = require('child_process');
+      const destPath = path.join(os.tmpdir(), 'AudioMonitor_Server_Update.exe');
+      const tempDest = `${destPath}.tmp_${Date.now()}`;
+      const fileStream = fs.createWriteStream(tempDest);
+
+      req.pipe(fileStream);
+
+      fileStream.on('finish', () => {
+        try {
+          if (fs.existsSync(destPath)) {
+            try { fs.unlinkSync(destPath); } catch (e) {}
+          }
+          try {
+            fs.renameSync(tempDest, destPath);
+          } catch (rnErr) {
+            fs.copyFileSync(tempDest, destPath);
+            try { fs.unlinkSync(tempDest); } catch (e) {}
+          }
+
+          logger.info(`[ServerUpdate] Installer server berhasil diunggah. Menjalankan silent install...`);
+          res.json({ success: true, message: 'File installer server diterima. Server sedang memperbarui diri...' });
+
+          setTimeout(() => {
+            try {
+              const child = spawn(destPath, ['/S'], {
+                detached: true,
+                stdio: 'ignore'
+              });
+              child.unref();
+              process.exit(0);
+            } catch (spawnErr) {
+              logger.error(`[ServerUpdate] Gagal mengeksekusi installer: ${spawnErr.message}`);
+            }
+          }, 1000);
+        } catch (err) {
+          logger.error(`[ServerUpdate] Gagal memproses file upload server: ${err.message}`);
+          if (!res.headersSent) res.status(500).json({ success: false, error: err.message });
+        }
+      });
+
+      fileStream.on('error', (err) => {
+        try { fs.unlinkSync(tempDest); } catch (e) {}
+        if (!res.headersSent) res.status(500).json({ success: false, error: err.message });
       });
     });
   }

@@ -33,7 +33,15 @@ class ConfigManager {
       monitoringActive: true,
       dashboardPin: '1234',
       logRetentionDays: 30,
-      recordDir: ''
+      recordDir: '',
+      transcription: {
+        enabled: false,
+        apiUrl: '',
+        apiKey: '',
+        language: 'id',
+        autoTranscribe: true,
+        alertKeywords: []
+      }
     };
     
     this.config = { ...this.defaultConfig };
@@ -62,7 +70,16 @@ class ConfigManager {
           monitoringActive: parsed.monitoringActive !== undefined ? parsed.monitoringActive : true,
           dashboardPin: parsed.dashboardPin || '1234',
           logRetentionDays: parsed.logRetentionDays !== undefined ? parsed.logRetentionDays : 30,
-          recordDir: parsed.recordDir || ''
+          recordDir: parsed.recordDir || '',
+          transcription: {
+            enabled: false,
+            apiUrl: '',
+            apiKey: '',
+            language: 'id',
+            autoTranscribe: true,
+            alertKeywords: [],
+            ...(parsed.transcription || {})
+          }
         };
       } catch (err) {
         console.error('Error reading config file:', err.message);
@@ -71,7 +88,11 @@ class ConfigManager {
           fs.copyFileSync(this.configPath, backupPath);
           console.warn(`Corrupted config backed up to: ${backupPath}`);
         } catch (bErr) {}
-        this.config = { ...this.defaultConfig, telegram: { ...this.defaultConfig.telegram } };
+        this.config = { 
+          ...this.defaultConfig, 
+          telegram: { ...this.defaultConfig.telegram },
+          transcription: { ...this.defaultConfig.transcription }
+        };
       }
     } else {
       this.saveConfig();
@@ -139,6 +160,24 @@ class ConfigManager {
    */
   getTelegramConfig() {
     return this.config.telegram || { token: '', chatId: '', interval: 60 };
+  }
+
+  /**
+   * Mengambil konfigurasi integrasi Whisper Speech-to-Text.
+   */
+  getTranscriptionConfig() {
+    return this.config.transcription || { ...this.defaultConfig.transcription };
+  }
+
+  /**
+   * Memperbarui konfigurasi integrasi Whisper Speech-to-Text.
+   */
+  setTranscriptionConfig(transcriptionData = {}) {
+    this.config.transcription = {
+      ...this.getTranscriptionConfig(),
+      ...transcriptionData
+    };
+    this.saveConfig();
   }
 }
 

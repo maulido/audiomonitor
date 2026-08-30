@@ -1,7 +1,7 @@
 import { io } from 'socket.io-client';
 
 class DashboardClient {
-  constructor(serverUrl, onConnectChange, onDataUpdate, onMonitoringStatus, onPcMonitoringUpdate, onPcMonitoringStates, onAllAgents, onAgentDeleted, onUpdateProgress) {
+  constructor(serverUrl, onConnectChange, onDataUpdate, onMonitoringStatus, onPcMonitoringUpdate, onPcMonitoringStates, onAllAgents, onAgentDeleted, onUpdateProgress, onTranscriptionStatus, onKeywordAlert) {
     this.serverUrl = serverUrl;
     this.socket = null;
     this.onConnectChange = onConnectChange;
@@ -12,6 +12,8 @@ class DashboardClient {
     this.onAllAgents = onAllAgents;
     this.onAgentDeleted = onAgentDeleted;
     this.onUpdateProgress = onUpdateProgress;
+    this.onTranscriptionStatus = onTranscriptionStatus;
+    this.onKeywordAlert = onKeywordAlert;
   }
 
   connect() {
@@ -28,18 +30,26 @@ class DashboardClient {
       });
 
       this.socket.on('all-agents-state', (data) => {
-          if (this.onAllAgents) this.onAllAgents(data);
-        });
+        if (this.onAllAgents) this.onAllAgents(data);
+      });
 
-        this.socket.on('agent-deleted', (uuid) => {
-          if (this.onAgentDeleted) this.onAgentDeleted(uuid);
-        });
+      this.socket.on('agent-deleted', (uuid) => {
+        if (this.onAgentDeleted) this.onAgentDeleted(uuid);
+      });
 
-        this.socket.on('agent-update-progress', (data) => {
-          if (this.onUpdateProgress) this.onUpdateProgress(data);
-        });
+      this.socket.on('agent-update-progress', (data) => {
+        if (this.onUpdateProgress) this.onUpdateProgress(data);
+      });
 
-        this.socket.on('dashboard-update', (data) => {
+      this.socket.on('transcription-status', (data) => {
+        if (this.onTranscriptionStatus) this.onTranscriptionStatus(data);
+      });
+
+      this.socket.on('keyword-alert', (data) => {
+        if (this.onKeywordAlert) this.onKeywordAlert(data);
+      });
+
+      this.socket.on('dashboard-update', (data) => {
         if (this.onDataUpdate) this.onDataUpdate(data);
       });
 

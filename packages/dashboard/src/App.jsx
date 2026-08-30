@@ -94,6 +94,7 @@ function App() {
   const [currentView, setCurrentView] = useState('live'); // 'live', 'logs', 'records', 'settings'
   const [logs, setLogs] = useState([]);
   const [records, setRecords] = useState([]);
+  const [loadingRecords, setLoadingRecords] = useState(false);
   const [playingSession, setPlayingSession] = useState(null); // { folderName, pcName, dateStr, timeStr, parts: [] }
   const [currentPartIndex, setCurrentPartIndex] = useState(0);
   const [partDurations, setPartDurations] = useState([]);
@@ -105,8 +106,23 @@ function App() {
   const [recordPcFilter, setRecordPcFilter] = useState('');
   const [recordStartDate, setRecordStartDate] = useState('');
   const [recordEndDate, setRecordEndDate] = useState('');
+  const [recordStatusFilter, setRecordStatusFilter] = useState('all'); // 'all', 'ready', 'none', 'alert'
+  const [recordSortOrder, setRecordSortOrder] = useState('newest'); // 'newest', 'oldest', 'size_desc', 'duration_desc'
+  const [collapsedPcs, setCollapsedPcs] = useState({}); // { [pcName]: boolean }
+  const [pcSessionPages, setPcSessionPages] = useState({}); // { [pcName]: number }
+  const [sessionsPerPage, setSessionsPerPage] = useState(5); // 5, 10, 25, 50, 0 (all)
+  const [recordViewLayout, setRecordViewLayout] = useState('detailed'); // 'detailed' | 'compact'
   const [systemLogs, setSystemLogs] = useState('');
   const [showSystemLogs, setShowSystemLogs] = useState(false);
+  const [showTelegramToken, setShowTelegramToken] = useState(false);
+  const [isSavingTelegram, setIsSavingTelegram] = useState(false);
+  const [isSavingWhisper, setIsSavingWhisper] = useState(false);
+  const [isSavingRetention, setIsSavingRetention] = useState(false);
+  const [isSavingPin, setIsSavingPin] = useState(false);
+  const [newKeywordInput, setNewKeywordInput] = useState('');
+  const [dangerConfirmText, setDangerConfirmText] = useState('');
+  const [isUpdatingServer, setIsUpdatingServer] = useState(false);
+  const [isUploadingServerInstaller, setIsUploadingServerInstaller] = useState(false);
 
   // Helper untuk format tanggal lokal (WIB / UTC+7 aman tanpa pergeseran hari)
   const getLocalDateStr = (d = new Date()) => {
@@ -114,6 +130,44 @@ function App() {
     const month = String(d.getMonth() + 1).padStart(2, '0');
     const day = String(d.getDate()).padStart(2, '0');
     return `${year}-${month}-${day}`;
+  };
+
+  // Helper format durasi detik ke teks rapi (contoh: 16 dtk, 10m 00s, 1j 24m)
+  const formatDurationText = (seconds) => {
+    if (!seconds || seconds <= 0 || isNaN(seconds)) return '0 dtk';
+    const s = Math.round(seconds);
+    if (s < 60) return `${s} dtk`;
+    const m = Math.floor(s / 60);
+    const remS = s % 60;
+    if (m < 60) return remS > 0 ? `${m}m ${String(remS).padStart(2, '0')}s` : `${m} menit`;
+    const h = Math.floor(m / 60);
+    const remM = m % 60;
+    return remM > 0 ? `${h}j ${String(remM).padStart(2, '0')}m` : `${h} jam`;
+  };
+
+  // Helper estimasi / kalkulasi durasi rekaman sesi
+  const calculateSessionDuration = (session) => {
+    if (!session) return 0;
+    // 1. Total dari durasi transkrip jika tersedia
+    const sumPartDurations = (session.parts || []).reduce((acc, p) => acc + (p.transcriptDuration || 0), 0);
+    if (sumPartDurations > 0) return sumPartDurations;
+
+    // 2. Dari selisih jam mulai dan selesai
+    if (session.startTime && session.endTime && session.isCompleted) {
+      const [h1, m1, s1] = session.startTime.split(':').map(Number);
+      const [h2, m2, s2] = session.endTime.split(':').map(Number);
+      if (!isNaN(h1) && !isNaN(h2)) {
+        let diffSec = (h2 * 3600 + m2 * 60 + (s2 || 0)) - (h1 * 3600 + m1 * 60 + (s1 || 0));
+        if (diffSec < 0) diffSec += 86400; // lewat tengah malam
+        if (diffSec > 0) return diffSec;
+      }
+    }
+
+    // 3. Fallback estimasi dari ukuran WebM (~4 KB/s)
+    if (session.totalSize > 0) {
+      return Math.max(1, Math.round(session.totalSize / 4096));
+    }
+    return 0;
   };
 
   // Incident Filter State
@@ -156,6 +210,29 @@ function App() {
   const [isUploadingInstaller, setIsUploadingInstaller] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
 
+  // Whisper Speech-to-Text State
+  const [transcriptionConfig, setTranscriptionConfig] = useState({
+    enabled: false,
+    apiUrl: '',
+    apiKey: '',
+    language: 'id',
+    autoTranscribe: true,
+    alertKeywords: []
+  });
+  const [alertKeywordsInput, setAlertKeywordsInput] = useState('');
+  const [isTestingWhisperApi, setIsTestingWhisperApi] = useState(false);
+  const [whisperTestResult, setWhisperTestResult] = useState(null);
+  const [activeTranscriptModal, setActiveTranscriptModal] = useState(null);
+  const [transcriptSearchQuery, setTranscriptSearchQuery] = useState('');
+  const [transcriptSearchResults, setTranscriptSearchResults] = useState([]);
+  const [isSearchingTranscript, setIsSearchingTranscript] = useState(false);
+  const [transcribingFiles, setTranscribingFiles] = useState({});
+  const [keywordAlertToast, setKeywordAlertToast] = useState(null);
+
+  const searchDebounceRef = useRef(null);
+  const latestSearchQueryRef = useRef('');
+  const toastTimerRef = useRef(null);
+
   // Auth State
   const [pin, setPin] = useState(sessionStorage.getItem('dashboardPin') || '');
   const [isAuthenticated, setIsAuthenticated] = useState(null); // null = checking
@@ -196,9 +273,13 @@ function App() {
     if (data.telegram) {
       setTelegramToken(data.telegram.token || '');
       setTelegramChatId(data.telegram.chatId || '');
-        setTelegramInterval(data.telegram.interval || 60);
-      }
-      if (data.logRetentionDays) setLogRetentionDays(data.logRetentionDays);
+      setTelegramInterval(data.telegram.interval || 60);
+    }
+    if (data.logRetentionDays) setLogRetentionDays(data.logRetentionDays);
+    if (data.transcription) {
+      setTranscriptionConfig(data.transcription);
+      setAlertKeywordsInput(Array.isArray(data.transcription.alertKeywords) ? data.transcription.alertKeywords.join(', ') : '');
+    }
   };
 
   const fetchConfig = async () => {
@@ -211,6 +292,254 @@ function App() {
       }
     } catch (e) {
       console.error('Failed to fetch config', e);
+    }
+  };
+
+  const fetchTranscriptionConfig = async () => {
+    try {
+      const res = await apiFetch('/api/config/transcription');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.transcription) {
+          setTranscriptionConfig(data.transcription);
+          setAlertKeywordsInput(Array.isArray(data.transcription.alertKeywords) ? data.transcription.alertKeywords.join(', ') : '');
+        }
+      }
+    } catch (err) {
+      console.error('Failed to fetch transcription config:', err);
+    }
+  };
+
+  const saveTranscriptionConfig = async () => {
+    setIsSavingWhisper(true);
+    try {
+      const keywordsArray = alertKeywordsInput.split(',').map(k => k.trim()).filter(Boolean);
+      const res = await apiFetch('/api/config/transcription', {
+        method: 'POST',
+        body: JSON.stringify({
+          ...transcriptionConfig,
+          alertKeywords: keywordsArray
+        })
+      });
+      if (res.ok) {
+        await customAlert('Pengaturan integrasi Whisper berhasil disimpan.', 'Tersimpan');
+      } else {
+        await customAlert('Gagal menyimpan konfigurasi Whisper.', 'Error');
+      }
+    } catch (err) {
+      await customAlert('Error: ' + err.message, 'Error');
+    } finally {
+      setIsSavingWhisper(false);
+    }
+  };
+
+  const removeAlertKeyword = (keywordToRemove) => {
+    const arr = alertKeywordsInput.split(',').map(k => k.trim()).filter(Boolean);
+    const updated = arr.filter(k => k.toLowerCase() !== keywordToRemove.toLowerCase());
+    setAlertKeywordsInput(updated.join(', '));
+  };
+
+  const addAlertKeyword = (newKw) => {
+    const trimmed = (newKw || '').trim();
+    if (!trimmed) return;
+    const arr = alertKeywordsInput.split(',').map(k => k.trim()).filter(Boolean);
+    if (!arr.some(k => k.toLowerCase() === trimmed.toLowerCase())) {
+      arr.push(trimmed);
+      setAlertKeywordsInput(arr.join(', '));
+    }
+    setNewKeywordInput('');
+  };
+
+  const testWhisperApiConnection = async () => {
+    setIsTestingWhisperApi(true);
+    setWhisperTestResult(null);
+    try {
+      const res = await apiFetch('/api/transcription/test-api', {
+        method: 'POST',
+        body: JSON.stringify({
+          apiUrl: transcriptionConfig.apiUrl,
+          apiKey: transcriptionConfig.apiKey
+        })
+      });
+      const data = await res.json();
+      setWhisperTestResult(data);
+    } catch (err) {
+      setWhisperTestResult({ success: false, error: err.message });
+    } finally {
+      setIsTestingWhisperApi(false);
+    }
+  };
+
+  const openTranscriptModal = async (folderName, fileName = null, pcName = '') => {
+    setActiveTranscriptModal({
+      isOpen: true,
+      folderName,
+      fileName,
+      pcName,
+      transcript: null,
+      loading: true,
+      error: null
+    });
+
+    try {
+      const query = fileName ? `?folder=${encodeURIComponent(folderName)}&file=${encodeURIComponent(fileName)}` : `?folder=${encodeURIComponent(folderName)}`;
+      const res = await apiFetch(`/api/records/transcript${query}`);
+      if (res.ok) {
+        const data = await res.json();
+        setActiveTranscriptModal(prev => prev ? { ...prev, transcript: data.transcript, loading: false } : null);
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        setActiveTranscriptModal(prev => prev ? { ...prev, loading: false, error: errData.error || 'Belum ada transkrip untuk rekaman ini.' } : null);
+      }
+    } catch (err) {
+      setActiveTranscriptModal(prev => prev ? { ...prev, loading: false, error: err.message } : null);
+    }
+  };
+
+  const handleManualTranscribe = async (folderName, fileName, pcName) => {
+    try {
+      setActiveTranscriptModal(prev => prev ? { ...prev, loading: true, error: null } : null);
+      const res = await apiFetch('/api/records/transcribe', {
+        method: 'POST',
+        body: JSON.stringify({ folder: folderName, file: fileName, pcName })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setActiveTranscriptModal(prev => prev ? { ...prev, transcript: data.transcript, loading: false } : null);
+        fetchRecords();
+      } else {
+        setActiveTranscriptModal(prev => prev ? { ...prev, loading: false, error: data.error || 'Gagal mentranskripsi file.' } : null);
+      }
+    } catch (err) {
+      setActiveTranscriptModal(prev => prev ? { ...prev, loading: false, error: err.message } : null);
+    }
+  };
+
+  const handleSearchTranscripts = (query, customFilters = null) => {
+    setTranscriptSearchQuery(query);
+    latestSearchQueryRef.current = query;
+
+    if (searchDebounceRef.current) {
+      clearTimeout(searchDebounceRef.current);
+    }
+
+    if (!query || !query.trim()) {
+      setTranscriptSearchResults([]);
+      setIsSearchingTranscript(false);
+      return;
+    }
+
+    const sDate = customFilters?.startDate !== undefined ? customFilters.startDate : recordStartDate;
+    const eDate = customFilters?.endDate !== undefined ? customFilters.endDate : recordEndDate;
+    const pc = customFilters?.pcFilter !== undefined ? customFilters.pcFilter : recordPcFilter;
+
+    setIsSearchingTranscript(true);
+    searchDebounceRef.current = setTimeout(async () => {
+      try {
+        const params = new URLSearchParams({
+          q: query.trim()
+        });
+        if (sDate) params.append('startDate', sDate);
+        if (eDate) params.append('endDate', eDate);
+        if (pc) params.append('pcFilter', pc);
+
+        const res = await apiFetch(`/api/records/search-transcript?${params.toString()}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (latestSearchQueryRef.current === query) {
+            setTranscriptSearchResults(data.results || []);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to search transcripts:', err);
+      } finally {
+        if (latestSearchQueryRef.current === query) {
+          setIsSearchingTranscript(false);
+        }
+      }
+    }, 300);
+  };
+
+  useEffect(() => {
+    if (transcriptSearchQuery && transcriptSearchQuery.trim()) {
+      handleSearchTranscripts(transcriptSearchQuery);
+    }
+  }, [recordStartDate, recordEndDate, recordPcFilter]);
+
+  const downloadTranscriptFile = (transcript, format = 'txt') => {
+    if (!transcript) return;
+    let content = '';
+    let mimeType = 'text/plain';
+    let fileExt = 'txt';
+
+    const safeFolderName = String(transcript.sessionFolder || 'audio').replace(/[/\\?%*:|"<>]/g, '_');
+
+    if (format === 'json') {
+      content = JSON.stringify(transcript, null, 2);
+      mimeType = 'application/json';
+      fileExt = 'json';
+    } else if (format === 'srt') {
+      fileExt = 'srt';
+      const formatSrtTime = (seconds) => {
+        const validSec = (typeof seconds === 'number' && !isNaN(seconds) && isFinite(seconds)) ? Math.max(0, seconds) : 0;
+        const d = new Date(validSec * 1000);
+        const hh = String(Math.floor(validSec / 3600)).padStart(2, '0');
+        const mm = String(d.getUTCMinutes()).padStart(2, '0');
+        const ss = String(d.getUTCSeconds()).padStart(2, '0');
+        const ms = String(d.getUTCMilliseconds()).padStart(3, '0');
+        return `${hh}:${mm}:${ss},${ms}`;
+      };
+      if (Array.isArray(transcript.segments) && transcript.segments.length > 0) {
+        content = transcript.segments.map((seg, idx) => {
+          const s = typeof seg.start === 'number' ? seg.start : 0;
+          const e = typeof seg.end === 'number' ? seg.end : s + 3;
+          return `${idx + 1}\n${formatSrtTime(s)} --> ${formatSrtTime(e)}\n${seg.text || ''}\n`;
+        }).join('\n');
+      } else {
+        content = `1\n00:00:00,000 --> 00:10:00,000\n${transcript.text || ''}\n`;
+      }
+    } else {
+      content = `TRANSKRIP REKAMAN AUDIO\nSesi: ${transcript.sessionFolder || ''}\nPC: ${transcript.pcName || ''}\nWaktu: ${transcript.transcribedAt || ''}\n\n`;
+      if (Array.isArray(transcript.segments) && transcript.segments.length > 0) {
+        content += transcript.segments.map(seg => {
+          const validSec = typeof seg.start === 'number' ? Math.max(0, seg.start) : 0;
+          const m = Math.floor(validSec / 60);
+          const s = Math.floor(validSec % 60);
+          const timePill = `[${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}]`;
+          return `${timePill} ${seg.text || ''}`;
+        }).join('\n');
+      } else {
+        content += transcript.text || '';
+      }
+    }
+
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `transkrip_${safeFolderName}.${fileExt}`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const quickDownloadSessionTranscript = async (session, format = 'txt') => {
+    if (!session) return;
+    try {
+      const res = await apiFetch(`/api/records/transcript?folder=${encodeURIComponent(session.folderName)}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.transcript) {
+          downloadTranscriptFile(data.transcript, format);
+        } else {
+          customAlert('Transkrip belum tersedia untuk sesi ini.', 'Info');
+        }
+      } else {
+        customAlert('Transkrip belum tersedia untuk sesi ini.', 'Info');
+      }
+    } catch (err) {
+      customAlert('Gagal mengunduh transkrip: ' + err.message, 'Error');
     }
   };
 
@@ -443,6 +772,96 @@ function App() {
     }
   };
 
+  const handleServerSelfUpdate = async () => {
+    if (!githubReleaseInfo?.serverAsset?.downloadUrl) {
+      await customAlert('File installer Server tidak ditemukan pada rilis GitHub ini.', 'Peringatan');
+      return;
+    }
+
+    const sizeMb = githubReleaseInfo.serverAsset.size ? (githubReleaseInfo.serverAsset.size / 1024 / 1024).toFixed(1) : '0';
+    const confirmed = await customConfirm(
+      `Perbarui Server ke ${githubReleaseInfo.tag} sekarang?\n\nServer akan mengunduh ${githubReleaseInfo.serverAsset.name} (${sizeMb} MB) dan melakukan instalasi otomatis. Aplikasi Server akan me-restart secara mandiri.`,
+      'Konfirmasi Update Server'
+    );
+    if (!confirmed) return;
+
+    setIsUpdatingServer(true);
+    try {
+      const res = await apiFetch('/api/updates/server-self-update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          downloadUrl: githubReleaseInfo.serverAsset.downloadUrl,
+          fileName: githubReleaseInfo.serverAsset.name
+        })
+      });
+      if (res.ok) {
+        await customAlert('Installer Server berhasil diunduh! Aplikasi Server sedang memperbarui diri dan me-restart. Silakan muat ulang (refresh) halaman ini dalam 10-15 detik.', 'Server Sedang Diperbarui');
+      } else {
+        const err = await res.json().catch(() => ({}));
+        await customAlert(`Gagal memperbarui Server: ${err.error || 'Server error'}`, 'Gagal');
+      }
+    } catch (e) {
+      await customAlert(`Koneksi error: ${e.message}`, 'Error');
+    } finally {
+      setIsUpdatingServer(false);
+    }
+  };
+
+  const handleUploadServerInstaller = async (e) => {
+    const inputEl = e.target;
+    const file = inputEl.files?.[0];
+    if (!file) return;
+
+    if (!file.name.toLowerCase().endsWith('.exe')) {
+      inputEl.value = '';
+      await customAlert('Hanya file installer (.exe) yang diperbolehkan.', 'Format Salah');
+      return;
+    }
+
+    const sizeMb = file.size ? (file.size / 1024 / 1024).toFixed(1) : '0';
+    const confirmed = await customConfirm(
+      `Upload dan pasang installer Server ${file.name} (${sizeMb} MB) sekarang?\n\nAplikasi Server akan langsung memperbarui diri dan me-restart.`,
+      'Konfirmasi Update Server'
+    );
+    if (!confirmed) {
+      inputEl.value = '';
+      return;
+    }
+
+    setIsUploadingServerInstaller(true);
+
+    try {
+      const res = await fetch(`${SERVER_URL}/api/updates/upload-server`, {
+        method: 'POST',
+        headers: {
+          'x-pin': pin,
+          'x-file-name': encodeURIComponent(file.name)
+        },
+        body: file
+      });
+
+      if (res.status === 401) {
+        setIsAuthenticated(false);
+        sessionStorage.removeItem('dashboardPin');
+        await customAlert('Sesi habis atau PIN salah.', 'Akses Ditolak');
+        return;
+      }
+
+      if (res.ok) {
+        await customAlert(`File installer Server ${file.name} berhasil diunggah! Server sedang melakukan instalasi dan akan segera me-restart. Silakan muat ulang halaman ini dalam beberapa detik.`, 'Update Server Berhasil Dipicu');
+      } else {
+        const err = await res.json().catch(() => ({}));
+        await customAlert(`Gagal upload server installer: ${err.error || 'Server error'}`, 'Upload Gagal');
+      }
+    } catch (err) {
+      await customAlert(`Koneksi error saat upload: ${err.message}`, 'Error');
+    } finally {
+      setIsUploadingServerInstaller(false);
+      inputEl.value = '';
+    }
+  };
+
   const triggerAgentUpdate = async (targetUuid = 'all') => {
     if (!serverUpdateInfo || !serverUpdateInfo.hasUpdate) {
       await customAlert('Tidak ada file update Agent yang tersedia di Server.\nSilakan gunakan tombol "Cek GitHub" atau "Upload File" di tab Settings.', 'Pembaruan Tidak Ditemukan');
@@ -480,12 +899,15 @@ function App() {
 
   const fetchRecords = async () => {
     try {
+      setLoadingRecords(true);
       const res = await apiFetch('/api/records');
       if (res.ok) {
         setRecords(await res.json());
       }
     } catch (e) {
       console.error('Failed to fetch records', e);
+    } finally {
+      setLoadingRecords(false);
     }
   };
 
@@ -690,6 +1112,7 @@ function App() {
       fetchRecords();
     } else if (isAuthenticated && currentView === 'settings') {
       fetchConfig();
+      fetchTranscriptionConfig();
     }
   }, [currentView, isAuthenticated]);
 
@@ -717,35 +1140,41 @@ function App() {
              next[d.uuid] = {
                ...existing,
                ...d,
-               micHistory: (d.micHistory || existing.micHistory || []).slice(-30),
-               obsHistory: (d.obsHistory || existing.obsHistory || []).slice(-30)
+               micHistory: (d.micHistory || existing.micHistory || Array(30).fill(-60)).slice(-30),
+               obsHistory: (d.obsHistory || existing.obsHistory || Array(30).fill(-60)).slice(-30)
              };
+             hasChanges = true;
           }
-          hasChanges = true;
         }
 
-        if (agentBuffer.length > 0) {
-          const toProcess = agentBuffer;
-          agentBuffer = [];
+        while (agentBuffer.length > 0) {
+          const data = agentBuffer.shift();
+          const prevData = next[data.uuid] || {};
+          const mic = data.micDb !== undefined ? data.micDb : (data.micLevel !== undefined ? data.micLevel : -60);
+          const obs = data.obsDb !== undefined ? data.obsDb : (data.obsLevel !== undefined ? data.obsLevel : -60);
           
-          for (const data of toProcess) {
-            const prevData = next[data.uuid] || {};
-            const isOffline = data.status === 'OFFLINE';
-            const mic = isOffline ? 0 : (data.micLevel !== undefined ? data.micLevel : prevData.micLevel || 0);
-            const obs = isOffline ? 0 : (data.obsLevel !== undefined ? data.obsLevel : prevData.obsLevel || 0);
-            const updatedObsSources = isOffline ? [] : (data.obsSources || prevData.obsSources);
-            
-            next[data.uuid] = {
-              ...prevData,
-              ...data,
-              timestamp: Date.now(),
-              obsSources: updatedObsSources,
-              micLevel: mic,
-              obsLevel: obs,
-              micHistory: [...(prevData.micHistory || Array(30).fill(0)), mic].slice(-30),
-              obsHistory: [...(prevData.obsHistory || Array(30).fill(0)), obs].slice(-30)
-            };
+          let updatedObsSources = prevData.obsSources || [];
+          if (data.obsSources && Array.isArray(data.obsSources) && data.obsSources.length > 0) {
+            updatedObsSources = data.obsSources;
           }
+
+          const existingMicHistory = (prevData.micHistory && prevData.micHistory.length > 0)
+            ? prevData.micHistory 
+            : Array(30).fill(Number(mic) || -60);
+          const existingObsHistory = (prevData.obsHistory && prevData.obsHistory.length > 0)
+            ? prevData.obsHistory 
+            : Array(30).fill(Number(obs) || -60);
+
+          next[data.uuid] = {
+            ...prevData,
+            ...data,
+            timestamp: Date.now(),
+            obsSources: updatedObsSources,
+            micLevel: mic,
+            obsLevel: obs,
+            micHistory: [...existingMicHistory, Number(mic)].slice(-30),
+            obsHistory: [...existingObsHistory, Number(obs)].slice(-30)
+          };
           hasChanges = true;
         }
         
@@ -802,6 +1231,26 @@ function App() {
             [updateProg.uuid]: updateProg
           }));
         }
+      },
+      (transData) => {
+        if (transData) {
+          setTranscribingFiles(prev => ({
+            ...prev,
+            [`${transData.sessionFolder}/${transData.fileName}`]: transData.status
+          }));
+          if (transData.status === 'completed') {
+            fetchRecords();
+          }
+        }
+      },
+      (alertData) => {
+        if (alertData) {
+          if (toastTimerRef.current) {
+            clearTimeout(toastTimerRef.current);
+          }
+          setKeywordAlertToast(alertData);
+          toastTimerRef.current = setTimeout(() => setKeywordAlertToast(null), 8000);
+        }
       }
     );
 
@@ -809,6 +1258,8 @@ function App() {
 
     return () => {
       clearInterval(flushBuffer);
+      if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
       if (client.current) client.current.disconnect();
     };
   }, []);
@@ -842,6 +1293,7 @@ function App() {
   };
 
   const saveTelegramConfig = async () => {
+    setIsSavingTelegram(true);
     try {
       const res = await apiFetch(`/api/config/telegram`, {
         method: 'POST',
@@ -854,10 +1306,13 @@ function App() {
       if (res.ok) await customAlert('Konfigurasi Telegram berhasil disimpan!', 'Sukses');
     } catch (e) {
       await customAlert('Gagal menyimpan konfigurasi Telegram: ' + e.message, 'Error');
+    } finally {
+      setIsSavingTelegram(false);
     }
   };
 
   const saveRetentionConfig = async () => {
+    setIsSavingRetention(true);
     try {
       const days = parseInt(logRetentionDays, 10) || 30;
       const res = await apiFetch(`/api/config/retention`, {
@@ -871,6 +1326,8 @@ function App() {
       }
     } catch (e) {
       await customAlert('Error: ' + e.message, 'Error');
+    } finally {
+      setIsSavingRetention(false);
     }
   };
 
@@ -938,6 +1395,7 @@ function App() {
       await customAlert('PIN minimal 4 karakter', 'Peringatan');
       return;
     }
+    setIsSavingPin(true);
     try {
       const res = await apiFetch(`/api/config/pin`, {
         method: 'POST',
@@ -951,6 +1409,8 @@ function App() {
       }
     } catch (e) {
       await customAlert('Gagal mengubah PIN', 'Error');
+    } finally {
+      setIsSavingPin(false);
     }
   };
 
@@ -1254,7 +1714,7 @@ function App() {
                             <>
                               <div className="pc-name-wrapper">
                                 <span className="pc-name-title" title={agent.pcName}>{agent.pcName}</span>
-                                <span className="badge-agent-version">v{agent.appVersion || '1.0.1'}</span>
+                                <span className="badge-agent-version">v{agent.appVersion || '1.0.2'}</span>
                                 {agent.isStreaming && (
                                   <span className="live-badge">LIVE {agent.streamTimecode || ''}</span>
                                 )}
@@ -1378,14 +1838,32 @@ function App() {
                             <span className="meter-device">{agent.micDriverName || 'Default Microphone'}</span>
                           )}
                         </div>
-                        {agent.micHistory && (
-                          <svg width="100%" height="20" viewBox="0 0 80 20" preserveAspectRatio="none" className="sparkline">
-                            <polyline
-                              points={agent.micHistory.map((val, i) => `${i * (80/30)},${20 - ((val || 0) / 100) * 20}`).join(' ')}
-                              fill="none" stroke="#10b981" strokeWidth="1.5"
-                            />
-                          </svg>
-                        )}
+                        {(() => {
+                          const history = (agent.micHistory && agent.micHistory.length > 0)
+                            ? agent.micHistory
+                            : Array(30).fill(isFinite(Number(agent.micDb)) ? Number(agent.micDb) : -60);
+                          const stepX = 80 / Math.max(1, history.length - 1);
+                          const points = history.map((val, i) => {
+                            const num = Number(val);
+                            const safeDb = (!isFinite(num) || num <= -60) ? -60 : (num >= 0 ? 0 : num);
+                            const norm = (safeDb + 60) / 60; // 0.0 at -60dB, 1.0 at 0dB
+                            const y = (33 - (norm * 30)).toFixed(1);
+                            return `${(i * stepX).toFixed(1)},${y}`;
+                          }).join(' ');
+
+                          return (
+                            <svg width="100%" height="36" viewBox="0 0 80 36" preserveAspectRatio="none" className="sparkline">
+                              <polyline 
+                                points={points} 
+                                fill="none" 
+                                stroke="#10b981" 
+                                strokeWidth="2" 
+                                strokeLinecap="round" 
+                                strokeLinejoin="round" 
+                              />
+                            </svg>
+                          );
+                        })()}
                         
                         <div className="meter-db-value">
                           {isFinite(Number(agent.micDb)) ? Number(agent.micDb).toFixed(1) + ' dB' : '-60.0 dB'}
@@ -1407,20 +1885,38 @@ function App() {
                             </span>
                           )}
                         </div>
-                        {agent.obsHistory && (
-                          <svg width="100%" height="20" viewBox="0 0 80 20" preserveAspectRatio="none" className="sparkline">
-                            {agent.obsConnected === false ? (
-                              <line x1="0" y1="10" x2="80" y2="10" stroke="var(--danger)" strokeWidth="1.5" strokeDasharray="4 2" />
-                            ) : agent.isObsMutedBtn ? (
-                              <line x1="0" y1="19" x2="80" y2="19" stroke="var(--warning)" strokeWidth="1.5" />
-                            ) : (
-                              <polyline
-                                points={agent.obsHistory.map((val, i) => `${i * (80/30)},${20 - ((val || 0) / 100) * 20}`).join(' ')}
-                                fill="none" stroke="#3b82f6" strokeWidth="1.5"
-                              />
-                            )}
-                          </svg>
-                        )}
+                        {(() => {
+                          const history = (agent.obsHistory && agent.obsHistory.length > 0)
+                            ? agent.obsHistory
+                            : Array(30).fill(isFinite(Number(agent.obsDb)) ? Number(agent.obsDb) : -60);
+                          const stepX = 80 / Math.max(1, history.length - 1);
+                          const points = history.map((val, i) => {
+                            const num = Number(val);
+                            const safeDb = (!isFinite(num) || num <= -60) ? -60 : (num >= 0 ? 0 : num);
+                            const norm = (safeDb + 60) / 60;
+                            const y = (33 - (norm * 30)).toFixed(1);
+                            return `${(i * stepX).toFixed(1)},${y}`;
+                          }).join(' ');
+
+                          return (
+                            <svg width="100%" height="36" viewBox="0 0 80 36" preserveAspectRatio="none" className="sparkline">
+                              {agent.obsConnected === false ? (
+                                <line x1="0" y1="18" x2="80" y2="18" stroke="var(--danger)" strokeWidth="2" strokeDasharray="4 2" />
+                              ) : agent.isObsMutedBtn ? (
+                                <line x1="0" y1="33" x2="80" y2="33" stroke="var(--warning)" strokeWidth="2" />
+                              ) : (
+                                <polyline 
+                                  points={points} 
+                                  fill="none" 
+                                  stroke="#3b82f6" 
+                                  strokeWidth="2" 
+                                  strokeLinecap="round" 
+                                  strokeLinejoin="round" 
+                                />
+                              )}
+                            </svg>
+                          );
+                        })()}
                         <div className="meter-db-value" style={{ color: agent.obsConnected === false ? 'var(--danger)' : (agent.isObsMutedBtn ? 'var(--warning)' : undefined) }}>
                           {agent.obsConnected === false ? 'DISCONNECTED' : (agent.isObsMutedBtn ? 'MUTED' : (isFinite(Number(agent.obsDb)) ? Number(agent.obsDb).toFixed(1) + ' dB' : '-60.0 dB'))}
                         </div>
@@ -1663,445 +2159,1135 @@ function App() {
           );
         })()}
 
-        {currentView === 'records' && (
-          <div className="settings-layout" style={{ maxWidth: '1050px' }}>
-            <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <h1 className="settings-header" style={{ marginBottom: 0 }}>File Rekaman</h1>
-                <button className="btn-filter secondary" onClick={fetchRecords}><i className="fa-solid fa-rotate"></i> Muat Ulang</button>
+        {currentView === 'records' && (() => {
+          // 1. Group and filter raw records by date & PC filter
+          const pcGrouped = {};
+          records.forEach(r => {
+            if (recordPcFilter && r.pcName !== recordPcFilter) return;
+
+            const dateStr = r.isParsed 
+              ? r.dateStr 
+              : getLocalDateStr(new Date(r.createdAt));
+
+            if (recordStartDate && dateStr < recordStartDate) return;
+            if (recordEndDate && dateStr > recordEndDate) return;
+
+            if (!pcGrouped[r.pcName]) {
+              pcGrouped[r.pcName] = {
+                uuid: r.uuid || '',
+                sessions: {}
+              };
+            }
+            if (!pcGrouped[r.pcName].uuid && r.uuid) {
+              pcGrouped[r.pcName].uuid = r.uuid;
+            }
+            
+            const sessionKey = r.baseSessionKey || (r.folderName ? r.folderName.replace(/_to_\d{2}-\d{2}-\d{2}$/i, '') : r.folderName);
+            if (!pcGrouped[r.pcName].sessions[sessionKey]) {
+              pcGrouped[r.pcName].sessions[sessionKey] = {
+                sessionKey,
+                folderName: r.folderName,
+                pcName: r.pcName,
+                uuid: r.uuid,
+                isParsed: r.isParsed,
+                isCompleted: r.isCompleted || (r.folderName && r.folderName.includes('_to_')),
+                dateStr: r.dateStr,
+                timeStr: r.timeStr,
+                startTime: r.startTime,
+                endTime: r.endTime,
+                createdAt: r.createdAt,
+                totalSize: 0,
+                hasTranscript: false,
+                hasAlertKeyword: false,
+                transcriptSnippet: '',
+                keywordsFound: [],
+                parts: []
+              };
+            }
+            
+            const sess = pcGrouped[r.pcName].sessions[sessionKey];
+            const isThisRecordCompleted = r.isCompleted || (r.folderName && r.folderName.includes('_to_'));
+            if (isThisRecordCompleted && !sess.isCompleted) {
+              sess.isCompleted = true;
+              sess.timeStr = r.timeStr;
+              sess.folderName = r.folderName;
+              sess.startTime = r.startTime || sess.startTime;
+              sess.endTime = r.endTime || sess.endTime;
+            }
+
+            sess.totalSize += (r.size || 0);
+            if (r.hasTranscript) sess.hasTranscript = true;
+            if (r.transcriptSnippet && !sess.transcriptSnippet) {
+              sess.transcriptSnippet = r.transcriptSnippet;
+            }
+            if (Array.isArray(r.keywordsFound) && r.keywordsFound.length > 0) {
+              sess.hasAlertKeyword = true;
+              sess.keywordsFound = [...new Set([...sess.keywordsFound, ...r.keywordsFound])];
+            }
+            sess.parts.push(r);
+          });
+
+          // Sort parts inside each session by fileName
+          Object.values(pcGrouped).forEach(pcData => {
+            Object.values(pcData.sessions).forEach(sess => {
+              sess.parts.sort((a, b) => (a.fileName || '').localeCompare(b.fileName || ''));
+            });
+          });
+
+          // Aggregate all sessions for overall summary stats
+          const allSessions = [];
+          Object.values(pcGrouped).forEach(pcData => {
+            Object.values(pcData.sessions).forEach(sess => {
+              allSessions.push(sess);
+            });
+          });
+
+          const totalSessionCount = allSessions.length;
+          const totalPartCount = allSessions.reduce((acc, s) => acc + s.parts.length, 0);
+          const totalStorageBytes = allSessions.reduce((acc, s) => acc + s.totalSize, 0);
+          const totalTranscribedSessions = allSessions.filter(s => s.hasTranscript).length;
+          const totalAlertSessions = allSessions.filter(s => s.hasAlertKeyword).length;
+          const transcriptCoveragePct = totalSessionCount > 0 ? Math.round((totalTranscribedSessions / totalSessionCount) * 100) : 0;
+
+          const pcNames = Object.keys(pcGrouped);
+
+          return (
+            <div className="settings-layout" style={{ maxWidth: '1050px' }}>
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <h1 className="settings-header" style={{ marginBottom: 0 }}>File Rekaman</h1>
+                  <button className="btn-filter secondary" onClick={fetchRecords} disabled={loadingRecords}>
+                    <i className={`fa-solid fa-rotate ${loadingRecords ? 'fa-spin' : ''}`}></i> Muat Ulang
+                  </button>
+                </div>
+                <p className="settings-desc">Daftar rekaman insiden suara berdasarkan sesi kejadian. Potongan audio (part) dapat diputar berurutan secara otomatis.</p>
               </div>
-              <p className="settings-desc">Daftar rekaman insiden suara berdasarkan sesi kejadian. Potongan audio (part) dapat diputar berurutan secara otomatis.</p>
-            </div>
 
-            {/* Quick Filters */}
-            <div style={{ display: 'flex', gap: '8px', marginBottom: '-16px', flexWrap: 'wrap' }}>
-              <button className="btn-filter secondary" onClick={() => {
-                const today = getLocalDateStr();
-                setRecordStartDate(today);
-                setRecordEndDate(today);
-              }}>Hari Ini</button>
-              <button className="btn-filter secondary" onClick={() => {
-                const end = getLocalDateStr();
-                const start = new Date();
-                start.setDate(start.getDate() - 7);
-                setRecordStartDate(getLocalDateStr(start));
-                setRecordEndDate(end);
-              }}>7 Hari Terakhir</button>
-              <button className="btn-filter secondary" onClick={() => {
-                const end = getLocalDateStr();
-                const start = new Date();
-                start.setDate(start.getDate() - 30);
-                setRecordStartDate(getLocalDateStr(start));
-                setRecordEndDate(end);
-              }}>30 Hari Terakhir</button>
-              {(recordStartDate || recordEndDate || recordPcFilter) && (
-                <button className="btn-filter primary" onClick={() => {
-                  setRecordStartDate('');
-                  setRecordEndDate('');
-                  setRecordPcFilter('');
-                }}>
-                  <i className="fa-solid fa-filter-circle-xmark"></i> Tampilkan Semua
-                </button>
-              )}
-            </div>
+              {/* 1. Summary Stats Cards */}
+              <div className="record-stats-grid">
+                <div className="record-stat-card">
+                  <div className="stat-icon-wrap blue">
+                    <i className="fa-solid fa-folder-open"></i>
+                  </div>
+                  <div className="stat-info">
+                    <div className="stat-val">{totalSessionCount}</div>
+                    <div className="stat-label">Total Sesi Kejadian</div>
+                    <div className="stat-sub">{totalPartCount} Total Potongan Audio</div>
+                  </div>
+                </div>
 
-            {/* Filter Bar */}
-            <div className="settings-card">
-              <div className="settings-card-accent blue"></div>
-              <div className="settings-card-content" style={{ padding: '0' }}>
-                <div className="incident-filter-bar">
-                  <div className="incident-filter-group">
-                    <label>Tanggal Mulai</label>
-                    <input 
-                      type="date" 
-                      className="incident-filter-input" 
-                      value={recordStartDate} 
-                      onChange={e => setRecordStartDate(e.target.value)} 
-                    />
+                <div className="record-stat-card">
+                  <div className="stat-icon-wrap purple">
+                    <i className="fa-solid fa-hard-drive"></i>
                   </div>
-                  <div className="incident-filter-group">
-                    <label>Tanggal Akhir</label>
-                    <input 
-                      type="date" 
-                      className="incident-filter-input" 
-                      value={recordEndDate} 
-                      onChange={e => setRecordEndDate(e.target.value)} 
-                    />
+                  <div className="stat-info">
+                    <div className="stat-val">{(totalStorageBytes / 1024 / 1024).toFixed(2)} MB</div>
+                    <div className="stat-label">Total Penyimpanan</div>
+                    <div className="stat-sub">Format WebM Opus (~32kbps)</div>
                   </div>
-                  <div className="incident-filter-group">
-                    <label>Filter PC</label>
-                    <select 
-                      className="incident-filter-input" 
-                      value={recordPcFilter} 
-                      onChange={e => setRecordPcFilter(e.target.value)}
+                </div>
+
+                <div className="record-stat-card">
+                  <div className="stat-icon-wrap green">
+                    <i className="fa-solid fa-file-waveform"></i>
+                  </div>
+                  <div className="stat-info">
+                    <div className="stat-val">{totalTranscribedSessions} / {totalSessionCount}</div>
+                    <div className="stat-label">Transkrip AI Siap</div>
+                    <div className="stat-sub">{transcriptCoveragePct}% Selesai Diproses</div>
+                  </div>
+                </div>
+
+                <div className="record-stat-card">
+                  <div className={`stat-icon-wrap ${totalAlertSessions > 0 ? 'red' : 'amber'}`}>
+                    <i className="fa-solid fa-triangle-exclamation"></i>
+                  </div>
+                  <div className="stat-info">
+                    <div className="stat-val" style={{ color: totalAlertSessions > 0 ? '#f87171' : 'inherit' }}>
+                      {totalAlertSessions} Sesi
+                    </div>
+                    <div className="stat-label">Kata Bahaya</div>
+                    <div className="stat-sub">{totalAlertSessions > 0 ? 'Perlu Tinjauan Khusus' : 'Tidak Terindikasi'}</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* 2. Search Transcripts Bar */}
+              <div className="transcript-search-wrapper" style={{ margin: '0' }}>
+                <i className="fa-solid fa-magnifying-glass transcript-search-icon"></i>
+                <input
+                  type="text"
+                  className="transcript-search-input"
+                  placeholder="Cari kata kunci dalam transkrip percakapan rekaman..."
+                  value={transcriptSearchQuery}
+                  onChange={e => handleSearchTranscripts(e.target.value)}
+                />
+                {isSearchingTranscript && (
+                  <div style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--accent)', fontSize: '0.85rem' }}>
+                    <i className="fa-solid fa-spinner fa-spin"></i> Mencari...
+                  </div>
+                )}
+
+                {transcriptSearchQuery.trim() && !isSearchingTranscript && transcriptSearchResults.length === 0 && (
+                  <div className="transcript-search-results-box" style={{ padding: '12px 16px', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                    <i className="fa-solid fa-circle-info" style={{ marginRight: '6px' }}></i> Tidak ada transkrip yang cocok dengan "{transcriptSearchQuery}" pada filter yang dipilih.
+                  </div>
+                )}
+
+                {transcriptSearchResults.length > 0 && (
+                  <div className="transcript-search-results-box">
+                    <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '6px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '6px' }}>
+                      <div>
+                        Ditemukan {transcriptSearchResults.length} file rekaman yang mengandung "{transcriptSearchQuery}"
+                        {(recordStartDate || recordEndDate || recordPcFilter) && (
+                          <span style={{ color: 'var(--accent)', marginLeft: '6px', fontWeight: 'normal' }}>
+                            (Filter: {[
+                              recordPcFilter ? `PC: ${recordPcFilter}` : '',
+                              recordStartDate ? `Mulai: ${recordStartDate}` : '',
+                              recordEndDate ? `Akhir: ${recordEndDate}` : ''
+                            ].filter(Boolean).join(' | ')})
+                          </span>
+                        )}:
+                      </div>
+                      <button 
+                        className="btn-filter secondary" 
+                        style={{ padding: '2px 8px', fontSize: '0.7rem' }}
+                        onClick={() => {
+                          setTranscriptSearchQuery('');
+                          setTranscriptSearchResults([]);
+                        }}
+                      >
+                        <i className="fa-solid fa-xmark"></i> Tutup
+                      </button>
+                    </div>
+                    {transcriptSearchResults.map((res, rIdx) => (
+                      <div key={`${res.folderName}-${res.fileName}-${rIdx}`} className="transcript-search-result-item">
+                        <div>
+                          <div style={{ fontSize: '0.85rem', fontWeight: 'bold', color: 'var(--accent)' }}>
+                            <i className="fa-solid fa-desktop" style={{ marginRight: '6px' }}></i> {res.pcName} &bull; <span style={{ color: '#fff' }}>{res.fileName}</span>
+                            {res.dateStr && <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginLeft: '8px', fontWeight: 'normal' }}>({res.dateStr})</span>}
+                          </div>
+                          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                            {res.segments && res.segments.map((seg, sIdx) => {
+                              const validSec = typeof seg.start === 'number' ? Math.max(0, seg.start) : 0;
+                              const m = Math.floor(validSec / 60);
+                              const s = Math.floor(validSec % 60);
+                              const timeStr = `[${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}]`;
+                              return (
+                                <span key={`${seg.start || 0}-${sIdx}`} style={{ marginRight: '10px' }}>
+                                  <strong style={{ color: '#60a5fa' }}>{timeStr}</strong> {seg.text}
+                                </span>
+                              );
+                            })}
+                          </div>
+                        </div>
+                        <button 
+                          className="btn-filter primary" 
+                          style={{ padding: '4px 10px', fontSize: '0.75rem', whiteSpace: 'nowrap' }}
+                          onClick={() => openTranscriptModal(res.folderName, res.fileName, res.pcName)}
+                        >
+                          <i className="fa-solid fa-file-lines"></i> Buka Transkrip
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* 3. Quick Date Range Presets */}
+              <div style={{ display: 'flex', gap: '8px', marginBottom: '-16px', flexWrap: 'wrap' }}>
+                <button className="btn-filter secondary" onClick={() => {
+                  const today = getLocalDateStr();
+                  setRecordStartDate(today);
+                  setRecordEndDate(today);
+                }}>Hari Ini</button>
+                <button className="btn-filter secondary" onClick={() => {
+                  const end = getLocalDateStr();
+                  const start = new Date();
+                  start.setDate(start.getDate() - 7);
+                  setRecordStartDate(getLocalDateStr(start));
+                  setRecordEndDate(end);
+                }}>7 Hari Terakhir</button>
+                <button className="btn-filter secondary" onClick={() => {
+                  const end = getLocalDateStr();
+                  const start = new Date();
+                  start.setDate(start.getDate() - 30);
+                  setRecordStartDate(getLocalDateStr(start));
+                  setRecordEndDate(end);
+                }}>30 Hari Terakhir</button>
+                {(recordStartDate || recordEndDate || recordPcFilter) && (
+                  <button className="btn-filter primary" onClick={() => {
+                    setRecordStartDate('');
+                    setRecordEndDate('');
+                    setRecordPcFilter('');
+                  }}>
+                    <i className="fa-solid fa-filter-circle-xmark"></i> Tampilkan Semua
+                  </button>
+                )}
+              </div>
+
+              {/* 4. Filter Bar */}
+              <div className="settings-card">
+                <div className="settings-card-accent blue"></div>
+                <div className="settings-card-content" style={{ padding: '0' }}>
+                  <div className="incident-filter-bar">
+                    <div className="incident-filter-group">
+                      <label>Tanggal Mulai</label>
+                      <input 
+                        type="date" 
+                        className="incident-filter-input" 
+                        value={recordStartDate} 
+                        onChange={e => setRecordStartDate(e.target.value)} 
+                      />
+                    </div>
+                    <div className="incident-filter-group">
+                      <label>Tanggal Akhir</label>
+                      <input 
+                        type="date" 
+                        className="incident-filter-input" 
+                        value={recordEndDate} 
+                        onChange={e => setRecordEndDate(e.target.value)} 
+                      />
+                    </div>
+                    <div className="incident-filter-group">
+                      <label>Filter PC</label>
+                      <select 
+                        className="incident-filter-input" 
+                        value={recordPcFilter} 
+                        onChange={e => setRecordPcFilter(e.target.value)}
+                      >
+                        <option value="">Semua PC</option>
+                        {[...new Set(records.map(r => r.pcName).filter(Boolean))].sort().map(name => (
+                          <option key={name} value={name}>{name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="incident-filter-actions">
+                      <button 
+                        className="btn-filter secondary" 
+                        onClick={() => {
+                          setRecordStartDate('');
+                          setRecordEndDate('');
+                          setRecordPcFilter('');
+                        }}
+                      >
+                        <i className="fa-solid fa-rotate-left"></i> Reset
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* 5. Status Filter Pills, View Switcher & Toolbar */}
+              <div className="record-filter-toolbar">
+                <div className="status-pills-wrap">
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>Status:</span>
+                  <button 
+                    className={`status-pill-btn ${recordStatusFilter === 'all' ? 'active' : ''}`}
+                    onClick={() => setRecordStatusFilter('all')}
+                  >
+                    Semua ({totalSessionCount})
+                  </button>
+                  <button 
+                    className={`status-pill-btn ${recordStatusFilter === 'ready' ? 'active' : ''}`}
+                    onClick={() => setRecordStatusFilter('ready')}
+                  >
+                    <i className="fa-solid fa-check" style={{ color: '#34d399' }}></i> Transkrip Siap ({totalTranscribedSessions})
+                  </button>
+                  <button 
+                    className={`status-pill-btn ${recordStatusFilter === 'none' ? 'active' : ''}`}
+                    onClick={() => setRecordStatusFilter('none')}
+                  >
+                    <i className="fa-solid fa-circle-question" style={{ color: 'var(--text-muted)' }}></i> Belum Ditranskrip ({totalSessionCount - totalTranscribedSessions})
+                  </button>
+                  <button 
+                    className={`status-pill-btn alert ${recordStatusFilter === 'alert' ? 'active' : ''}`}
+                    onClick={() => setRecordStatusFilter('alert')}
+                  >
+                    <i className="fa-solid fa-triangle-exclamation" style={{ color: '#f87171' }}></i> Kata Bahaya ({totalAlertSessions})
+                  </button>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                  {/* View Mode Toggle (Detail vs Compact) */}
+                  <div className="view-layout-toggle" title="Pilih Format Tampilan Sesi">
+                    <button 
+                      className={`view-layout-btn ${recordViewLayout === 'detailed' ? 'active' : ''}`}
+                      onClick={() => setRecordViewLayout('detailed')}
                     >
-                      <option value="">Semua PC</option>
-                      {[...new Set(records.map(r => r.pcName).filter(Boolean))].sort().map(name => (
-                        <option key={name} value={name}>{name}</option>
-                      ))}
-                    </select>
+                      <i className="fa-solid fa-table-cells-large"></i> Detail
+                    </button>
+                    <button 
+                      className={`view-layout-btn ${recordViewLayout === 'compact' ? 'active' : ''}`}
+                      onClick={() => setRecordViewLayout('compact')}
+                    >
+                      <i className="fa-solid fa-list"></i> Ringkas
+                    </button>
                   </div>
-                  <div className="incident-filter-actions">
+
+                  {/* Collapse All Toggle */}
+                  {pcNames.length > 0 && (
                     <button 
                       className="btn-filter secondary" 
+                      style={{ padding: '4px 10px', fontSize: '0.75rem', height: '30px' }}
                       onClick={() => {
-                        setRecordStartDate('');
-                        setRecordEndDate('');
-                        setRecordPcFilter('');
+                        const allCollapsed = pcNames.every(pc => collapsedPcs[pc]);
+                        const next = {};
+                        pcNames.forEach(pc => { next[pc] = !allCollapsed; });
+                        setCollapsedPcs(next);
+                      }}
+                      title={pcNames.every(pc => collapsedPcs[pc]) ? 'Buka semua daftar PC' : 'Tutup/Minimize semua daftar PC'}
+                    >
+                      <i className={`fa-solid fa-${pcNames.every(pc => collapsedPcs[pc]) ? 'folder-open' : 'folder'}`}></i>
+                      <span style={{ marginLeft: '4px' }}>{pcNames.every(pc => collapsedPcs[pc]) ? 'Buka Semua' : 'Tutup Semua'}</span>
+                    </button>
+                  )}
+
+                  {/* Pagination Per Page Dropdown */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>Per Hal:</span>
+                    <select
+                      className="incident-filter-input"
+                      style={{ minWidth: '70px', padding: '4px 8px', fontSize: '0.8rem', height: '30px' }}
+                      value={sessionsPerPage}
+                      onChange={e => {
+                        const val = e.target.value === 'all' ? 0 : parseInt(e.target.value, 10);
+                        setSessionsPerPage(val);
                       }}
                     >
-                      <i className="fa-solid fa-rotate-left"></i> Reset
-                    </button>
+                      <option value="5">5</option>
+                      <option value="10">10</option>
+                      <option value="25">25</option>
+                      <option value="all">Semua</option>
+                    </select>
+                  </div>
+
+                  {/* Sort Selector */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>Urutkan:</span>
+                    <select
+                      className="incident-filter-input"
+                      style={{ minWidth: '135px', padding: '4px 8px', fontSize: '0.8rem', height: '30px' }}
+                      value={recordSortOrder}
+                      onChange={e => setRecordSortOrder(e.target.value)}
+                    >
+                      <option value="newest">Waktu Terbaru</option>
+                      <option value="oldest">Waktu Terlama</option>
+                      <option value="duration_desc">Durasi Terpanjang</option>
+                      <option value="size_desc">Ukuran Terbesar</option>
+                    </select>
                   </div>
                 </div>
               </div>
-            </div>
-            
-            {/* Unified Continuous Timeline Audio Player */}
-            {playingSession && playingSession.parts && playingSession.parts[currentPartIndex] && (
-              <div className="settings-card unified-player-card" style={{ marginBottom: '24px', background: 'rgba(59, 130, 246, 0.08)', borderColor: 'rgba(59, 130, 246, 0.35)' }}>
-                <div className="settings-card-content" style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                  {/* Hidden underlying audio element */}
-                  <audio 
-                    ref={audioRef}
-                    key={playingSession.parts[currentPartIndex].url}
-                    src={getMediaUrl(playingSession.parts[currentPartIndex].url)}
-                    onLoadedMetadata={handleAudioLoadedMetadata}
-                    onTimeUpdate={handleAudioTimeUpdate}
-                    onEnded={handleAudioEnded}
-                    onPlay={() => setIsPlaying(true)}
-                    onPause={() => setIsPlaying(false)}
-                    onError={(e) => {
-                      console.error('Audio playback error:', e);
-                      customAlert('Gagal memuat file rekaman audio. File mungkin telah dipindahkan atau dihapus dari server.', 'Gagal Memutar Audio');
-                      setPlayingSession(null);
-                    }}
-                  />
-
-                  {/* Header: PC Name, Session Time, Part indicator & Close */}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
-                    <div>
-                      <div style={{ fontWeight: 700, color: 'var(--accent)', fontSize: '1.05rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <i className="fa-solid fa-volume-high"></i>
-                        <span>{playingSession.pcName}</span>
-                        <span style={{ color: 'var(--text-muted)', fontWeight: 'normal', fontSize: '0.85rem' }}>
-                          &bull; {playingSession.isParsed ? `${playingSession.dateStr} (${playingSession.timeStr})` : new Date(playingSession.createdAt).toLocaleString()}
-                        </span>
-                      </div>
-                      <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '4px' }}>
-                        Memutar rekaman utuh (Sedang memuat Part {currentPartIndex + 1} dari {playingSession.parts.length}: <code>{playingSession.parts[currentPartIndex].fileName}</code>)
-                      </div>
-                    </div>
-                    
-                    <button 
-                      className="btn-filter secondary" 
-                      style={{ padding: '6px 12px', fontSize: '0.8rem' }} 
-                      onClick={() => setPlayingSession(null)}
-                    >
-                      <i className="fa-solid fa-xmark"></i> Tutup Player
-                    </button>
-                  </div>
-
-                  {/* Main Timeline Slider */}
-                  <div className="unified-timeline-container">
-                    <input 
-                      type="range" 
-                      className="range-slider unified-seekbar"
-                      min="0" 
-                      max={totalSessionDuration > 0 ? totalSessionDuration : 100} 
-                      step="0.1" 
-                      value={globalCurrentTime}
-                      onChange={e => handleGlobalSeek(parseFloat(e.target.value))}
-                      style={{ width: '100%', margin: '8px 0', cursor: 'pointer' }}
+              
+              {/* Unified Continuous Timeline Audio Player */}
+              {playingSession && playingSession.parts && playingSession.parts[currentPartIndex] && (
+                <div className="settings-card unified-player-card" style={{ marginBottom: '24px', background: 'rgba(59, 130, 246, 0.08)', borderColor: 'rgba(59, 130, 246, 0.35)' }}>
+                  <div className="settings-card-content" style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                    {/* Hidden underlying audio element */}
+                    <audio 
+                      ref={audioRef}
+                      key={playingSession.parts[currentPartIndex].url}
+                      src={getMediaUrl(playingSession.parts[currentPartIndex].url)}
+                      onLoadedMetadata={handleAudioLoadedMetadata}
+                      onTimeUpdate={handleAudioTimeUpdate}
+                      onEnded={handleAudioEnded}
+                      onPlay={() => setIsPlaying(true)}
+                      onPause={() => setIsPlaying(false)}
+                      onError={(e) => {
+                        console.error('Audio playback error:', e);
+                        customAlert('Gagal memuat file rekaman audio. File mungkin telah dipindahkan atau dihapus dari server.', 'Gagal Memutar Audio');
+                        setPlayingSession(null);
+                      }}
                     />
 
-                    {/* Timeline Part Markers */}
-                    {playingSession.parts.length > 1 && totalSessionDuration > 0 && (
-                      <div className="timeline-segment-markers">
-                        {playingSession.parts.map((p, idx) => {
-                          const pDur = partDurations[idx] || 0;
-                          const pPct = (pDur / totalSessionDuration) * 100;
-                          const isPartActive = currentPartIndex === idx;
-
-                          return (
-                            <div 
-                              key={`${p.url || ''}-${idx}`} 
-                              className={`timeline-segment ${isPartActive ? 'active' : ''}`} 
-                              style={{ width: `${pPct}%` }}
-                              onClick={() => handleGlobalSeek(startOffsets[idx] || 0)}
-                              title={`Lompat ke Part ${idx + 1}`}
-                            >
-                              <span>Part {idx + 1}</span>
-                            </div>
-                          );
-                        })}
+                    {/* Header: PC Name, Session Time, Part indicator & Close */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                      <div>
+                        <div style={{ fontWeight: 700, color: 'var(--accent)', fontSize: '1.05rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <i className="fa-solid fa-volume-high"></i>
+                          <span>{playingSession.pcName}</span>
+                          <span style={{ color: 'var(--text-muted)', fontWeight: 'normal', fontSize: '0.85rem' }}>
+                            &bull; {playingSession.isParsed ? `${playingSession.dateStr} (${playingSession.timeStr})` : new Date(playingSession.createdAt).toLocaleString()}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '4px' }}>
+                          Memutar rekaman utuh (Sedang memuat Part {currentPartIndex + 1} dari {playingSession.parts.length}: <code>{playingSession.parts[currentPartIndex].fileName}</code>)
+                        </div>
                       </div>
-                    )}
-                  </div>
-
-                  {/* Player Controls Bar: Play/Pause, -10s, +10s, Time Display, Speed */}
-                  <div className="player-controls-row">
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      
                       <button 
-                        className="player-btn-action" 
-                        onClick={() => handleGlobalSeek(globalCurrentTime - 10)}
-                        title="Mundur 10 detik"
+                        className="btn-filter secondary" 
+                        style={{ padding: '6px 12px', fontSize: '0.8rem' }} 
+                        onClick={() => setPlayingSession(null)}
                       >
-                        <i className="fa-solid fa-rotate-left"></i>
-                        <span style={{ fontSize: '0.7rem', marginLeft: '3px' }}>10s</span>
+                        <i className="fa-solid fa-xmark"></i> Tutup Player
                       </button>
-
-                      <button 
-                        className="player-btn-play" 
-                        onClick={togglePlayPause}
-                        title={isPlaying ? "Jeda (Pause)" : "Putar (Play)"}
-                      >
-                        {isPlaying ? <i className="fa-solid fa-pause"></i> : <i className="fa-solid fa-play" style={{ marginLeft: '2px' }}></i>}
-                      </button>
-
-                      <button 
-                        className="player-btn-action" 
-                        onClick={() => handleGlobalSeek(globalCurrentTime + 10)}
-                        title="Maju 10 detik"
-                      >
-                        <i className="fa-solid fa-rotate-right"></i>
-                        <span style={{ fontSize: '0.7rem', marginLeft: '3px' }}>10s</span>
-                      </button>
-
-                      {/* Time text */}
-                      <div className="player-time-display">
-                        <span className="current-time">{formatPlaybackTime(globalCurrentTime)}</span>
-                        <span className="separator">/</span>
-                        <span className="total-time">{formatPlaybackTime(totalSessionDuration)}</span>
-                      </div>
                     </div>
 
-                    {/* Speed Controls */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Kecepatan:</span>
-                      {[1, 1.25, 1.5, 2].map(speed => (
-                        <button
-                          key={speed}
-                          className={`btn-speed ${playbackRate === speed ? 'active' : ''}`}
-                          onClick={() => handleSpeedChange(speed)}
+                    {/* Main Timeline Slider */}
+                    <div className="unified-timeline-container">
+                      <input 
+                        type="range" 
+                        className="range-slider unified-seekbar"
+                        min="0" 
+                        max={totalSessionDuration > 0 ? totalSessionDuration : 100} 
+                        step="0.1" 
+                        value={globalCurrentTime}
+                        onChange={e => handleGlobalSeek(parseFloat(e.target.value))}
+                        style={{ width: '100%', margin: '8px 0', cursor: 'pointer' }}
+                      />
+
+                      {/* Timeline Part Markers */}
+                      {playingSession.parts.length > 1 && totalSessionDuration > 0 && (
+                        <div className="timeline-segment-markers">
+                          {playingSession.parts.map((p, idx) => {
+                            const pDur = partDurations[idx] || 0;
+                            const pPct = (pDur / totalSessionDuration) * 100;
+                            const isPartActive = currentPartIndex === idx;
+
+                            return (
+                              <div 
+                                key={`${p.url || ''}-${idx}`} 
+                                className={`timeline-segment ${isPartActive ? 'active' : ''}`} 
+                                style={{ width: `${pPct}%` }}
+                                onClick={() => handleGlobalSeek(startOffsets[idx] || 0)}
+                                title={`Lompat ke Part ${idx + 1}`}
+                              >
+                                <span>Part {idx + 1}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Player Controls Bar: Play/Pause, -10s, +10s, Time Display, Speed */}
+                    <div className="player-controls-row">
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <button 
+                          className="player-btn-action" 
+                          onClick={() => handleGlobalSeek(globalCurrentTime - 10)}
+                          title="Mundur 10 detik"
                         >
-                          {speed}x
+                          <i className="fa-solid fa-rotate-left"></i>
+                          <span style={{ fontSize: '0.7rem', marginLeft: '3px' }}>10s</span>
                         </button>
-                      ))}
+
+                        <button 
+                          className="player-btn-play" 
+                          onClick={togglePlayPause}
+                          title={isPlaying ? "Jeda (Pause)" : "Putar (Play)"}
+                        >
+                          {isPlaying ? <i className="fa-solid fa-pause"></i> : <i className="fa-solid fa-play" style={{ marginLeft: '2px' }}></i>}
+                        </button>
+
+                        <button 
+                          className="player-btn-action" 
+                          onClick={() => handleGlobalSeek(globalCurrentTime + 10)}
+                          title="Maju 10 detik"
+                        >
+                          <i className="fa-solid fa-rotate-right"></i>
+                          <span style={{ fontSize: '0.7rem', marginLeft: '3px' }}>10s</span>
+                        </button>
+
+                        {/* Time text */}
+                        <div className="player-time-display">
+                          <span className="current-time">{formatPlaybackTime(globalCurrentTime)}</span>
+                          <span className="separator">/</span>
+                          <span className="total-time">{formatPlaybackTime(totalSessionDuration)}</span>
+                        </div>
+                      </div>
+
+                      {/* Speed Controls */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Kecepatan:</span>
+                        {[1, 1.25, 1.5, 2].map(speed => (
+                          <button
+                            key={speed}
+                            className={`btn-speed ${playbackRate === speed ? 'active' : ''}`}
+                            onClick={() => handleSpeedChange(speed)}
+                          >
+                            {speed}x
+                          </button>
+                        ))}
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            )}
+              )}
 
-            {(() => {
-              // 1. Group records by PC
-              // 2. Inside each PC, group by folderName (Session)
-              const pcGrouped = {};
-              records.forEach(r => {
-                if (recordPcFilter && r.pcName !== recordPcFilter) return;
-
-                const dateStr = r.isParsed 
-                  ? r.dateStr 
-                  : getLocalDateStr(new Date(r.createdAt));
-
-                if (recordStartDate && dateStr < recordStartDate) return;
-                if (recordEndDate && dateStr > recordEndDate) return;
-
-                if (!pcGrouped[r.pcName]) {
-                  pcGrouped[r.pcName] = {
-                    uuid: r.uuid || '',
-                    sessions: {}
-                  };
-                }
-                if (!pcGrouped[r.pcName].uuid && r.uuid) {
-                  pcGrouped[r.pcName].uuid = r.uuid;
-                }
-                
-                // Gunakan baseSessionKey agar part sebelum & sesudah rename tetap bersatu dalam 1 sesi kejadian
-                const sessionKey = r.baseSessionKey || (r.folderName ? r.folderName.replace(/_to_\d{2}-\d{2}-\d{2}$/i, '') : r.folderName);
-                if (!pcGrouped[r.pcName].sessions[sessionKey]) {
-                  pcGrouped[r.pcName].sessions[sessionKey] = {
-                    sessionKey,
-                    folderName: r.folderName,
-                    pcName: r.pcName,
-                    uuid: r.uuid,
-                    isParsed: r.isParsed,
-                    isCompleted: r.isCompleted || (r.folderName && r.folderName.includes('_to_')),
-                    dateStr: r.dateStr,
-                    timeStr: r.timeStr,
-                    createdAt: r.createdAt,
-                    totalSize: 0,
-                    parts: []
-                  };
-                }
-                
-                const sess = pcGrouped[r.pcName].sessions[sessionKey];
-                // Jika file ini berasal dari folder yang sudah ada jam stop-nya, perbarui info waktu sesi
-                const isThisRecordCompleted = r.isCompleted || (r.folderName && r.folderName.includes('_to_'));
-                if (isThisRecordCompleted && !sess.isCompleted) {
-                  sess.isCompleted = true;
-                  sess.timeStr = r.timeStr;
-                  sess.folderName = r.folderName;
-                }
-
-                sess.totalSize += (r.size || 0);
-                sess.parts.push(r);
-              });
-
-              // Sort parts inside each session by fileName
-              Object.values(pcGrouped).forEach(pcData => {
-                Object.values(pcData.sessions).forEach(sess => {
-                  sess.parts.sort((a, b) => (a.fileName || '').localeCompare(b.fileName || ''));
-                });
-              });
-
-              const pcNames = Object.keys(pcGrouped);
-
-              if (pcNames.length === 0) {
-                return (
-                  <div className="settings-card">
-                    <div className="settings-card-content" style={{ textAlign: 'center', color: 'var(--text-muted)' }}>
+              {/* 6. PC Grouped Session Cards */}
+              {pcNames.length === 0 ? (
+                <div className="settings-card">
+                  <div className="settings-card-content" style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '32px' }}>
+                    <i className="fa-solid fa-folder-open" style={{ fontSize: '2rem', marginBottom: '10px', opacity: 0.5 }}></i>
+                    <div>
                       {recordPcFilter 
                         ? `Tidak ada file rekaman untuk PC "${recordPcFilter}".` 
                         : 'Belum ada file rekaman yang tersimpan di server.'}
                     </div>
                   </div>
-                );
-              }
+                </div>
+              ) : (
+                pcNames.map(pc => {
+                  const pcData = pcGrouped[pc];
+                  let sessions = Object.values(pcData.sessions);
 
-              return pcNames.map(pc => {
-                const pcData = pcGrouped[pc];
-                const sessions = Object.values(pcData.sessions).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-                const totalPcParts = sessions.reduce((acc, s) => acc + s.parts.length, 0);
+                  // Apply Status Filter
+                  if (recordStatusFilter === 'ready') {
+                    sessions = sessions.filter(s => s.hasTranscript);
+                  } else if (recordStatusFilter === 'none') {
+                    sessions = sessions.filter(s => !s.hasTranscript);
+                  } else if (recordStatusFilter === 'alert') {
+                    sessions = sessions.filter(s => s.hasAlertKeyword);
+                  }
 
-                return (
-                  <div className="settings-card" key={pc} style={{ marginBottom: '24px' }}>
-                    <div className="settings-card-accent purple"></div>
-                    <div className="settings-card-content" style={{ padding: '0' }}>
-                      <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', backgroundColor: 'rgba(255,255,255,0.02)' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <h3 style={{ margin: 0, display: 'flex', alignItems: 'center' }}>
-                            <i className="fa-solid fa-desktop" style={{ marginRight: '8px', color: 'var(--accent)' }}></i> 
-                            {pc} 
-                            <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: 'normal', marginLeft: '12px' }}>
-                              ({sessions.length} Sesi Kejadian &bull; {totalPcParts} Total Potongan)
-                            </span>
-                          </h3>
-                        </div>
-                        {pcData.uuid && (
-                          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontFamily: 'monospace', marginTop: '4px', marginLeft: '24px' }}>
-                            ID: {pcData.uuid}
+                  // Apply Sort Order
+                  sessions.sort((a, b) => {
+                    if (recordSortOrder === 'oldest') {
+                      return new Date(a.createdAt) - new Date(b.createdAt);
+                    } else if (recordSortOrder === 'size_desc') {
+                      return b.totalSize - a.totalSize;
+                    } else if (recordSortOrder === 'duration_desc') {
+                      return calculateSessionDuration(b) - calculateSessionDuration(a);
+                    }
+                    return new Date(b.createdAt) - new Date(a.createdAt); // newest
+                  });
+
+                  const totalPcParts = sessions.reduce((acc, s) => acc + s.parts.length, 0);
+                  const totalPcStorage = sessions.reduce((acc, s) => acc + s.totalSize, 0);
+                  const totalPcTranscripts = sessions.filter(s => s.hasTranscript).length;
+                  const totalPcAlerts = sessions.filter(s => s.hasAlertKeyword).length;
+
+                  if (sessions.length === 0 && recordStatusFilter !== 'all') {
+                    return null; // Skip PC if no sessions match status filter
+                  }
+
+                  const isPcCollapsed = !!collapsedPcs[pc];
+
+                  // Pagination Calculation per PC
+                  const totalSessions = sessions.length;
+                  const currentPage = pcSessionPages[pc] || 1;
+                  const limit = sessionsPerPage > 0 ? sessionsPerPage : totalSessions;
+                  const totalPages = Math.ceil(totalSessions / limit) || 1;
+                  const safePage = Math.min(Math.max(1, currentPage), totalPages);
+                  const pagedSessions = limit >= totalSessions 
+                    ? sessions 
+                    : sessions.slice((safePage - 1) * limit, safePage * limit);
+
+                  return (
+                    <div className="settings-card" key={pc} style={{ marginBottom: '24px' }}>
+                      <div className="settings-card-accent purple"></div>
+                      <div className="settings-card-content" style={{ padding: '0' }}>
+                        {/* PC Header (Collapsible / Minimize Toggle) */}
+                        <div 
+                          className="pc-header-collapsible"
+                          onClick={() => setCollapsedPcs(prev => ({ ...prev, [pc]: !prev[pc] }))}
+                          title="Klik untuk memperluas / mengecilkan daftar rekaman PC ini"
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                            <h3 style={{ margin: 0, display: 'flex', alignItems: 'center' }}>
+                              <i className="fa-solid fa-desktop" style={{ marginRight: '8px', color: 'var(--accent)' }}></i> 
+                              {pc} 
+                            </h3>
+
+                            {/* Summary Pills on Header */}
+                            <div className="pc-summary-pills">
+                              <span className="pc-summary-pill">{totalSessions} Sesi</span>
+                              <span className="pc-summary-pill">{totalPcParts} Part</span>
+                              <span className="pc-summary-pill">{(totalPcStorage / 1024 / 1024).toFixed(2)} MB</span>
+                              {totalPcTranscripts > 0 && (
+                                <span className="pc-summary-pill ready"><i className="fa-solid fa-check"></i> {totalPcTranscripts} Transkrip</span>
+                              )}
+                              {totalPcAlerts > 0 && (
+                                <span className="pc-summary-pill alert"><i className="fa-solid fa-triangle-exclamation"></i> {totalPcAlerts} Bahaya</span>
+                              )}
+                            </div>
                           </div>
-                        )}
-                      </div>
 
-                      <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                        {sessions.map((session, sIdx) => {
-                          const isSessionActive = playingSession?.folderName === session.folderName;
-
-                          return (
-                            <div 
-                              key={session.folderName || sIdx} 
-                              className={`record-session-box ${isSessionActive ? 'active-playing' : ''}`}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            {pcData.uuid && (
+                              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontFamily: 'monospace' }}>
+                                ID: {pcData.uuid}
+                              </span>
+                            )}
+                            <button 
+                              className="pc-collapse-btn"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setCollapsedPcs(prev => ({ ...prev, [pc]: !prev[pc] }));
+                              }}
                             >
-                              <div className="session-box-header">
-                                <div>
-                                  <div className="session-time-title">
-                                    <i className="fa-solid fa-calendar-day" style={{ marginRight: '6px', color: 'var(--accent)' }}></i>
-                                    <strong>{session.isParsed ? session.dateStr : new Date(session.createdAt).toLocaleDateString()}</strong>
-                                    <span className="session-time-badge">
-                                      <i className="fa-solid fa-clock" style={{ marginRight: '4px' }}></i>
-                                      {session.isParsed ? session.timeStr : new Date(session.createdAt).toLocaleTimeString()}
-                                    </span>
-                                    {!session.isParsed && <span style={{ fontSize: "0.75rem", color: "var(--warning)", marginLeft: "8px" }}>Format lama</span>}
-                                  </div>
-                                  <div className="session-meta">
-                                    Total: {session.parts.length} Potongan &bull; {(session.totalSize / 1024 / 1024).toFixed(2)} MB
-                                  </div>
-                                </div>
+                              <span>{isPcCollapsed ? 'Buka' : 'Tutup'}</span>
+                              <i className={`fa-solid fa-chevron-${isPcCollapsed ? 'down' : 'up'}`}></i>
+                            </button>
+                          </div>
+                        </div>
 
-                                <div>
-                                  <button 
-                                    className="btn-filter primary"
-                                    style={{ padding: '6px 14px', fontSize: '0.85rem' }}
-                                    onClick={() => {
-                                      if (playingSession?.folderName !== session.folderName) {
-                                        setPlayingSession(session);
-                                      }
-                                      pendingSeekOffsetRef.current = 0;
-                                      setCurrentPartIndex(0);
-                                      setLocalCurrentTime(0);
-                                    }}
+                        {/* If not collapsed, render session list & pagination */}
+                        {!isPcCollapsed && (
+                          <>
+                            {/* Session Cards List */}
+                            <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: recordViewLayout === 'compact' ? '8px' : '14px' }}>
+                              {pagedSessions.map((session, sIdx) => {
+                                const isSessionActive = playingSession?.folderName === session.folderName;
+                                const sessionDurationSec = calculateSessionDuration(session);
+                                const hasProcessing = session.parts.some(p => transcribingFiles[`${session.folderName}/${p.fileName}`] === 'processing');
+
+                                // COMPACT VIEW RENDERING
+                                if (recordViewLayout === 'compact') {
+                                  return (
+                                    <div 
+                                      key={session.folderName || sIdx} 
+                                      className={`record-session-compact ${isSessionActive ? 'active-playing' : ''}`}
+                                      style={session.hasAlertKeyword ? { borderColor: 'rgba(239, 68, 68, 0.4)', background: 'rgba(239, 68, 68, 0.04)' } : {}}
+                                    >
+                                      <div className="compact-left">
+                                        {/* Date & Time */}
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem' }}>
+                                          <i className="fa-solid fa-calendar-day" style={{ color: 'var(--accent)', fontSize: '0.8rem' }}></i>
+                                          <strong>{session.isParsed ? session.dateStr : new Date(session.createdAt).toLocaleDateString()}</strong>
+                                          <span className="session-time-badge" style={{ fontSize: '0.78rem', padding: '1px 6px' }}>
+                                            {session.isParsed ? session.timeStr : new Date(session.createdAt).toLocaleTimeString()}
+                                          </span>
+                                        </div>
+
+                                        {/* Duration Pill */}
+                                        {sessionDurationSec > 0 && (
+                                          <span className="session-duration-pill" title="Estimasi / Durasi Rekaman Sesi">
+                                            <i className="fa-solid fa-stopwatch" style={{ color: 'var(--accent)' }}></i>
+                                            {formatDurationText(sessionDurationSec)}
+                                          </span>
+                                        )}
+
+                                        {/* Live Ongoing Badge */}
+                                        {!session.isCompleted && (
+                                          <span className="live-recording-badge" style={{ fontSize: '0.68rem', padding: '1px 6px' }}>
+                                            <span className="live-pulse-dot"></span> LIVE
+                                          </span>
+                                        )}
+
+                                        {/* Status Badge */}
+                                        {session.hasAlertKeyword ? (
+                                          <span className="transcript-status-badge alert" style={{ fontSize: '0.7rem' }}>
+                                            <i className="fa-solid fa-triangle-exclamation"></i> {session.keywordsFound.join(', ')}
+                                          </span>
+                                        ) : hasProcessing ? (
+                                          <span className="transcript-status-badge processing" style={{ fontSize: '0.7rem' }}>
+                                            <i className="fa-solid fa-spinner fa-spin"></i> Proses
+                                          </span>
+                                        ) : session.hasTranscript ? (
+                                          <span className="transcript-status-badge ready" style={{ fontSize: '0.7rem' }}>
+                                            <i className="fa-solid fa-check"></i> Siap
+                                          </span>
+                                        ) : (
+                                          <span className="transcript-status-badge none" style={{ fontSize: '0.7rem' }}>
+                                            Belum
+                                          </span>
+                                        )}
+
+                                        {/* Parts & Size count */}
+                                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                                          {session.parts.length} Part ({(session.totalSize / 1024 / 1024).toFixed(2)} MB)
+                                        </span>
+
+                                        {/* Snippet Preview on Compact */}
+                                        {session.transcriptSnippet && (
+                                          <span 
+                                            className="compact-snippet"
+                                            onClick={() => openTranscriptModal(session.folderName, null, session.pcName)}
+                                            title="Klik untuk membuka transkrip lengkap"
+                                          >
+                                            "{session.transcriptSnippet}"
+                                          </span>
+                                        )}
+                                      </div>
+
+                                      {/* Compact Actions */}
+                                      <div className="compact-actions">
+                                        {session.hasTranscript && (
+                                          <button 
+                                            className="btn-export-action"
+                                            onClick={() => quickDownloadSessionTranscript(session, 'txt')}
+                                            title="Unduh transkrip teks (.txt)"
+                                          >
+                                            TXT
+                                          </button>
+                                        )}
+                                        <button 
+                                          className="btn-filter secondary"
+                                          style={{ padding: '4px 10px', fontSize: '0.75rem' }}
+                                          onClick={() => openTranscriptModal(session.folderName, null, session.pcName)}
+                                          title="Buka transkrip sesi ini"
+                                        >
+                                          <i className="fa-solid fa-file-lines"></i> Transkrip
+                                        </button>
+                                        <button 
+                                          className="btn-filter primary"
+                                          style={{ padding: '4px 10px', fontSize: '0.75rem' }}
+                                          onClick={() => {
+                                            if (playingSession?.folderName !== session.folderName) {
+                                              setPlayingSession(session);
+                                            }
+                                            pendingSeekOffsetRef.current = 0;
+                                            setCurrentPartIndex(0);
+                                            setLocalCurrentTime(0);
+                                          }}
+                                          title="Putar sesi ini"
+                                        >
+                                          <i className="fa-solid fa-play"></i> Putar
+                                        </button>
+                                      </div>
+                                    </div>
+                                  );
+                                }
+
+                                // DETAILED VIEW RENDERING
+                                return (
+                                  <div 
+                                    key={session.folderName || sIdx} 
+                                    className={`record-session-box ${isSessionActive ? 'active-playing' : ''}`}
+                                    style={session.hasAlertKeyword ? { borderColor: 'rgba(239, 68, 68, 0.4)', background: 'rgba(239, 68, 68, 0.03)' } : {}}
                                   >
-                                    <i className="fa-solid fa-play"></i> Putar Sesi Ini
+                                    <div className="session-box-header">
+                                      <div style={{ flex: 1, minWidth: 0 }}>
+                                        <div className="session-time-title" style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                          <i className="fa-solid fa-calendar-day" style={{ color: 'var(--accent)' }}></i>
+                                          <strong>{session.isParsed ? session.dateStr : new Date(session.createdAt).toLocaleDateString()}</strong>
+                                          
+                                          <span className="session-time-badge">
+                                            <i className="fa-solid fa-clock" style={{ marginRight: '4px' }}></i>
+                                            {session.isParsed ? session.timeStr : new Date(session.createdAt).toLocaleTimeString()}
+                                          </span>
+
+                                          {/* Duration Pill */}
+                                          {sessionDurationSec > 0 && (
+                                            <span className="session-duration-pill" title="Estimasi / Durasi Rekaman Sesi">
+                                              <i className="fa-solid fa-stopwatch" style={{ color: 'var(--accent)' }}></i>
+                                              {formatDurationText(sessionDurationSec)}
+                                            </span>
+                                          )}
+
+                                          {/* Live Recording Badge if ongoing */}
+                                          {!session.isCompleted && (
+                                            <span className="live-recording-badge">
+                                              <span className="live-pulse-dot"></span>
+                                              MEREKAM (LIVE)
+                                            </span>
+                                          )}
+
+                                          {/* Transcript Status Badge */}
+                                          {session.hasAlertKeyword ? (
+                                            <span className="transcript-status-badge alert" title={`Kata bahaya: ${session.keywordsFound.join(', ')}`}>
+                                              <i className="fa-solid fa-triangle-exclamation"></i> Kata Bahaya: {session.keywordsFound.join(', ')}
+                                            </span>
+                                          ) : hasProcessing ? (
+                                            <span className="transcript-status-badge processing">
+                                              <i className="fa-solid fa-spinner fa-spin"></i> Mentranskripsi...
+                                            </span>
+                                          ) : session.hasTranscript ? (
+                                            <span className="transcript-status-badge ready">
+                                              <i className="fa-solid fa-check"></i> Transkrip Siap
+                                            </span>
+                                          ) : (
+                                            <span className="transcript-status-badge none">
+                                              <i className="fa-solid fa-circle-question"></i> Belum Ditranskrip
+                                            </span>
+                                          )}
+
+                                          {!session.isParsed && <span style={{ fontSize: "0.75rem", color: "var(--warning)" }}>Format lama</span>}
+                                        </div>
+
+                                        <div className="session-meta" style={{ marginTop: '4px' }}>
+                                          Total: {session.parts.length} Potongan &bull; {(session.totalSize / 1024 / 1024).toFixed(2)} MB
+                                        </div>
+                                      </div>
+
+                                      {/* Quick Action Buttons */}
+                                      <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+                                        {/* Download Transcripts (TXT / SRT) if available */}
+                                        {session.hasTranscript && (
+                                          <>
+                                            <button 
+                                              className="btn-export-action"
+                                              onClick={() => quickDownloadSessionTranscript(session, 'txt')}
+                                              title="Unduh transkrip format teks (.txt)"
+                                            >
+                                              <i className="fa-solid fa-file-lines"></i> TXT
+                                            </button>
+                                            <button 
+                                              className="btn-export-action"
+                                              onClick={() => quickDownloadSessionTranscript(session, 'srt')}
+                                              title="Unduh transkrip format subtitle (.srt)"
+                                            >
+                                              <i className="fa-solid fa-closed-captioning"></i> SRT
+                                            </button>
+                                          </>
+                                        )}
+
+                                        {/* Download Audio */}
+                                        <button 
+                                          className="btn-export-action"
+                                          onClick={() => {
+                                            session.parts.forEach(p => {
+                                              const a = document.createElement('a');
+                                              a.href = getMediaUrl(p.url);
+                                              a.download = p.fileName || 'audio.webm';
+                                              a.click();
+                                            });
+                                          }}
+                                          title="Unduh seluruh potongan audio (.webm)"
+                                        >
+                                          <i className="fa-solid fa-download"></i> Audio
+                                        </button>
+
+                                        {/* View Transcript Modal */}
+                                        <button 
+                                          className="btn-filter secondary"
+                                          style={{ padding: '6px 12px', fontSize: '0.85rem' }}
+                                          onClick={() => openTranscriptModal(session.folderName, null, session.pcName)}
+                                          title="Lihat transkrip teks percakapan seluruh sesi ini"
+                                        >
+                                          <i className="fa-solid fa-file-lines" style={{ color: 'var(--accent)', marginRight: '4px' }}></i> Transkrip Sesi
+                                        </button>
+
+                                        {/* Play Continuous Session */}
+                                        <button 
+                                          className="btn-filter primary"
+                                          style={{ padding: '6px 14px', fontSize: '0.85rem' }}
+                                          onClick={() => {
+                                            if (playingSession?.folderName !== session.folderName) {
+                                              setPlayingSession(session);
+                                            }
+                                            pendingSeekOffsetRef.current = 0;
+                                            setCurrentPartIndex(0);
+                                            setLocalCurrentTime(0);
+                                          }}
+                                        >
+                                          <i className="fa-solid fa-play"></i> Putar Sesi Ini
+                                        </button>
+                                      </div>
+                                    </div>
+
+                                    {/* Live Snippet Preview Box */}
+                                    {session.transcriptSnippet && (
+                                      <div 
+                                        className={`transcript-snippet-box ${session.hasAlertKeyword ? 'has-alert' : ''}`}
+                                        onClick={() => openTranscriptModal(session.folderName, null, session.pcName)}
+                                        title="Klik untuk membuka transkrip lengkap sesi ini"
+                                      >
+                                        <i className="fa-solid fa-quote-left snippet-quote-icon"></i>
+                                        <div className="snippet-text">
+                                          "{session.transcriptSnippet}"
+                                        </div>
+                                        <span style={{ fontSize: '0.72rem', color: 'var(--accent)', whiteSpace: 'nowrap', marginLeft: '6px' }}>
+                                          Buka <i className="fa-solid fa-arrow-right"></i>
+                                        </span>
+                                      </div>
+                                    )}
+
+                                    {/* Part Chips List */}
+                                    <div className="session-parts-list" style={{ marginTop: session.transcriptSnippet ? '10px' : '6px' }}>
+                                      <span className="parts-label">Pilih Potongan:</span>
+                                      <div className="part-chips-wrapper">
+                                        {session.parts.map((part, pIdx) => {
+                                          const isPartPlaying = isSessionActive && currentPartIndex === pIdx;
+                                          const transStatus = transcribingFiles[`${session.folderName}/${part.fileName}`];
+
+                                          return (
+                                            <div key={`${part.url || ''}-${pIdx}`} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                              <button
+                                                className={`part-chip-btn ${isPartPlaying ? 'playing' : ''}`}
+                                                onClick={() => {
+                                                  if (playingSession?.folderName !== session.folderName) {
+                                                    setPlayingSession(session);
+                                                  }
+                                                  pendingSeekOffsetRef.current = 0;
+                                                  setCurrentPartIndex(pIdx);
+                                                  setLocalCurrentTime(0);
+                                                }}
+                                                title={`Putar ${part.fileName}`}
+                                              >
+                                                {isPartPlaying ? (
+                                                  <i className="fa-solid fa-volume-high" style={{ color: 'var(--accent)' }}></i>
+                                                ) : (
+                                                  <i className="fa-solid fa-circle-play"></i>
+                                                )}
+                                                <span>Part {pIdx + 1}</span>
+                                                <span className="chip-size">({(((part.size || 0)) / 1024 / 1024).toFixed(2)} MB)</span>
+                                                {part.hasTranscript && (
+                                                  <i className="fa-solid fa-file-lines" style={{ color: 'var(--accent)', fontSize: '0.75rem', marginLeft: '4px' }} title="Transkrip tersedia"></i>
+                                                )}
+                                                {transStatus === 'processing' && (
+                                                  <i className="fa-solid fa-spinner fa-spin" style={{ color: '#eab308', fontSize: '0.75rem', marginLeft: '4px' }} title="Sedang mentranskrip..."></i>
+                                                )}
+                                              </button>
+                                              <button
+                                                className="btn-filter secondary"
+                                                style={{ padding: '4px 6px', fontSize: '0.7rem', borderRadius: '4px' }}
+                                                onClick={() => openTranscriptModal(session.folderName, part.fileName, session.pcName)}
+                                                title={`Lihat transkrip Part ${pIdx + 1}`}
+                                              >
+                                                <i className="fa-solid fa-file-lines"></i>
+                                              </button>
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+
+                            {/* Pagination Controls Row */}
+                            {totalPages > 1 && (
+                              <div className="record-pagination-controls">
+                                <div className="record-page-info">
+                                  Menampilkan {(safePage - 1) * limit + 1} - {Math.min(safePage * limit, totalSessions)} dari {totalSessions} sesi
+                                </div>
+                                <div className="record-page-buttons">
+                                  <button 
+                                    className="record-btn-page"
+                                    disabled={safePage === 1}
+                                    onClick={() => setPcSessionPages(prev => ({ ...prev, [pc]: Math.max(1, safePage - 1) }))}
+                                  >
+                                    <i className="fa-solid fa-chevron-left"></i> Sebelumnya
+                                  </button>
+                                  <span style={{ fontSize: '0.78rem', color: '#fff', fontWeight: 600, padding: '0 6px' }}>
+                                    {safePage} / {totalPages}
+                                  </span>
+                                  <button 
+                                    className="record-btn-page"
+                                    disabled={safePage === totalPages}
+                                    onClick={() => setPcSessionPages(prev => ({ ...prev, [pc]: Math.min(totalPages, safePage + 1) }))}
+                                  >
+                                    Berikutnya <i className="fa-solid fa-chevron-right"></i>
                                   </button>
                                 </div>
                               </div>
-
-                              <div className="session-parts-list">
-                                <span className="parts-label">Pilih Potongan:</span>
-                                <div className="part-chips-wrapper">
-                                  {session.parts.map((part, pIdx) => {
-                                    const isPartPlaying = isSessionActive && currentPartIndex === pIdx;
-
-                                    return (
-                                      <button
-                                        key={`${part.url || ''}-${pIdx}`}
-                                        className={`part-chip-btn ${isPartPlaying ? 'playing' : ''}`}
-                                        onClick={() => {
-                                          if (playingSession?.folderName !== session.folderName) {
-                                            setPlayingSession(session);
-                                          }
-                                          pendingSeekOffsetRef.current = 0;
-                                          setCurrentPartIndex(pIdx);
-                                          setLocalCurrentTime(0);
-                                        }}
-                                        title={`Putar ${part.fileName}`}
-                                      >
-                                        {isPartPlaying ? (
-                                          <i className="fa-solid fa-volume-high" style={{ color: 'var(--accent)' }}></i>
-                                        ) : (
-                                          <i className="fa-solid fa-circle-play"></i>
-                                        )}
-                                        <span>Part {pIdx + 1}</span>
-                                        <span className="chip-size">({(((part.size || 0)) / 1024 / 1024).toFixed(2)} MB)</span>
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })}
+                            )}
+                          </>
+                        )}
                       </div>
                     </div>
-                  </div>
-                );
-              });
-            })()}
-          </div>
-        )}
+                  );
+                })
+              )}
+            </div>
+          );
+        })()}
 
         {currentView === 'settings' && (
           <div className="settings-layout">
             <div>
               <h1 className="settings-header">Dashboard Settings</h1>
-              <p className="settings-desc">Kelola konfigurasi sistem peringatan pusat dan keamanan akses dashboard.</p>
+              <p className="settings-desc">Kelola konfigurasi sistem peringatan pusat, pemrosesan audio, dan keamanan akses dashboard.</p>
             </div>
 
-            <div className="settings-card">
+            {/* A. Anchor Navigation Pills */}
+            <div className="settings-nav-pills">
+              <button type="button" className="settings-nav-pill" onClick={() => document.getElementById('sec-info')?.scrollIntoView({ behavior: 'smooth' })}>
+                <i className="fa-solid fa-server"></i> Info Server
+              </button>
+              <button type="button" className="settings-nav-pill" onClick={() => document.getElementById('sec-telegram')?.scrollIntoView({ behavior: 'smooth' })}>
+                <i className="fa-solid fa-paper-plane"></i> Telegram
+              </button>
+              <button type="button" className="settings-nav-pill" onClick={() => document.getElementById('sec-whisper')?.scrollIntoView({ behavior: 'smooth' })}>
+                <i className="fa-solid fa-microphone-lines"></i> Whisper AI
+              </button>
+              <button type="button" className="settings-nav-pill" onClick={() => document.getElementById('sec-pin')?.scrollIntoView({ behavior: 'smooth' })}>
+                <i className="fa-solid fa-key"></i> Keamanan PIN
+              </button>
+              <button type="button" className="settings-nav-pill" onClick={() => document.getElementById('sec-retention')?.scrollIntoView({ behavior: 'smooth' })}>
+                <i className="fa-solid fa-clock-rotate-left"></i> Retensi Log
+              </button>
+              <button type="button" className="settings-nav-pill" onClick={() => document.getElementById('sec-audio')?.scrollIntoView({ behavior: 'smooth' })}>
+                <i className="fa-solid fa-volume-high"></i> Audio Alarm
+              </button>
+              <button type="button" className="settings-nav-pill" onClick={() => document.getElementById('sec-update')?.scrollIntoView({ behavior: 'smooth' })}>
+                <i className="fa-solid fa-cloud-arrow-down"></i> Update Hub
+              </button>
+              <button type="button" className="settings-nav-pill" onClick={() => document.getElementById('sec-danger')?.scrollIntoView({ behavior: 'smooth' })} style={{ color: '#f87171' }}>
+                <i className="fa-solid fa-triangle-exclamation"></i> Zona Bahaya
+              </button>
+            </div>
+
+            {/* 1. Status & Informasi Sistem */}
+            <div className="settings-card" id="sec-info">
               <div className="settings-card-accent blue"></div>
               <div className="settings-card-content">
                 <h2 className="settings-card-title">
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg>
-                  Telegram Alerts
+                  <i className="fa-solid fa-server" style={{ color: 'var(--accent)' }}></i>
+                  Status & Informasi Sistem
+                </h2>
+                <p className="settings-card-subtitle">Ringkasan status server pusat Audio Monitor yang sedang aktif.</p>
+                
+                <div className="server-info-grid">
+                  <div className="server-info-item">
+                    <span className="server-info-label">Versi Sistem</span>
+                    <span className="server-info-value blue">v1.0.2</span>
+                  </div>
+                  <div className="server-info-item">
+                    <span className="server-info-label">Koneksi Server</span>
+                    <span className={`server-info-value ${isConnected ? 'green' : 'amber'}`}>
+                      {isConnected ? 'TERHUBUNG' : 'TERPUTUS'}
+                    </span>
+                  </div>
+                  <div className="server-info-item">
+                    <span className="server-info-label">PC Agent Terhubung</span>
+                    <span className="server-info-value">{Object.keys(agents || {}).length} Unit</span>
+                  </div>
+                  <div className="server-info-item">
+                    <span className="server-info-label">Alert Telegram</span>
+                    <span className={`server-info-value ${telegramToken ? 'green' : 'muted'}`}>
+                      {telegramToken ? 'TERHUBUNG' : 'NONAKTIF'}
+                    </span>
+                  </div>
+                  <div className="server-info-item">
+                    <span className="server-info-label">Whisper STT</span>
+                    <span className={`server-info-value ${transcriptionConfig?.enabled ? 'green' : 'muted'}`}>
+                      {transcriptionConfig?.enabled ? 'AKTIF' : 'NONAKTIF'}
+                    </span>
+                  </div>
+                  <div className="server-info-item">
+                    <span className="server-info-label">Retensi Database</span>
+                    <span className="server-info-value">{logRetentionDays || 30} Hari</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* 2. Telegram Alerts Card */}
+            <div className="settings-card" id="sec-telegram">
+              <div className="settings-card-accent blue"></div>
+              <div className="settings-card-content">
+                <h2 className="settings-card-title">
+                  <i className="fa-solid fa-paper-plane" style={{ color: '#60a5fa' }}></i>
+                  Notifikasi Telegram (Telegram Alerts)
                 </h2>
                 <p className="settings-card-subtitle">Konfigurasi bot Telegram untuk menerima peringatan terpusat jika ada audio PC yang bermasalah.</p>
                 
                 <div className="form-group">
                   <label className="form-label">Bot Token</label>
-                  <input type="text" className="form-input" value={telegramToken} onChange={(e) => setTelegramToken(e.target.value)} placeholder="e.g., 123456789:ABCdefGHIjklMNOpqrSTUvwxYZ" />
+                  <div className="password-field-wrap">
+                    <input 
+                      type={showTelegramToken ? 'text' : 'password'} 
+                      className="form-input" 
+                      value={telegramToken} 
+                      onChange={(e) => setTelegramToken(e.target.value)} 
+                      placeholder="e.g., 123456789:ABCdefGHIjklMNOpqrSTUvwxYZ" 
+                    />
+                    <button 
+                      type="button" 
+                      className="password-toggle-btn" 
+                      onClick={() => setShowTelegramToken(!showTelegramToken)}
+                      title={showTelegramToken ? 'Sembunyikan Token' : 'Tampilkan Token'}
+                    >
+                      <i className={`fa-solid ${showTelegramToken ? 'fa-eye-slash' : 'fa-eye'}`}></i>
+                    </button>
+                  </div>
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '20px' }}>
@@ -2117,38 +3303,210 @@ function App() {
                 </div>
 
                 <div className="button-group">
-                  <button className="btn btn-primary" onClick={saveTelegramConfig}>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
-                    Save Configuration
+                  <button className={`btn btn-primary ${isSavingTelegram ? 'is-loading' : ''}`} onClick={saveTelegramConfig} disabled={isSavingTelegram}>
+                    <i className={`fa-solid ${isSavingTelegram ? 'fa-spinner fa-spin' : 'fa-floppy-disk'}`}></i>
+                    {isSavingTelegram ? 'Menyimpan...' : 'Simpan Konfigurasi'}
                   </button>
                   <button className="btn btn-success" onClick={testTelegram}>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
-                    Test Alert
+                    <i className="fa-solid fa-paper-plane"></i>
+                    Kirim Tes Alert
                   </button>
                 </div>
               </div>
             </div>
 
-            <div className="settings-card">
+            {/* 3. Whisper Speech-to-Text Integration Card */}
+            <div className="settings-card" id="sec-whisper">
+              <div className="settings-card-accent blue"></div>
+              <div className="settings-card-content">
+                <h2 className="settings-card-title">
+                  <i className="fa-solid fa-microphone-lines" style={{ marginRight: '8px', color: 'var(--accent)' }}></i>
+                  Integrasi OpenAI Whisper (Speech-to-Text)
+                </h2>
+                <p className="settings-card-subtitle">
+                  Konfigurasi endpoint API Whisper (Dedicated Mac M1 Worker / Cloud) untuk mengubah audio rekaman menjadi teks dan memindai kata kunci bahaya.
+                </p>
+
+                <div style={{ marginBottom: '20px' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
+                    <div className="toggle-switch">
+                      <input 
+                        type="checkbox" 
+                        checked={!!transcriptionConfig.enabled} 
+                        onChange={e => setTranscriptionConfig({ ...transcriptionConfig, enabled: e.target.checked })} 
+                      />
+                      <span className="slider"></span>
+                    </div>
+                    <div>
+                      <strong style={{ color: '#fff', fontSize: '0.9rem' }}>Aktifkan Integrasi Whisper Speech-to-Text</strong>
+                      <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Mengaktifkan fitur transkripsi dan pencarian kata kunci audio.</div>
+                    </div>
+                  </label>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">URL Endpoint API Whisper</label>
+                  <input 
+                    type="text" 
+                    className="form-input" 
+                    value={transcriptionConfig.apiUrl || ''} 
+                    onChange={e => setTranscriptionConfig({ ...transcriptionConfig, apiUrl: e.target.value })} 
+                    placeholder="Contoh: http://192.168.1.150:8000/transcribe atau https://api.openai.com/v1/audio/transcriptions" 
+                  />
+                  <span className="form-help">Alamat server API Whisper (misal Mac M1 di LAN atau Cloud API).</span>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '20px', marginBottom: '16px' }}>
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label className="form-label">API Key / Token (Opsional)</label>
+                    <input 
+                      type="password" 
+                      className="form-input" 
+                      value={transcriptionConfig.apiKey || ''} 
+                      onChange={e => setTranscriptionConfig({ ...transcriptionConfig, apiKey: e.target.value })} 
+                      placeholder="Kosongkan jika API lokal tanpa auth..." 
+                    />
+                  </div>
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label className="form-label">Bahasa Audio</label>
+                    <select 
+                      className="form-input" 
+                      value={transcriptionConfig.language ?? 'id'} 
+                      onChange={e => setTranscriptionConfig({ ...transcriptionConfig, language: e.target.value })}
+                    >
+                      <option value="id">Bahasa Indonesia (id)</option>
+                      <option value="en">English (en)</option>
+                      <option value="">Deteksi Otomatis</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div style={{ marginBottom: '20px' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
+                    <div className="toggle-switch">
+                      <input 
+                        type="checkbox" 
+                        checked={transcriptionConfig.autoTranscribe !== false} 
+                        onChange={e => setTranscriptionConfig({ ...transcriptionConfig, autoTranscribe: e.target.checked })} 
+                      />
+                      <span className="slider"></span>
+                    </div>
+                    <div>
+                      <strong style={{ color: '#fff', fontSize: '0.85rem' }}>Transkripsi Otomatis Saat Audio Diunggah</strong>
+                      <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>Otomatis menambahkan file rekaman baru ke antrean transkripsi latar belakang.</div>
+                    </div>
+                  </label>
+                </div>
+
+                {/* Interactive Keyword Tags */}
+                <div className="form-group">
+                  <label className="form-label">
+                    Kata Kunci Bahaya / Alert Keywords
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 'normal', marginLeft: '6px' }}>
+                      ({alertKeywordsInput.split(',').map(k => k.trim()).filter(Boolean).length} kata terdaftar)
+                    </span>
+                  </label>
+                  
+                  <div className="keyword-tags-container">
+                    {alertKeywordsInput.split(',').map(k => k.trim()).filter(Boolean).map((kw, idx) => (
+                      <span key={`${kw}-${idx}`} className="keyword-tag">
+                        <i className="fa-solid fa-tag"></i> {kw}
+                        <button 
+                          type="button" 
+                          className="keyword-tag-remove" 
+                          onClick={() => removeAlertKeyword(kw)}
+                          title={`Hapus kata "${kw}"`}
+                        >
+                          &times;
+                        </button>
+                      </span>
+                    ))}
+                    {alertKeywordsInput.split(',').map(k => k.trim()).filter(Boolean).length === 0 && (
+                      <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Belum ada kata kunci. Tambahkan melalui kolom di bawah.</span>
+                    )}
+                  </div>
+
+                  <div className="keyword-add-row">
+                    <input 
+                      type="text" 
+                      className="form-input" 
+                      placeholder="Ketik kata baru (misal: bocor)..." 
+                      value={newKeywordInput}
+                      onChange={e => setNewKeywordInput(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          addAlertKeyword(newKeywordInput);
+                        }
+                      }}
+                    />
+                    <button 
+                      type="button" 
+                      className="keyword-add-btn" 
+                      onClick={() => addAlertKeyword(newKeywordInput)}
+                    >
+                      <i className="fa-solid fa-plus"></i> Tambah Kata
+                    </button>
+                  </div>
+                  <span className="form-help">Jika kata-kata ini terucap dalam rekaman, server otomatis mengirim peringatan Telegram & notifikasi Dashboard.</span>
+                </div>
+
+                {whisperTestResult && (
+                  <div style={{ 
+                    padding: '10px 14px', 
+                    borderRadius: '8px', 
+                    marginBottom: '16px',
+                    fontSize: '0.85rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    background: whisperTestResult.success ? 'rgba(34, 197, 94, 0.12)' : 'rgba(239, 68, 68, 0.12)',
+                    border: `1px solid ${whisperTestResult.success ? 'rgba(34, 197, 94, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
+                    color: whisperTestResult.success ? '#4ade80' : '#f87171'
+                  }}>
+                    <i className={`fa-solid ${whisperTestResult.success ? 'fa-circle-check' : 'fa-circle-xmark'}`}></i>
+                    {whisperTestResult.message || whisperTestResult.error}
+                  </div>
+                )}
+
+                <div className="button-group">
+                  <button className={`btn btn-primary ${isSavingWhisper ? 'is-loading' : ''}`} onClick={saveTranscriptionConfig} disabled={isSavingWhisper}>
+                    <i className={`fa-solid ${isSavingWhisper ? 'fa-spinner fa-spin' : 'fa-floppy-disk'}`}></i>
+                    {isSavingWhisper ? 'Menyimpan...' : 'Simpan Pengaturan Whisper'}
+                  </button>
+                  <button className="btn btn-secondary" onClick={testWhisperApiConnection} disabled={isTestingWhisperApi}>
+                    <i className={`fa-solid ${isTestingWhisperApi ? 'fa-spinner fa-spin' : 'fa-network-wired'}`}></i>
+                    {isTestingWhisperApi ? 'Menguji Koneksi...' : 'Test Koneksi API'}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* 4. Keamanan Akses PIN Card */}
+            <div className="settings-card" id="sec-pin">
               <div className="settings-card-accent purple"></div>
               <div className="settings-card-content">
                 <h2 className="settings-card-title">
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
-                  Keamanan Akses (PIN)
+                  <i className="fa-solid fa-shield-halved" style={{ color: '#8b5cf6' }}></i>
+                  Keamanan Akses (PIN Master)
                 </h2>
                 <p className="settings-card-subtitle">Ubah PIN master yang digunakan untuk menghapus PC atau mengakses pengaturan.</p>
                 <div style={{ display: 'flex', gap: '16px', maxWidth: '400px' }}>
                   <input type="password" className="form-input" value={newPinInput} onChange={(e) => setNewPinInput(e.target.value)} placeholder="Masukkan PIN Baru..." />
-                  <button className="btn btn-primary" onClick={savePinConfig} style={{ whiteSpace: 'nowrap' }}>Ubah PIN</button>
+                  <button className={`btn btn-primary ${isSavingPin ? 'is-loading' : ''}`} onClick={savePinConfig} disabled={isSavingPin} style={{ whiteSpace: 'nowrap' }}>
+                    <i className={`fa-solid ${isSavingPin ? 'fa-spinner fa-spin' : 'fa-key'}`}></i>
+                    {isSavingPin ? 'Menyimpan...' : 'Ubah PIN'}
+                  </button>
                 </div>
               </div>
             </div>
 
-            <div className="settings-card">
+            {/* 5. Retensi Log & Pembersihan Otomatis Card */}
+            <div className="settings-card" id="sec-retention">
               <div className="settings-card-accent green"></div>
               <div className="settings-card-content">
                 <h2 className="settings-card-title">
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                  <i className="fa-solid fa-clock-rotate-left" style={{ color: '#34d399' }}></i>
                   Retensi Log & Pembersihan Otomatis (Auto-Cleanup)
                 </h2>
                 <p className="settings-card-subtitle">
@@ -2191,24 +3549,25 @@ function App() {
                 </div>
 
                 <div className="button-group">
-                  <button className="btn btn-primary" onClick={saveRetentionConfig}>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
-                    Simpan Batas Retensi
+                  <button className={`btn btn-primary ${isSavingRetention ? 'is-loading' : ''}`} onClick={saveRetentionConfig} disabled={isSavingRetention}>
+                    <i className={`fa-solid ${isSavingRetention ? 'fa-spinner fa-spin' : 'fa-floppy-disk'}`}></i>
+                    {isSavingRetention ? 'Menyimpan...' : 'Simpan Batas Retensi'}
                   </button>
                   <button className="btn btn-secondary" onClick={handleManualCleanupNow} style={{ background: 'rgba(239, 68, 68, 0.12)', borderColor: 'rgba(239, 68, 68, 0.3)', color: '#f87171' }}>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+                    <i className="fa-solid fa-broom"></i>
                     Bersihkan Log Lama Sekarang
                   </button>
                 </div>
               </div>
             </div>
 
-            <div className="settings-card">
+            {/* 6. Local Dashboard Audio Card */}
+            <div className="settings-card" id="sec-audio">
               <div className="settings-card-accent teal"></div>
               <div className="settings-card-content">
                 <h2 className="settings-card-title">
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>
-                  Local Dashboard Audio
+                  <i className="fa-solid fa-volume-high" style={{ color: '#14b8a6' }}></i>
+                  Audio Alarm Dashboard Lokal
                 </h2>
                 <p className="settings-card-subtitle">Konfigurasi pemutaran suara peringatan langsung di browser pusat ini.</p>
                 <div className="setting-row">
@@ -2224,36 +3583,110 @@ function App() {
               </div>
             </div>
 
-            {/* Centralized Update Management Card (Hybrid: GitHub + Direct Upload + LAN Broadcast) */}
-            <div className="settings-card">
+            {/* 7. Centralized Update Management Card (Hybrid: GitHub + Direct Upload + LAN Broadcast) */}
+            <div className="settings-card" id="sec-update">
               <div className="settings-card-accent blue"></div>
               <div className="settings-card-content">
                 <h2 className="settings-card-title">
-                  <i className="fa-solid fa-cloud-arrow-down" style={{ marginRight: '8px' }}></i>
-                  Pembaruan Aplikasi Terpusat (LAN Auto-Update Hub)
+                  <i className="fa-solid fa-cloud-arrow-down" style={{ marginRight: '8px', color: 'var(--accent)' }}></i>
+                  Pusat Pembaruan Aplikasi (Server & Agent Hub)
                 </h2>
                 <p className="settings-card-subtitle">
-                  Kelola dan sebarkan pembaruan versi Agent ke seluruh komputer di jaringan lokal tanpa menyalin file manual ke komputer server.
+                  Perbarui aplikasi Server pusat dan sebarkan pembaruan versi Agent ke seluruh komputer di jaringan lokal secara mandiri.
                 </p>
 
-                {/* Grid 2 Opsi Sumber: GitHub Sync & Direct Upload */}
+                {/* =========================================================================
+                    SUB-SECTION 1: PEMBARUAN APLIKASI SERVER (PUSAT)
+                    ========================================================================= */}
+                <div style={{ background: 'rgba(59, 130, 246, 0.05)', border: '1px solid rgba(59, 130, 246, 0.2)', borderRadius: '10px', padding: '18px', marginBottom: '24px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginBottom: '14px' }}>
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold', fontSize: '1rem', color: '#60a5fa' }}>
+                        <i className="fa-solid fa-server"></i>
+                        Pembaruan Aplikasi Server (Pusat)
+                      </div>
+                      <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                        Versi Server yang sedang aktif: <strong style={{ color: '#fff' }}>v1.0.2</strong>
+                      </div>
+                    </div>
+                    {githubReleaseInfo?.serverAsset && (
+                      <div style={{ background: 'rgba(34, 197, 94, 0.12)', border: '1px solid rgba(34, 197, 94, 0.3)', borderRadius: '6px', padding: '4px 10px', fontSize: '0.75rem', color: '#34d399', fontWeight: 600 }}>
+                        <i className="fa-solid fa-circle-check" style={{ marginRight: '4px' }}></i>
+                        Rilis Server Tersedia: {githubReleaseInfo.tag}
+                      </div>
+                    )}
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '14px' }}>
+                    {/* Opsi Server 1: 1-Klik Update dari GitHub */}
+                    <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px', padding: '14px' }}>
+                      <div style={{ fontWeight: 600, fontSize: '0.88rem', color: '#60a5fa', marginBottom: '6px' }}>
+                        <i className="fa-brands fa-github" style={{ marginRight: '6px' }}></i>
+                        1-Klik Perbarui Server dari GitHub
+                      </div>
+                      <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: '0 0 10px 0', lineHeight: '1.4' }}>
+                        {githubReleaseInfo?.serverAsset ? (
+                          <>File: <strong>{githubReleaseInfo.serverAsset.name}</strong> ({((githubReleaseInfo.serverAsset.size || 0) / 1024 / 1024).toFixed(1)} MB)</>
+                        ) : (
+                          'Periksa rilis GitHub untuk mengunduh dan memasang pembaruan Server secara instan.'
+                        )}
+                      </p>
+                      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                        <button className="btn-filter secondary" onClick={checkGithubRelease} disabled={isCheckingGithub}>
+                          <i className={`fa-solid fa-arrows-rotate ${isCheckingGithub ? 'fa-spin' : ''}`}></i> {isCheckingGithub ? 'Memeriksa...' : 'Cek Rilis GitHub'}
+                        </button>
+                        {githubReleaseInfo?.serverAsset && (
+                          <button className="btn-filter primary" onClick={handleServerSelfUpdate} disabled={isUpdatingServer}>
+                            <i className={`fa-solid ${isUpdatingServer ? 'fa-spinner fa-spin' : 'fa-bolt'}`}></i> {isUpdatingServer ? 'Memperbarui Server...' : '1-Klik Perbarui Server'}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Opsi Server 2: Upload File Installer Server Manual */}
+                    <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px', padding: '14px' }}>
+                      <div style={{ fontWeight: 600, fontSize: '0.88rem', color: '#34d399', marginBottom: '6px' }}>
+                        <i className="fa-solid fa-file-arrow-up" style={{ marginRight: '6px' }}></i>
+                        Upload & Pasang Installer Server Manual
+                      </div>
+                      <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: '0 0 10px 0', lineHeight: '1.4' }}>
+                        Pilih file <code>AudioMonitor_Server_Installer...exe</code> dari komputer Anda untuk langsung dipasang.
+                      </p>
+                      <label className={`btn-filter secondary ${isUploadingServerInstaller ? 'disabled' : ''}`} style={{ display: 'inline-flex', alignItems: 'center', cursor: 'pointer' }}>
+                        <i className={`fa-solid ${isUploadingServerInstaller ? 'fa-spinner fa-spin' : 'fa-upload'}`} style={{ marginRight: '6px' }}></i>
+                        {isUploadingServerInstaller ? 'Memasang Update Server...' : 'Pilih File Installer Server (.exe)'}
+                        <input type="file" accept=".exe" onChange={handleUploadServerInstaller} style={{ display: 'none' }} disabled={isUploadingServerInstaller} />
+                      </label>
+                    </div>
+                  </div>
+                </div>
+
+                {/* =========================================================================
+                    SUB-SECTION 2: PEMBARUAN APLIKASI AGENT (JARINGAN LOKAL)
+                    ========================================================================= */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold', fontSize: '1rem', color: '#38bdf8', marginBottom: '12px' }}>
+                  <i className="fa-solid fa-desktop"></i>
+                  Pembaruan PC Agent (Distribusi Jaringan Lokal)
+                </div>
+
+                {/* Grid 2 Opsi Sumber Agent: GitHub Sync & Direct Upload */}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px', marginBottom: '20px' }}>
                   
-                  {/* Opsi 1: GitHub 1-Click Sync */}
+                  {/* Opsi 1: GitHub 1-Click Sync Agent */}
                   <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px', padding: '16px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold', fontSize: '0.95rem', color: '#60a5fa', marginBottom: '8px' }}>
                       <i className="fa-brands fa-github" style={{ fontSize: '1.2rem' }}></i>
-                      1-Klik Unduh dari GitHub
+                      1-Klik Unduh Installer Agent dari GitHub
                     </div>
                     <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: '0 0 12px 0', lineHeight: '1.4' }}>
-                      Server akan memeriksa dan mengunduh rilis installer terbaru langsung dari repositori GitHub.
+                      Server akan mengunduh paket installer Agent dari repositori GitHub untuk disimpan di Server.
                     </p>
 
                     {githubReleaseInfo && githubReleaseInfo.hasRelease && (
                       <div style={{ background: 'rgba(59, 130, 246, 0.1)', border: '1px solid rgba(59, 130, 246, 0.2)', borderRadius: '6px', padding: '10px', marginBottom: '12px', fontSize: '0.8rem' }}>
                         <div><strong>Rilis:</strong> {githubReleaseInfo.name || githubReleaseInfo.tag}</div>
                         <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginTop: '2px' }}>
-                          File: {githubReleaseInfo.asset ? `${githubReleaseInfo.asset.name} (${(((githubReleaseInfo.asset.size || 0)) / 1024 / 1024).toFixed(1)} MB)` : 'Tidak ada installer .exe'}
+                          File: {githubReleaseInfo.asset ? `${githubReleaseInfo.asset.name} (${(((githubReleaseInfo.asset.size || 0)) / 1024 / 1024).toFixed(1)} MB)` : 'Tidak ada installer Agent .exe'}
                         </div>
                       </div>
                     )}
@@ -2270,19 +3703,19 @@ function App() {
                     </div>
                   </div>
 
-                  {/* Opsi 2: Upload File .exe via Browser */}
+                  {/* Opsi 2: Upload File Installer Agent .exe via Browser */}
                   <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px', padding: '16px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold', fontSize: '0.95rem', color: '#34d399', marginBottom: '8px' }}>
                       <i className="fa-solid fa-file-arrow-up" style={{ fontSize: '1.1rem' }}></i>
-                      Upload File Installer Manual
+                      Upload File Installer Agent Manual
                     </div>
                     <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: '0 0 12px 0', lineHeight: '1.4' }}>
-                      Pilih file <code>.exe</code> dari komputer Anda untuk dikirimkan langsung ke Server tanpa perlu buka explorer Server.
+                      Pilih file <code>AudioMonitor_Agent_Installer...exe</code> dari komputer Anda untuk disimpan ke Server.
                     </p>
 
                     <label className={`btn-filter secondary ${isUploadingInstaller ? 'disabled' : ''}`} style={{ display: 'inline-flex', alignItems: 'center', cursor: 'pointer' }}>
                       <i className={`fa-solid fa-upload ${isUploadingInstaller ? 'fa-spin' : ''}`} style={{ marginRight: '6px' }}></i>
-                      {isUploadingInstaller ? 'Mengupload File...' : 'Pilih File Installer (.exe)'}
+                      {isUploadingInstaller ? 'Mengupload File...' : 'Pilih File Installer Agent (.exe)'}
                       <input type="file" accept=".exe" onChange={handleUploadInstaller} style={{ display: 'none' }} disabled={isUploadingInstaller} />
                     </label>
                   </div>
@@ -2294,7 +3727,7 @@ function App() {
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
                     <div>
                       <div style={{ fontWeight: 'bold', fontSize: '0.95rem' }}>
-                        Paket Installer yang Siap di Server:
+                        Paket Installer Agent yang Siap di Server:
                       </div>
                       <div style={{ fontSize: '0.85rem', color: serverUpdateInfo?.hasUpdate ? 'var(--success)' : 'var(--text-muted)', marginTop: '4px' }}>
                         {serverUpdateInfo?.hasUpdate ? (
@@ -2305,7 +3738,7 @@ function App() {
                         ) : (
                           <>
                             <i className="fa-solid fa-circle-exclamation" style={{ marginRight: '6px', color: 'var(--warning)' }}></i>
-                            Belum ada file installer di Server. Silakan unduh dari GitHub atau upload file di atas.
+                            Belum ada file installer Agent di Server. Silakan unduh dari GitHub atau upload file di atas.
                           </>
                         )}
                       </div>
@@ -2327,18 +3760,50 @@ function App() {
               </div>
             </div>
 
-            <div className="settings-card">
+            {/* 8. Danger Zone Card Enhanced */}
+            <div className="settings-card danger-zone-card" id="sec-danger">
               <div className="settings-card-accent red"></div>
               <div className="settings-card-content">
-                <h2 className="settings-card-title" style={{color: 'var(--danger)'}}>
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
-                  Danger Zone
+                <h2 className="settings-card-title" style={{ color: 'var(--danger)' }}>
+                  <i className="fa-solid fa-triangle-exclamation"></i>
+                  Zona Bahaya (Danger Zone)
                 </h2>
-                <p className="settings-card-subtitle">Tindakan destruktif yang tidak dapat dibatalkan.</p>
-                <button className="btn btn-danger" onClick={clearDatabase}>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
-                  Clear All Incident Logs
-                </button>
+                <p className="settings-card-subtitle" style={{ marginBottom: '12px' }}>
+                  Tindakan destruktif permanen. Harap berhati-hati sebelum mengeksekusi penghapusan database log.
+                </p>
+
+                <div style={{ background: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.2)', borderRadius: '8px', padding: '14px', marginBottom: '16px' }}>
+                  <div style={{ fontSize: '0.85rem', color: '#fca5a5', lineHeight: '1.5' }}>
+                    <i className="fa-solid fa-circle-info" style={{ marginRight: '6px' }}></i>
+                    Untuk mencegah tindakan tidak sengaja, ketik <strong>HAPUS</strong> pada kolom di bawah untuk mengaktifkan tombol pembersihan.
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                  <input 
+                    type="text" 
+                    className="danger-confirm-input" 
+                    placeholder="Ketik HAPUS..." 
+                    value={dangerConfirmText}
+                    onChange={e => setDangerConfirmText(e.target.value)}
+                  />
+                  <button 
+                    className="btn btn-danger" 
+                    onClick={() => {
+                      clearDatabase();
+                      setDangerConfirmText('');
+                    }}
+                    disabled={dangerConfirmText !== 'HAPUS'}
+                    style={{ 
+                      opacity: dangerConfirmText === 'HAPUS' ? 1 : 0.4, 
+                      cursor: dangerConfirmText === 'HAPUS' ? 'pointer' : 'not-allowed',
+                      transition: 'all 0.2s ease'
+                    }}
+                  >
+                    <i className="fa-solid fa-trash-can" style={{ marginRight: '6px' }}></i>
+                    Hapus Semua Log Insiden
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -2525,18 +3990,37 @@ function App() {
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.03)', padding: '12px', borderRadius: '6px' }}>
                       <div>
                         <div style={{ fontSize: '13px', fontWeight: 'bold' }}>Versi Agent Saat Ini:</div>
-                        <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'monospace' }}>v{configModalAgent.appVersion || '1.0.1'}</div>
+                        <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'monospace' }}>v{configModalAgent.appVersion || '1.0.2'}</div>
                       </div>
-                      {serverUpdateInfo?.hasUpdate && (
-                        <button 
-                          type="button" 
-                          className="btn-filter primary" 
-                          style={{ padding: '6px 12px', fontSize: '0.8rem' }}
-                          onClick={() => triggerAgentUpdate(configModalAgent.uuid)}
-                        >
-                          <i className="fa-solid fa-cloud-arrow-down"></i> Update ke v{serverUpdateInfo.version}
-                        </button>
-                      )}
+                      {(() => {
+                        const semverCompare = (v1, v2) => {
+                          const p1 = (v1 || '0.0.0').split('.').map(Number);
+                          const p2 = (v2 || '0.0.0').split('.').map(Number);
+                          for (let i = 0; i < 3; i++) {
+                            if ((p1[i] || 0) > (p2[i] || 0)) return 1;
+                            if ((p1[i] || 0) < (p2[i] || 0)) return -1;
+                          }
+                          return 0;
+                        };
+                        const hasNewer = serverUpdateInfo?.hasUpdate && semverCompare(serverUpdateInfo.version, configModalAgent.appVersion || '1.0.2') > 0;
+                        if (!hasNewer) {
+                          return (
+                            <span style={{ fontSize: '12px', color: 'var(--success)', fontWeight: 600 }}>
+                              <i className="fa-solid fa-circle-check"></i> Versi Terbaru
+                            </span>
+                          );
+                        }
+                        return (
+                          <button 
+                            type="button" 
+                            className="btn-filter primary" 
+                            style={{ padding: '6px 12px', fontSize: '0.8rem' }}
+                            onClick={() => triggerAgentUpdate(configModalAgent.uuid)}
+                          >
+                            <i className="fa-solid fa-cloud-arrow-down"></i> Update ke v{serverUpdateInfo.version}
+                          </button>
+                        );
+                      })()}
                     </div>
                   </div>
 
@@ -2544,6 +4028,202 @@ function App() {
                 </form>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Modal Transkrip Rekaman Audio */}
+      {activeTranscriptModal && activeTranscriptModal.isOpen && (
+        <div className="transcript-modal-overlay" onClick={() => setActiveTranscriptModal(null)}>
+          <div className="transcript-modal-container" onClick={e => e.stopPropagation()}>
+            <div className="transcript-modal-header">
+              <div>
+                <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '8px', fontSize: '1.1rem', color: '#fff' }}>
+                  <i className="fa-solid fa-file-lines" style={{ color: 'var(--accent)' }}></i>
+                  Transkrip Audio: {activeTranscriptModal.pcName}
+                </h3>
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '4px' }}>
+                  {activeTranscriptModal.fileName ? `File: ${activeTranscriptModal.fileName}` : `Sesi: ${activeTranscriptModal.folderName}`}
+                </div>
+              </div>
+              <button 
+                className="btn-filter secondary" 
+                style={{ padding: '6px 10px', fontSize: '0.85rem' }} 
+                onClick={() => setActiveTranscriptModal(null)}
+              >
+                <i className="fa-solid fa-xmark"></i>
+              </button>
+            </div>
+
+            <div className="transcript-modal-body">
+              {activeTranscriptModal.loading ? (
+                <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-muted)' }}>
+                  <i className="fa-solid fa-spinner fa-spin" style={{ fontSize: '1.8rem', color: 'var(--accent)', marginBottom: '12px' }}></i>
+                  <div>Sedang memproses / memuat transkrip audio...</div>
+                </div>
+              ) : activeTranscriptModal.error ? (
+                <div style={{ textAlign: 'center', padding: '30px 20px' }}>
+                  <div style={{ color: 'var(--text-muted)', marginBottom: '16px', fontSize: '0.9rem' }}>
+                    {activeTranscriptModal.error}
+                  </div>
+                  {transcriptionConfig.enabled && transcriptionConfig.apiUrl && (
+                    <button 
+                      className="btn btn-primary"
+                      onClick={() => {
+                        const fallbackFile = activeTranscriptModal.fileName || 
+                          records.find(r => r.folderName === activeTranscriptModal.folderName)?.fileName || 
+                          'Part_001.webm';
+                        handleManualTranscribe(activeTranscriptModal.folderName, fallbackFile, activeTranscriptModal.pcName);
+                      }}
+                    >
+                      <i className="fa-solid fa-wand-magic-sparkles" style={{ marginRight: '6px' }}></i>
+                      Transkrip Audio Sekarang
+                    </button>
+                  )}
+                </div>
+              ) : activeTranscriptModal.transcript ? (
+                <>
+                  {/* Meta info & Action bar */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', paddingBottom: '12px', borderBottom: '1px solid var(--border)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                      <span className="session-time-badge">
+                        <i className="fa-solid fa-language" style={{ marginRight: '4px' }}></i>
+                        {activeTranscriptModal.transcript.language ? activeTranscriptModal.transcript.language.toUpperCase() : 'ID'}
+                      </span>
+                      {activeTranscriptModal.transcript.transcribedAt && (
+                        <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                          <i className="fa-solid fa-clock" style={{ marginRight: '4px' }}></i>
+                          {activeTranscriptModal.transcript.transcribedAt}
+                        </span>
+                      )}
+                      {activeTranscriptModal.transcript.keywordsFound && activeTranscriptModal.transcript.keywordsFound.length > 0 && (
+                        <span className="transcript-keyword-badge">
+                          <i className="fa-solid fa-triangle-exclamation"></i>
+                          Kata Bahaya: {activeTranscriptModal.transcript.keywordsFound.join(', ')}
+                        </span>
+                      )}
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                      <button 
+                        className="btn-filter secondary" 
+                        style={{ padding: '4px 10px', fontSize: '0.8rem' }}
+                        onClick={() => downloadTranscriptFile(activeTranscriptModal.transcript, 'txt')}
+                        title="Unduh file teks transkrip"
+                      >
+                        <i className="fa-solid fa-download"></i> TXT
+                      </button>
+                      <button 
+                        className="btn-filter secondary" 
+                        style={{ padding: '4px 10px', fontSize: '0.8rem' }}
+                        onClick={() => downloadTranscriptFile(activeTranscriptModal.transcript, 'srt')}
+                        title="Unduh file subtitle SRT"
+                      >
+                        <i className="fa-solid fa-file-audio"></i> SRT
+                      </button>
+                      <button 
+                        className="btn-filter secondary" 
+                        style={{ padding: '4px 10px', fontSize: '0.8rem' }}
+                        onClick={() => downloadTranscriptFile(activeTranscriptModal.transcript, 'json')}
+                        title="Unduh format JSON"
+                      >
+                        <i className="fa-solid fa-code"></i> JSON
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Segments List with Click-to-Seek */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '6px' }}>
+                    {Array.isArray(activeTranscriptModal.transcript.segments) && activeTranscriptModal.transcript.segments.length > 0 ? (
+                      activeTranscriptModal.transcript.segments.map((seg, sIdx) => {
+                        const validSec = typeof seg.start === 'number' ? Math.max(0, seg.start) : 0;
+                        const m = Math.floor(validSec / 60);
+                        const s = Math.floor(validSec % 60);
+                        const timeStr = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+
+                        return (
+                          <div 
+                            key={seg.id !== undefined ? seg.id : sIdx} 
+                            className="transcript-segment-row"
+                            onClick={() => {
+                              const targetFolder = activeTranscriptModal.folderName;
+                              if (!playingSession || playingSession.folderName !== targetFolder) {
+                                const baseKey = targetFolder ? targetFolder.replace(/_to_\d{2}-\d{2}-\d{2}$/i, '') : '';
+                                const matchingRecords = records.filter(r => r.folderName === targetFolder || r.baseSessionKey === baseKey);
+                                if (matchingRecords.length > 0) {
+                                  const first = matchingRecords[0];
+                                  const newSession = {
+                                    folderName: first.folderName,
+                                    pcName: first.pcName,
+                                    isParsed: first.isParsed,
+                                    dateStr: first.dateStr,
+                                    timeStr: first.timeStr,
+                                    createdAt: first.createdAt,
+                                    parts: [...matchingRecords].sort((a, b) => (a.fileName || '').localeCompare(b.fileName || ''))
+                                  };
+                                  setPlayingSession(newSession);
+                                }
+                              }
+                              handleGlobalSeek(validSec);
+                            }}
+                            title="Klik untuk mendengarkan bagian ini pada pemutar audio"
+                          >
+                            <span className="transcript-time-pill">
+                              <i className="fa-solid fa-play" style={{ fontSize: '0.65rem' }}></i>
+                              {timeStr}
+                            </span>
+                            <div className="transcript-segment-text">
+                              {seg.text}
+                            </div>
+                          </div>
+                        );
+                      })
+                    ) : (
+                      <div style={{ padding: '12px', background: 'rgba(255,255,255,0.02)', borderRadius: '6px', fontSize: '0.9rem', lineHeight: '1.6' }}>
+                        {activeTranscriptModal.transcript.text || 'Tidak ada teks yang dapat ditranskripsi.'}
+                      </div>
+                    )}
+                  </div>
+                </>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Keyword Alert Floating Toast */}
+      {keywordAlertToast && (
+        <div style={{
+          position: 'fixed',
+          bottom: '24px',
+          right: '24px',
+          zIndex: 1050,
+          background: '#1e1b2e',
+          border: '1px solid rgba(239, 68, 68, 0.4)',
+          borderRadius: '10px',
+          padding: '14px 18px',
+          boxShadow: '0 10px 25px rgba(0,0,0,0.5)',
+          maxWidth: '380px',
+          display: 'flex',
+          gap: '12px',
+          alignItems: 'flex-start',
+          animation: 'fadeIn 0.3s ease'
+        }}>
+          <i className="fa-solid fa-triangle-exclamation" style={{ color: '#ef4444', fontSize: '1.2rem', marginTop: '2px' }}></i>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontWeight: 'bold', color: '#f87171', fontSize: '0.9rem' }}>Deteksi Kata Bahaya!</div>
+            <div style={{ fontSize: '0.8rem', color: '#fff', marginTop: '2px' }}>
+              <strong>{keywordAlertToast.pcName}</strong>: {keywordAlertToast.keywords?.join(', ')}
+            </div>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px', fontStyle: 'italic' }}>
+              "{keywordAlertToast.snippet}"
+            </div>
+          </div>
+          <button 
+            style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '0.85rem' }}
+            onClick={() => setKeywordAlertToast(null)}
+          >
+            <i className="fa-solid fa-xmark"></i>
+          </button>
         </div>
       )}
 

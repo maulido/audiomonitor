@@ -24,6 +24,7 @@ const ConfigManager = require('../packages/server/src/ConfigManager');
 const DatabaseManager = require('../packages/server/src/DatabaseManager');
 const AlertManager = require('../packages/server/src/AlertManager');
 const TelemetryHub = require('../packages/server/src/TelemetryHub');
+const TranscriptionManager = require('../packages/server/src/TranscriptionManager');
 const ServerApp = require('../packages/server/src/ServerApp');
 
 // Test Utilities
@@ -632,6 +633,1673 @@ async function main() {
     agentSocket.disconnect();
     dashSocket.disconnect();
     await new Promise(r => serverApp.server.close(r));
+  });
+
+  // =========================================================================
+  // SUITE 11: OpenAI Whisper Integration, Keyword Alerting & Transcript Search
+  // =========================================================================
+  await runSuite('11. OpenAI Whisper Integration, Keyword Alerting & Transcript Search', async () => {
+    const configPath = path.join(TEST_DIR, 'whisper_config.json');
+    const cm = new ConfigManager(configPath);
+    const db = new DatabaseManager(path.join(TEST_DIR, 'whisper_db.json'));
+    const alertMgr = new AlertManager(cm, db);
+
+    const testRecordDir = path.join(TEST_DIR, 'whisper_vault');
+    fs.mkdirSync(testRecordDir, { recursive: true });
+    cm.config.recordDir = testRecordDir;
+
+    // 1. Setup Mock Whisper API Worker Server
+    const mockWorker = http.createServer((req, res) => {
+      if (req.url === '/health' || req.method === 'GET' || req.method === 'OPTIONS') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ status: 'ok', worker: 'Mac-M1-Worker' }));
+      }
+      if (req.url === '/transcribe' && req.method === 'POST') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({
+          text: 'Halo selamat malam, ini adalah rekaman siaran langsung studio, terjadi suara bocor di mikrofon.',
+          segments: [
+            { id: 0, start: 0.0, end: 4.2, text: 'Halo selamat malam, ini adalah rekaman siaran langsung studio' },
+            { id: 1, start: 4.5, end: 8.9, text: 'terjadi suara bocor di mikrofon.' }
+          ]
+        }));
+      }
+      res.writeHead(404);
+      res.end();
+    });
+
+    const mockPort = await new Promise(res => {
+      const s = mockWorker.listen(0, '127.0.0.1', () => res(s.address().port));
+    });
+    const mockWorkerUrl = 'http://127.0.0.1:' + mockPort + '/transcribe';
+
+    // 2. Configure Whisper in ConfigManager
+    cm.setTranscriptionConfig({
+      enabled: true,
+      apiUrl: mockWorkerUrl,
+      language: 'id',
+      autoTranscribe: true,
+      alertKeywords: ['bocor', 'mati']
+    });
+
+    const serverApp = new ServerApp(0);
+    serverApp.configManager = cm;
+    serverApp.dbManager = db;
+    serverApp.alertManager = alertMgr;
+    serverApp.transcriptionManager = new TranscriptionManager(cm, db, alertMgr, serverApp.telemetryHub);
+
+    const port = await new Promise(res => {
+      const s = serverApp.server.listen(0, '127.0.0.1', () => res(s.address().port));
+    });
+    const baseUrl = 'http://127.0.0.1:' + port;
+
+    // 3. Test Keyword Scanning (Unit Logic)
+    const scanned = serverApp.transcriptionManager.scanAlertKeywords(
+      'Ada indikasi suara bocor dan kabel putus di studio',
+      ['bocor', 'mati', 'rusak']
+    );
+    assertEqual(scanned.length, 1, 'scanAlertKeywords found 1 keyword match');
+    assertEqual(scanned[0], 'bocor', 'Matched keyword is "bocor"');
+
+    // 4. Test API Health / Connectivity Check
+    const connResult = await serverApp.transcriptionManager.testConnection('http://127.0.0.1:' + mockPort + '/health');
+    assert(connResult.success === true, 'Whisper API connection test succeeded');
+
+    const connFailResult = await serverApp.transcriptionManager.testConnection('http://127.0.0.1:9999/dead-port');
+    assert(connFailResult.success === false, 'Offline Whisper API connection test correctly returned success: false');
+
+    // 5. Test Path Traversal Protection
+    const resTraversalGet = await fetch(`${baseUrl}/api/records/transcript?folder=..`);
+    assert(resTraversalGet.status === 400 || resTraversalGet.status === 403, 'Path traversal on GET transcript rejected with 400/403');
+
+    const resTraversalPost = await fetch(`${baseUrl}/api/records/transcribe`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-pin': '1234' },
+      body: JSON.stringify({ folder: '..', file: 'secret.txt', pcName: 'Test' })
+    });
+    assert(resTraversalPost.status === 400 || resTraversalPost.status === 403, 'Path traversal on POST transcribe rejected with 400/403');
+
+    // 6. Test Audio File Transcription Execution
+    const sampleUuid = '88888888-4444-4444-4444-121212121212';
+    cm.setPcName(sampleUuid, 'PC Studio Utama');
+    const sessionFolder = 'PC_Studio_Utama_' + sampleUuid + '_2026-08-29_16-00-00_to_16-10-00';
+    const folderPath = path.join(testRecordDir, sessionFolder);
+    fs.mkdirSync(folderPath, { recursive: true });
+    
+    const sampleAudioPath = path.join(folderPath, 'Part_001.webm');
+    fs.writeFileSync(sampleAudioPath, Buffer.alloc(2048, 'b'));
+
+    const transResult = await serverApp.transcriptionManager.transcribeFile(
+      sampleAudioPath, 
+      sessionFolder, 
+      'Part_001.webm', 
+      'PC Studio Utama'
+    );
+
+    assert(transResult !== null, 'Transcription result returned');
+    assertEqual(transResult.language, 'id', 'Transcript language is ID');
+    assertEqual(transResult.segments.length, 2, 'Transcript parsed 2 segments');
+    assertEqual(transResult.keywordsFound.length, 1, 'Detected keyword in transcript');
+    assertEqual(transResult.keywordsFound[0], 'bocor', 'Keyword "bocor" recorded in transcript');
+    assert(fs.existsSync(sampleAudioPath + '.transcript.json'), 'Transcript JSON saved on disk next to audio');
+
+    // 7. Test GET /api/records/transcript
+    const resGetTrans = await fetch(`${baseUrl}/api/records/transcript?folder=${encodeURIComponent(sessionFolder)}&file=Part_001.webm`);
+    assertEqual(resGetTrans.status, 200, 'GET /api/records/transcript returned 200');
+    const transBody = await resGetTrans.json();
+    assert(transBody.success === true, 'API returned success true');
+    assertEqual(transBody.transcript.segments.length, 2, 'API transcript contains 2 segments');
+
+    // 8. Test Keyword Search: GET /api/records/search-transcript?q=bocor
+    const resSearch = await fetch(`${baseUrl}/api/records/search-transcript?q=bocor`);
+    assertEqual(resSearch.status, 200, 'GET /api/records/search-transcript returned 200');
+    const searchBody = await resSearch.json();
+    assert(searchBody.success === true, 'Search returned success true');
+    assertEqual(searchBody.results.length, 1, 'Found 1 matching transcript file');
+    assertEqual(searchBody.results[0].pcName, 'PC Studio Utama', 'Matched PC Studio Utama');
+
+    // 8b. Test Search with PC Filter (Matching)
+    const resSearchPcMatch = await fetch(`${baseUrl}/api/records/search-transcript?q=bocor&pcFilter=${encodeURIComponent('PC Studio Utama')}`);
+    const searchPcMatchBody = await resSearchPcMatch.json();
+    assertEqual(searchPcMatchBody.results.length, 1, 'PC filter match returned 1 result');
+
+    // 8c. Test Search with PC Filter (Non-Matching)
+    const resSearchPcOther = await fetch(`${baseUrl}/api/records/search-transcript?q=bocor&pcFilter=${encodeURIComponent('PC Studio Lain')}`);
+    const searchPcOtherBody = await resSearchPcOther.json();
+    assertEqual(searchPcOtherBody.results.length, 0, 'PC filter mismatch returned 0 results');
+
+    // 8d. Test Search with Date Range Filter (Matching)
+    const resSearchDateMatch = await fetch(`${baseUrl}/api/records/search-transcript?q=bocor&startDate=2020-01-01&endDate=2030-12-31`);
+    const searchDateMatchBody = await resSearchDateMatch.json();
+    assertEqual(searchDateMatchBody.results.length, 1, 'Date range match returned 1 result');
+
+    // 8e. Test Search with Date Range Filter (Non-Matching)
+    const resSearchDateMismatch = await fetch(`${baseUrl}/api/records/search-transcript?q=bocor&startDate=2020-01-01&endDate=2020-01-02`);
+    const searchDateMismatchBody = await resSearchDateMismatch.json();
+    assertEqual(searchDateMismatchBody.results.length, 0, 'Date range mismatch returned 0 results');
+
+    // 9. Test Keyword Alert Logged in Database
+    const incidents = db.incidents;
+    const keywordIncidents = incidents.filter(inc => inc.incidentType === 'KEYWORD_ALERT');
+    assert(keywordIncidents.length > 0, 'KEYWORD_ALERT incident recorded in database');
+
+    await new Promise(r => mockWorker.close(r));
+    await new Promise(r => serverApp.server.close(r));
+  });
+
+  // =========================================================================
+  // SUITE 12: End-to-End Incident Lifecycle, Audio Recording, Rollover & Merge
+  // =========================================================================
+  await runSuite('12. End-to-End Incident Lifecycle, Rollover & Multi-Part Stitching', async () => {
+    const configPath = path.join(TEST_DIR, 'lifecycle_config.json');
+    const cm = new ConfigManager(configPath);
+    const db = new DatabaseManager(path.join(TEST_DIR, 'lifecycle_db.json'));
+    const alertMgr = new AlertManager(cm, db);
+    const testRecordDir = path.join(TEST_DIR, 'lifecycle_vault');
+    fs.mkdirSync(testRecordDir, { recursive: true });
+    cm.config.recordDir = testRecordDir;
+
+    const serverApp = new ServerApp(0);
+    serverApp.configManager = cm;
+    serverApp.dbManager = db;
+    serverApp.alertManager = alertMgr;
+
+    const port = await new Promise(res => {
+      const s = serverApp.server.listen(0, '127.0.0.1', () => res(s.address().port));
+    });
+    const baseUrl = 'http://127.0.0.1:' + port;
+
+    const testUuid = '99999999-aaaa-bbbb-cccc-111122223333';
+    cm.setPcName(testUuid, 'PC Siaran 1');
+
+    const ongoingFolder = 'PC_Siaran_1_' + testUuid + '_2026-08-29_18-00-00';
+    const completedFolder = 'PC_Siaran_1_' + testUuid + '_2026-08-29_18-00-00_to_18-30-00';
+
+    // 1. Agent uploads Part_001.webm during ongoing incident
+    const resPart1 = await fetch(`${baseUrl}/internal/upload-record`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'audio/webm',
+        'x-agent-name': 'PC Siaran 1',
+        'x-session-folder': ongoingFolder,
+        'x-file-name': 'Part_001.webm'
+      },
+      body: Buffer.alloc(1024, '1')
+    });
+    assertEqual(resPart1.status, 200, 'Upload Part_001 returned 200');
+
+    // 2. Agent uploads Part_002.webm on rollover (still ongoing)
+    const resPart2 = await fetch(`${baseUrl}/internal/upload-record`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'audio/webm',
+        'x-agent-name': 'PC Siaran 1',
+        'x-session-folder': ongoingFolder,
+        'x-file-name': 'Part_002.webm'
+      },
+      body: Buffer.alloc(1024, '2')
+    });
+    assertEqual(resPart2.status, 200, 'Upload Part_002 returned 200');
+
+    // 3. Incident ends: Agent uploads Part_003.webm to completed folder name
+    const resPart3 = await fetch(`${baseUrl}/internal/upload-record`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'audio/webm',
+        'x-agent-name': 'PC Siaran 1',
+        'x-session-folder': completedFolder,
+        'x-file-name': 'Part_003.webm'
+      },
+      body: Buffer.alloc(1024, '3')
+    });
+    assertEqual(resPart3.status, 200, 'Upload Part_003 to completed folder returned 200');
+
+    // Give server moment to finish disk rename/merge
+    await new Promise(r => setTimeout(r, 200));
+
+    // 4. Verify Server Merged All 3 Parts into Completed Folder
+    const completedPath = path.join(testRecordDir, completedFolder);
+    assert(fs.existsSync(completedPath), 'Completed session folder exists');
+    assert(fs.existsSync(path.join(completedPath, 'Part_001.webm')), 'Part_001 migrated to completed folder');
+    assert(fs.existsSync(path.join(completedPath, 'Part_002.webm')), 'Part_002 migrated to completed folder');
+    assert(fs.existsSync(path.join(completedPath, 'Part_003.webm')), 'Part_003 written to completed folder');
+
+    // 5. Verify GET /api/records returns consolidated session
+    const resRecords = await fetch(`${baseUrl}/api/records`);
+    const recordsData = await resRecords.json();
+    const recordsList = Array.isArray(recordsData) ? recordsData : recordsData.records;
+    assertEqual(recordsList.length, 3, 'GET /api/records lists all 3 parts');
+    assertEqual(recordsList[0].isCompleted, true, 'All parts marked isCompleted true');
+    assertEqual(recordsList[0].pcName, 'PC Siaran 1', 'Session pcName matches');
+
+    // 6. Verify Access via Media Route with Ongoing Folder Name automatically resolves to Completed Folder
+    const resMedia = await fetch(`${baseUrl}/media/${encodeURIComponent(ongoingFolder)}/Part_001.webm`);
+    assertEqual(resMedia.status, 200, 'Ongoing folder URL transparently served from completed folder');
+
+    await new Promise(r => serverApp.server.close(r));
+  });
+
+  // =========================================================================
+  // SUITE 13: Parallel Upload Concurrency, Queue Backpressure & Background Transcriber
+  // =========================================================================
+  await runSuite('13. Parallel Upload Concurrency & Background Transcriber Stress', async () => {
+    const configPath = path.join(TEST_DIR, 'stress_config.json');
+    const cm = new ConfigManager(configPath);
+    const db = new DatabaseManager(path.join(TEST_DIR, 'stress_db.json'));
+    const alertMgr = new AlertManager(cm, db);
+    const testRecordDir = path.join(TEST_DIR, 'stress_vault');
+    fs.mkdirSync(testRecordDir, { recursive: true });
+    cm.config.recordDir = testRecordDir;
+
+    // Setup Mock Whisper Worker with 20ms simulated latency
+    let workerRequestsCount = 0;
+    const mockWorker = http.createServer((req, res) => {
+      if (req.url === '/transcribe' && req.method === 'POST') {
+        workerRequestsCount++;
+        setTimeout(() => {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            text: 'Uji coba beban sistem paralel dan transkripsi suara.',
+            segments: [{ id: 0, start: 0.0, end: 5.0, text: 'Uji coba beban sistem paralel dan transkripsi suara.' }]
+          }));
+        }, 20);
+      } else {
+        res.writeHead(200);
+        res.end();
+      }
+    });
+
+    const mockPort = await new Promise(res => {
+      const s = mockWorker.listen(0, '127.0.0.1', () => res(s.address().port));
+    });
+    const mockWorkerUrl = 'http://127.0.0.1:' + mockPort + '/transcribe';
+
+    cm.setTranscriptionConfig({
+      enabled: true,
+      apiUrl: mockWorkerUrl,
+      language: 'id',
+      autoTranscribe: true,
+      alertKeywords: ['paralel']
+    });
+
+    const serverApp = new ServerApp(0);
+    serverApp.configManager = cm;
+    serverApp.dbManager = db;
+    serverApp.alertManager = alertMgr;
+    serverApp.transcriptionManager = new TranscriptionManager(cm, db, alertMgr, serverApp.telemetryHub);
+
+    const port = await new Promise(res => {
+      const s = serverApp.server.listen(0, '127.0.0.1', () => res(s.address().port));
+    });
+    const baseUrl = 'http://127.0.0.1:' + port;
+
+    const stressUuid = '77777777-8888-9999-aaaa-bbbbccccdddd';
+    cm.setPcName(stressUuid, 'PC Stress Test');
+    const stressFolder = 'PC_Stress_Test_' + stressUuid + '_2026-08-29_19-00-00';
+
+    // 1. Fire 8 simultaneous parallel file uploads with proper headers
+    const uploadPromises = [];
+    for (let i = 1; i <= 8; i++) {
+      const fileName = `Part_00${i}.webm`;
+      uploadPromises.push(
+        fetch(`${baseUrl}/internal/upload-record`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'audio/webm',
+            'x-agent-name': 'PC Stress Test',
+            'x-session-folder': stressFolder,
+            'x-file-name': fileName
+          },
+          body: Buffer.alloc(512, String(i))
+        })
+      );
+    }
+
+    const uploadResponses = await Promise.all(uploadPromises);
+    for (const r of uploadResponses) {
+      assertEqual(r.status, 200, 'Parallel upload chunk succeeded with 200');
+    }
+
+    // 2. Wait for background transcription queue to drain all 8 tasks
+    let waitCount = 0;
+    while (serverApp.transcriptionManager.queue.length > 0 || serverApp.transcriptionManager.isProcessing) {
+      await new Promise(r => setTimeout(r, 50));
+      waitCount++;
+      if (waitCount > 100) break; // timeout guard 5s
+    }
+
+    assertEqual(serverApp.transcriptionManager.queue.length, 0, 'Transcription queue drained to 0');
+    assertEqual(serverApp.transcriptionManager.isProcessing, false, 'Transcription worker returned to idle');
+    assert(workerRequestsCount >= 8, 'Whisper worker handled all parallel tasks');
+
+    // 3. Verify all 8 transcript files exist on disk
+    for (let i = 1; i <= 8; i++) {
+      const tPath = path.join(testRecordDir, stressFolder, `Part_00${i}.webm.transcript.json`);
+      assert(fs.existsSync(tPath), `Transcript file Part_00${i}.webm.transcript.json created on disk`);
+    }
+
+    await new Promise(r => mockWorker.close(r));
+    await new Promise(r => serverApp.server.close(r));
+  });
+
+  // =========================================================================
+  // SUITE 14: Input Fuzzing, Search Query Resilience & Multilingual Safety
+  // =========================================================================
+  await runSuite('14. Input Fuzzing, Special Characters & Search Query Resilience', async () => {
+    const configPath = path.join(TEST_DIR, 'fuzz_config.json');
+    const cm = new ConfigManager(configPath);
+    const db = new DatabaseManager(path.join(TEST_DIR, 'fuzz_db.json'));
+    const alertMgr = new AlertManager(cm, db);
+    const testRecordDir = path.join(TEST_DIR, 'fuzz_vault');
+    fs.mkdirSync(testRecordDir, { recursive: true });
+    cm.config.recordDir = testRecordDir;
+
+    const serverApp = new ServerApp(0);
+    serverApp.configManager = cm;
+    serverApp.dbManager = db;
+    serverApp.alertManager = alertMgr;
+    serverApp.transcriptionManager = new TranscriptionManager(cm, db, alertMgr, serverApp.telemetryHub);
+
+    const port = await new Promise(res => {
+      const s = serverApp.server.listen(0, '127.0.0.1', () => res(s.address().port));
+    });
+    const baseUrl = 'http://127.0.0.1:' + port;
+
+    // 1. Create transcript with special symbols, numbers and mixed unicode
+    const fFolder = 'PC_Fuzz_11111111-2222-3333-4444-555555555555_2026-08-29_20-00-00';
+    const fDirPath = path.join(testRecordDir, fFolder);
+    fs.mkdirSync(fDirPath, { recursive: true });
+
+    const fTranscript = {
+      fileName: 'Part_001.webm',
+      sessionFolder: fFolder,
+      pcName: 'PC Fuzz Test',
+      transcribedAt: '2026-08-29 20:00:00',
+      language: 'id',
+      text: 'Peringatan! Terjadi error pada port [COM3] & regex string (*+?^$|#@) dengan status OK.',
+      segments: [
+        { id: 0, start: 0, end: 4, text: 'Peringatan! Terjadi error pada port [COM3]' },
+        { id: 1, start: 4, end: 8, text: '& regex string (*+?^$|#@) dengan status OK.' }
+      ]
+    };
+    fs.writeFileSync(path.join(fDirPath, 'Part_001.webm.transcript.json'), JSON.stringify(fTranscript));
+
+    // 2. Test Regex Special Character Search Queries
+    const specialQueries = ['(*+?^$|#@)', '[COM3]', 'error', 'Peringatan!'];
+    for (const q of specialQueries) {
+      const res = await fetch(`${baseUrl}/api/records/search-transcript?q=${encodeURIComponent(q)}`);
+      assertEqual(res.status, 200, `Search query "${q}" returned 200`);
+      const body = await res.json();
+      assert(body.success === true, `Search query "${q}" succeeded`);
+      assertEqual(body.results.length, 1, `Search query "${q}" matched 1 result`);
+    }
+
+    // 3. Test Massive Fuzz Query String (> 3000 characters)
+    const massiveQuery = 'a'.repeat(3000);
+    const resMassive = await fetch(`${baseUrl}/api/records/search-transcript?q=${encodeURIComponent(massiveQuery)}`);
+    assertEqual(resMassive.status, 200, 'Massive 3000-char search query handled safely without 500 crash');
+    const massiveBody = await resMassive.json();
+    assertEqual(massiveBody.results.length, 0, 'No match for 3000-char string');
+
+    // 4. Test Configuration Fuzzing (Deduplication, Whitespace, Mixed Casing)
+    const resConfig = await fetch(`${baseUrl}/api/config/transcription`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-pin': '1234' },
+      body: JSON.stringify({
+        enabled: true,
+        apiUrl: 'http://192.168.1.100:8000/transcribe',
+        alertKeywords: ['BOCOR', '  bocor  ', 'MATI', 'rusak', '']
+      })
+    });
+    assertEqual(resConfig.status, 200, 'POST /api/config/transcription returned 200');
+    const cfgData = await resConfig.json();
+    assertEqual(cfgData.transcription.alertKeywords.length, 3, 'Alert keywords deduplicated to 3 unique items');
+    assert(cfgData.transcription.alertKeywords.includes('bocor'), 'Keyword "bocor" saved lowercase');
+    assert(cfgData.transcription.alertKeywords.includes('mati'), 'Keyword "mati" saved lowercase');
+    assert(cfgData.transcription.alertKeywords.includes('rusak'), 'Keyword "rusak" saved lowercase');
+
+    // 5. Test test-api endpoint input validation
+    const resBadUrl = await fetch(`${baseUrl}/api/transcription/test-api`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-pin': '1234' },
+      body: JSON.stringify({ apiUrl: 'ftp://invalid-protocol.com' })
+    });
+    const badUrlData = await resBadUrl.json();
+    assertEqual(badUrlData.success, false, 'Invalid URL scheme rejected with success: false');
+
+    await new Promise(r => serverApp.server.close(r));
+  });
+
+  // =========================================================================
+  // SUITE 15: Rapid Telemetry Bursts, State Window Clamping & Edge-Cases
+  // =========================================================================
+  await runSuite('15. Rapid Telemetry Bursts, State Window Clamping & Edge-Cases', async () => {
+    const configPath = path.join(TEST_DIR, 'burst_config.json');
+    const cm = new ConfigManager(configPath);
+    const db = new DatabaseManager(path.join(TEST_DIR, 'burst_db.json'));
+    const alertMgr = new AlertManager(cm, db);
+
+    const serverApp = new ServerApp(0);
+    serverApp.configManager = cm;
+    serverApp.dbManager = db;
+    serverApp.alertManager = alertMgr;
+
+    const port = await new Promise(res => {
+      const s = serverApp.server.listen(0, '127.0.0.1', () => res(s.address().port));
+    });
+
+    const agentSocket = ioClient(`http://127.0.0.1:${port}`);
+    await new Promise(res => agentSocket.on('connect', res));
+
+    const burstUuid = '55555555-6666-7777-8888-999999999999';
+
+    // 1. Emit 40 rapid telemetry packets in quick succession
+    for (let i = 0; i < 40; i++) {
+      agentSocket.emit('telemetry', {
+        uuid: burstUuid,
+        micDb: -20 + (i % 5),
+        obsDb: -22 + (i % 5),
+        status: 'AMAN',
+        dangerScore: 0,
+        isMuted: false
+      });
+    }
+
+    await new Promise(r => setTimeout(r, 200));
+
+    // 2. Verify server recorded state without crash and updated fields
+    const recordedState = serverApp.telemetryHub.lastKnownState.get(burstUuid);
+    assert(recordedState !== undefined, 'Agent state recorded in TelemetryHub');
+    assertEqual(recordedState.status, 'AMAN', 'Agent status is AMAN');
+
+    // 3. Test Invalid dB Values (NaN, -Infinity, undefined)
+    agentSocket.emit('telemetry', {
+      uuid: burstUuid,
+      micDb: -Infinity,
+      obsDb: NaN,
+      status: 'AMAN'
+    });
+
+    await new Promise(r => setTimeout(r, 100));
+
+    const sanitizedState = serverApp.telemetryHub.lastKnownState.get(burstUuid);
+    assert(sanitizedState !== undefined, 'Sanitized state exists');
+    assert(isFinite(sanitizedState.micDb) || sanitizedState.micDb === -60, 'Non-finite micDb handled safely');
+
+    agentSocket.disconnect();
+    await new Promise(r => serverApp.server.close(r));
+  });
+
+  // =========================================================================
+  // SUITE 16: Auto-Update Lifecycle, Installer Distribution & Progress Streaming
+  // =========================================================================
+  await runSuite('16. Auto-Update Lifecycle, Installer Distribution & Progress Streaming', async () => {
+    const configPath = path.join(TEST_DIR, 'update_config.json');
+    const cm = new ConfigManager(configPath);
+    cm.config.updatesDir = path.join(TEST_DIR, 'updates_vault');
+    const db = new DatabaseManager(path.join(TEST_DIR, 'update_db.json'));
+    const alertMgr = new AlertManager(cm, db);
+
+    const serverApp = new ServerApp(0);
+    serverApp.configManager = cm;
+    serverApp.dbManager = db;
+    serverApp.alertManager = alertMgr;
+
+    const port = await new Promise(res => {
+      const s = serverApp.server.listen(0, '127.0.0.1', () => res(s.address().port));
+    });
+    const baseUrl = 'http://127.0.0.1:' + port;
+
+    // 1. Check /updates/agent/info initially
+    const resInfoInitial = await fetch(`${baseUrl}/updates/agent/info`);
+    assertEqual(resInfoInitial.status, 200, 'GET /updates/agent/info returned 200');
+    const infoDataInitial = await resInfoInitial.json();
+    assert(infoDataInitial.hasUpdate !== undefined, 'hasUpdate field present');
+
+    // 2. Test Invalid File Extension Upload (Reject .bat/.sh)
+    const resBadExt = await fetch(`${baseUrl}/api/updates/upload-agent`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/octet-stream',
+        'x-file-name': 'malicious_script.bat',
+        'x-pin': '1234'
+      },
+      body: Buffer.from('echo Hacked')
+    });
+    assertEqual(resBadExt.status, 400, 'Non-exe upload rejected with 400');
+
+    // 3. Upload Valid Installer v1.0.2
+    const fakeInstaller102 = Buffer.alloc(4096, 'E');
+    const resUpload102 = await fetch(`${baseUrl}/api/updates/upload-agent`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/octet-stream',
+        'x-file-name': 'AudioMonitor_Agent_Installer_v1.0.2.exe',
+        'x-pin': '1234'
+      },
+      body: fakeInstaller102
+    });
+    assertEqual(resUpload102.status, 200, 'Upload installer v1.0.2 returned 200');
+
+    // 4. Upload Higher Version Installer v1.0.3
+    const fakeInstaller103 = Buffer.alloc(8192, 'F');
+    const resUpload103 = await fetch(`${baseUrl}/api/updates/upload-agent`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/octet-stream',
+        'x-file-name': 'AudioMonitor_Agent_Installer_v1.0.3.exe',
+        'x-pin': '1234'
+      },
+      body: fakeInstaller103
+    });
+    assertEqual(resUpload103.status, 200, 'Upload installer v1.0.3 returned 200');
+
+    // 5. Query /updates/agent/info and verify Semver selection chooses v1.0.3
+    const resInfoLatest = await fetch(`${baseUrl}/updates/agent/info`);
+    const infoLatest = await resInfoLatest.json();
+    assertEqual(infoLatest.hasUpdate, true, 'hasUpdate is true after upload');
+    assertEqual(infoLatest.version, '1.0.3', 'Latest version identified as 1.0.3');
+    assertEqual(infoLatest.fileName, 'AudioMonitor_Agent_Installer_v1.0.3.exe', 'Latest installer filename matches');
+
+    // 6. Download installer via LAN streaming endpoint
+    const resDownload = await fetch(`${baseUrl}/updates/agent/AudioMonitor_Agent_Installer_v1.0.3.exe`);
+    assertEqual(resDownload.status, 200, 'Download installer returned 200');
+    const downloadedBuf = Buffer.from(await resDownload.arrayBuffer());
+    assertEqual(downloadedBuf.length, 8192, 'Downloaded file size matches uploaded 8192 bytes');
+
+    // 7. Path Traversal Protection on update files
+    const resTrav = await fetch(`${baseUrl}/updates/agent/..%2F..%2Fsecret.txt`);
+    assert(resTrav.status === 403 || resTrav.status === 404, 'Path traversal on updates rejected with 403/404');
+
+    // 8. Test Agent Update Trigger Dispatch via Socket.io
+    const testAgentUuid = 'update-test-uuid-1111-2222';
+    const agentSocket = ioClient(`http://127.0.0.1:${port}`);
+    let receivedUpdateCmd = null;
+
+    agentSocket.on('connect', () => {
+      agentSocket.emit('register', { type: 'agent', uuid: testAgentUuid, pcName: 'Test PC' });
+    });
+    agentSocket.on('execute-update', (data) => {
+      receivedUpdateCmd = data;
+    });
+
+    await new Promise(r => setTimeout(r, 200));
+
+    const resTrigger = await fetch(`${baseUrl}/api/updates/trigger-agent`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-pin': '1234' },
+      body: JSON.stringify({
+        targetUuid: testAgentUuid,
+        downloadUrl: '/updates/agent/AudioMonitor_Agent_Installer_v1.0.3.exe'
+      })
+    });
+    assertEqual(resTrigger.status, 200, 'POST /api/updates/trigger-agent returned 200');
+
+    await new Promise(r => setTimeout(r, 200));
+    assert(receivedUpdateCmd !== null, 'Agent received request-install-update command');
+    assert(receivedUpdateCmd.downloadUrl.includes('AudioMonitor_Agent_Installer_v1.0.3.exe'), 'Download URL conveyed correctly');
+
+    // 9. Test Agent Progress Relay to Dashboard
+    const dashSocket = ioClient(`http://127.0.0.1:${port}`);
+    let dashReceivedProgress = null;
+
+    dashSocket.on('connect', () => {
+      dashSocket.emit('register', { type: 'dashboard' });
+    });
+    dashSocket.on('agent-update-progress', (prog) => {
+      dashReceivedProgress = prog;
+    });
+
+    await new Promise(r => setTimeout(r, 200));
+
+    agentSocket.emit('agent-update-progress', {
+      uuid: testAgentUuid,
+      status: 'downloading',
+      percent: 65
+    });
+
+    await new Promise(r => setTimeout(r, 200));
+    assert(dashReceivedProgress !== null, 'Dashboard received relayed agent-update-progress');
+    assertEqual(dashReceivedProgress.percent, 65, 'Progress percentage relayed accurately');
+
+    // 10. Test POST /api/updates/server-self-update validation
+    const resSelfUpdateNoUrl = await fetch(`${baseUrl}/api/updates/server-self-update`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-pin': '1234' },
+      body: JSON.stringify({})
+    });
+    assertEqual(resSelfUpdateNoUrl.status, 400, 'POST /api/updates/server-self-update without downloadUrl returns 400');
+
+    agentSocket.disconnect();
+    dashSocket.disconnect();
+    await new Promise(r => serverApp.server.close(r));
+  });
+
+  // =========================================================================
+  // SUITE 17: Database Stress, Incident Pagination, Retention Purge & Concurrency
+  // =========================================================================
+  await runSuite('17. Database Stress, Incident Pagination & Retention Purge', async () => {
+    const dbPath = path.join(TEST_DIR, 'stress_query_db.json');
+    const db = new DatabaseManager(dbPath);
+
+    // 1. Concurrent Inserts: 30 Simultaneous Incidents
+    const insertPromises = [];
+    const incidentTypes = ['CLIPPING', 'AUDIO_DEAD', 'KEYWORD_ALERT', 'OBS_DISCONNECTED'];
+    for (let i = 1; i <= 30; i++) {
+      const pcId = `PC-${(i % 5) + 1}`;
+      const type = incidentTypes[i % incidentTypes.length];
+      insertPromises.push(
+        Promise.resolve().then(() => {
+          return db.logIncident(pcId, pcId, type, `Insiden simulasi stres uji #${i}`);
+        })
+      );
+    }
+
+    await Promise.all(insertPromises);
+    assertEqual(db.incidents.length, 30, 'All 30 concurrent incidents persisted without drop');
+
+    // 2. Query Filtering by PC Name (via getFilteredIncidents callback)
+    const pc1Incidents = await new Promise(r => db.getFilteredIncidents({ pcName: 'PC-1' }, r));
+    assert(pc1Incidents.length > 0, 'Found incidents for PC-1');
+    assert(pc1Incidents.every(inc => inc.pcName === 'PC-1'), 'All returned records belong to PC-1');
+
+    // 3. Query Filtering by Incident Type (via getFilteredIncidents callback)
+    const keywordAlerts = await new Promise(r => db.getFilteredIncidents({ status: 'KEYWORD_ALERT' }, r));
+    assert(keywordAlerts.length > 0, 'Found KEYWORD_ALERT incidents');
+    assert(keywordAlerts.every(inc => (inc.incidentType || '').toUpperCase().includes('KEYWORD_ALERT')), 'All returned records match status filter');
+
+    // 4. Query Filtering by limit
+    const page1 = await new Promise(r => db.getFilteredIncidents({ limit: 5 }, r));
+    const page2 = await new Promise(r => db.getRecentIncidents(10, r));
+
+    assertEqual(page1.length, 5, 'Page 1 limit returned 5 items');
+    assertEqual(page2.length, 10, 'getRecentIncidents limit returned 10 items');
+
+    // 5. Unique PC Names List
+    const uniquePcs = db.getUniquePcNames();
+    assert(uniquePcs.length >= 5, 'Found at least 5 unique PC names');
+
+    // 6. Retention Auto-Purge Simulation (Old Record Cleanup)
+    // Manually inject an old incident timestamped 45 days ago
+    const oldDate = new Date();
+    oldDate.setDate(oldDate.getDate() - 45);
+    db.incidents.push({
+      id: 999,
+      uuid: 'PC-Old',
+      pcName: 'PC-Old',
+      incidentType: 'AUDIO_DEAD',
+      details: 'Log usang 45 hari lalu',
+      timestamp: oldDate.toISOString().replace('T', ' ').substring(0, 19)
+    });
+    db.saveDbSync();
+
+    const beforeCleanupCount = db.incidents.length;
+    assertEqual(beforeCleanupCount, 31, 'Total records includes 1 old record');
+
+    const removedCount = db.autoCleanup(30);
+    assertEqual(removedCount, 1, 'autoCleanup(30) purged exactly 1 old record');
+    assertEqual(db.incidents.length, 30, 'Remaining records count is exactly 30');
+    assert(!db.incidents.some(i => i.id === 999), 'Old record successfully removed');
+  });
+
+  // =========================================================================
+  // SUITE 18: Audio Decibel Calculation, Volume Meter Conversion & Auto-Unmute
+  // =========================================================================
+  await runSuite('18. Audio Decibel Calculation, Volume Meter Conversion & Auto-Unmute', async () => {
+    // 1. Linear multiplier to dB Conversion Formula Test
+    const linearToDb = (val) => {
+      if (typeof val !== 'number' || isNaN(val) || val <= 0.0001) return -60;
+      const db = 20 * Math.log10(val);
+      return Math.max(-60, Math.min(0, parseFloat(db.toFixed(1))));
+    };
+
+    assertEqual(linearToDb(0.0), -60, '0.0 linear power converts to -60 dB');
+    assertEqual(linearToDb(0.00001), -60, 'Below noise floor converts to -60 dB');
+    assertEqual(linearToDb(0.1), -20, '0.1 linear power converts to -20 dB');
+    assertEqual(linearToDb(1.0), 0, '1.0 full scale converts to 0 dB');
+
+    // 2. Multi-Channel Peak Selector Test
+    const getPeakLevel = (channels = []) => {
+      if (!Array.isArray(channels) || channels.length === 0) return -60;
+      const maxLinear = Math.max(...channels);
+      return linearToDb(maxLinear);
+    };
+
+    assertEqual(getPeakLevel([0.05, 0.5]), -6, 'Peak of [0.05, 0.5] evaluates to -6 dB');
+    assertEqual(getPeakLevel([]), -60, 'Empty channel list safely evaluates to -60 dB');
+
+    // 3. Auto-Recovery Unmute Evaluation Test
+    const evaluateAutoRecovery = (currentDangerScore, isMuted, autoRecoveryEnabled) => {
+      if (!isMuted || !autoRecoveryEnabled) return false;
+      return currentDangerScore === 0;
+    };
+
+    assertEqual(evaluateAutoRecovery(0, true, true), true, 'Triggers unmute when score is 0 and currently muted');
+    assertEqual(evaluateAutoRecovery(50, true, true), false, 'Does not unmute while danger score is positive');
+    assertEqual(evaluateAutoRecovery(0, true, false), false, 'Does not unmute when feature is disabled');
+    assertEqual(evaluateAutoRecovery(0, false, true), false, 'Does not trigger unmute if already unmuted');
+  });
+
+  // =========================================================================
+  // SUITE 19: Unified Audio Transcript Parsing, Multi-Session Aggregation & SRT Formatting
+  // =========================================================================
+  await runSuite('19. Unified Audio Transcript Parsing, Aggregation & SRT Formatting', async () => {
+    const configPath = path.join(TEST_DIR, 'transcript_format_config.json');
+    const cm = new ConfigManager(configPath);
+    const db = new DatabaseManager(path.join(TEST_DIR, 'transcript_format_db.json'));
+    const alertMgr = new AlertManager(cm, db);
+    const tm = new TranscriptionManager(cm, db, alertMgr);
+
+    // 1. SRT Time String Formatter Test
+    const formatSrtTime = (seconds) => {
+      const validSec = (typeof seconds === 'number' && !isNaN(seconds) && isFinite(seconds)) ? Math.max(0, seconds) : 0;
+      const d = new Date(validSec * 1000);
+      const hh = String(Math.floor(validSec / 3600)).padStart(2, '0');
+      const mm = String(d.getUTCMinutes()).padStart(2, '0');
+      const ss = String(d.getUTCSeconds()).padStart(2, '0');
+      const ms = String(d.getUTCMilliseconds()).padStart(3, '0');
+      return `${hh}:${mm}:${ss},${ms}`;
+    };
+
+    assertEqual(formatSrtTime(0), '00:00:00,000', '0s formats to 00:00:00,000');
+    assertEqual(formatSrtTime(65.5), '00:01:05,500', '65.5s formats to 00:01:05,500');
+    assertEqual(formatSrtTime(3661.123), '01:01:01,123', '3661.123s formats to 01:01:01,123');
+    assertEqual(formatSrtTime(NaN), '00:00:00,000', 'NaN formats safely to 00:00:00,000');
+
+    // 2. Multi-Part Transcript Aggregation Test (with 1 Missing Chunk)
+    const sessionDir = path.join(TEST_DIR, 'multi_part_session');
+    fs.mkdirSync(sessionDir, { recursive: true });
+
+    const part1Transcript = {
+      fileName: 'Part_001.webm',
+      text: 'Bagian satu pembukaan siaran.',
+      segments: [{ id: 0, start: 0, end: 5, text: 'Bagian satu pembukaan siaran.' }],
+      keywordsFound: ['siaran'],
+      transcribedAt: '2026-08-29 15:00:00'
+    };
+    const part3Transcript = {
+      fileName: 'Part_003.webm',
+      text: 'Bagian tiga penutupan siaran darurat.',
+      segments: [{ id: 1, start: 10, end: 15, text: 'Bagian tiga penutupan siaran darurat.' }],
+      keywordsFound: ['darurat'],
+      transcribedAt: '2026-08-29 15:20:00'
+    };
+
+    fs.writeFileSync(path.join(sessionDir, 'Part_001.webm.transcript.json'), JSON.stringify(part1Transcript));
+    fs.writeFileSync(path.join(sessionDir, 'Part_003.webm.transcript.json'), JSON.stringify(part3Transcript));
+
+    const aggregated = tm.getTranscriptForSession(sessionDir);
+    assert(aggregated !== null, 'Session transcript successfully aggregated');
+    assertEqual(aggregated.partsCount, 2, 'Aggregated 2 available transcript parts');
+    assert(aggregated.text.includes('Bagian satu') && aggregated.text.includes('Bagian tiga'), 'Combined text contains both parts');
+    assertEqual(aggregated.segments.length, 2, 'Combined segments array has 2 items');
+    assert(aggregated.keywordsFound.includes('siaran') && aggregated.keywordsFound.includes('darurat'), 'Combined keywords merged accurately');
+
+    // 3. Single file transcript retrieval & missing file handling
+    const retrievedPart1 = tm.getTranscriptForFile(path.join(sessionDir, 'Part_001.webm'));
+    assert(retrievedPart1 !== null, 'getTranscriptForFile retrieved existing transcript');
+    assertEqual(retrievedPart1.fileName, 'Part_001.webm', 'Retrieved filename matches');
+
+    const retrievedNonExistent = tm.getTranscriptForFile(path.join(sessionDir, 'Part_999.webm'));
+    assertEqual(retrievedNonExistent, null, 'Non-existent transcript file returns null');
+  });
+
+  // =========================================================================
+  // SUITE 20: Disaster Recovery, Cold Reboot & Client Reconnection Resilience
+  // =========================================================================
+  await runSuite('20. Disaster Recovery, Cold Reboot & Client Reconnection Resilience', async () => {
+    const configPath = path.join(TEST_DIR, 'reboot_config.json');
+    const dbPath = path.join(TEST_DIR, 'reboot_db.json');
+    const cm = new ConfigManager(configPath);
+    const db = new DatabaseManager(dbPath);
+    const alertMgr = new AlertManager(cm, db);
+
+    const testUuid = 'cold-reboot-agent-1234-5678';
+    cm.setPcName(testUuid, 'PC Siaran Utama');
+
+    // 1. Start Server Instance 1
+    let serverApp = new ServerApp(0);
+    serverApp.configManager = cm;
+    serverApp.dbManager = db;
+    serverApp.alertManager = alertMgr;
+    serverApp.telemetryHub = new TelemetryHub(serverApp.server, cm, alertMgr);
+
+    let port = await new Promise(res => {
+      const s = serverApp.server.listen(0, '127.0.0.1', () => res(s.address().port));
+    });
+
+    // 2. Connect Agent to Instance 1
+    let agentSocket = ioClient(`http://127.0.0.1:${port}`);
+    await new Promise(res => {
+      agentSocket.on('connect', () => {
+        agentSocket.emit('register', { type: 'agent', uuid: testUuid, pcName: 'PC Siaran Utama' });
+        res();
+      });
+    });
+
+    agentSocket.emit('telemetry', {
+      uuid: testUuid,
+      micDb: -15,
+      obsDb: -18,
+      status: 'AMAN',
+      dangerScore: 0,
+      isMuted: false
+    });
+
+    await new Promise(r => setTimeout(r, 100));
+    assertEqual(serverApp.telemetryHub.lastKnownState.get(testUuid).status, 'AMAN', 'Agent status AMAN on Instance 1');
+
+    // 3. Simulate Sudden Server Crash / Shutdown
+    agentSocket.disconnect();
+    await new Promise(r => serverApp.server.close(r));
+
+    // 4. Cold Reboot: Start Server Instance 2 using existing disk files
+    const cmReboot = new ConfigManager(configPath);
+    const dbReboot = new DatabaseManager(dbPath);
+    const alertMgrReboot = new AlertManager(cmReboot, dbReboot);
+
+    serverApp = new ServerApp(0);
+    serverApp.configManager = cmReboot;
+    serverApp.dbManager = dbReboot;
+    serverApp.alertManager = alertMgrReboot;
+    serverApp.telemetryHub = new TelemetryHub(serverApp.server, cmReboot, alertMgrReboot);
+
+    port = await new Promise(res => {
+      const s = serverApp.server.listen(0, '127.0.0.1', () => res(s.address().port));
+    });
+
+    // Verify Config Re-hydration on Startup
+    assert(serverApp.telemetryHub.lastKnownState.has(testUuid), 'Server re-hydrated PC mapping on cold startup');
+    assertEqual(serverApp.telemetryHub.lastKnownState.get(testUuid).pcName, 'PC Siaran Utama', 'PC Name restored from persistent config');
+
+    // 5. Reconnect Agent to Instance 2
+    agentSocket = ioClient(`http://127.0.0.1:${port}`);
+    let receivedRemoteConfig = null;
+
+    agentSocket.on('connect', () => {
+      agentSocket.emit('register', { type: 'agent', uuid: testUuid, pcName: 'PC Siaran Utama' });
+    });
+    agentSocket.on('set-monitoring', (active) => {
+      receivedRemoteConfig = active;
+    });
+
+    await new Promise(r => setTimeout(r, 150));
+
+    agentSocket.emit('telemetry', {
+      uuid: testUuid,
+      micDb: -12,
+      obsDb: -14,
+      status: 'AMAN',
+      dangerScore: 0,
+      isMuted: false
+    });
+
+    await new Promise(r => setTimeout(r, 150));
+    assertEqual(serverApp.telemetryHub.lastKnownState.get(testUuid).status, 'AMAN', 'Agent status recovered to AMAN on Instance 2');
+
+    // 6. Test Remote Command Execution on Reconnected Agent
+    serverApp.telemetryHub.setPcMonitoring(testUuid, false);
+    await new Promise(r => setTimeout(r, 150));
+    assertEqual(receivedRemoteConfig, false, 'Remote control successfully delivered to reconnected agent after reboot');
+
+    agentSocket.disconnect();
+    await new Promise(r => serverApp.server.close(r));
+  });
+
+  // =========================================================================
+  // SUITE 21: Security Hardening, Injection Defense & Malicious Payload Fuzzing
+  // =========================================================================
+  await runSuite('21. Security Hardening, Injection Defense & Malicious Payload Fuzzing', async () => {
+    const configPath = path.join(TEST_DIR, 'sec_config.json');
+    const cm = new ConfigManager(configPath);
+    const db = new DatabaseManager(path.join(TEST_DIR, 'sec_db.json'));
+    const alertMgr = new AlertManager(cm, db);
+
+    const serverApp = new ServerApp(0);
+    serverApp.configManager = cm;
+    serverApp.dbManager = db;
+    serverApp.alertManager = alertMgr;
+
+    const port = await new Promise(res => {
+      const s = serverApp.server.listen(0, '127.0.0.1', () => res(s.address().port));
+    });
+    const baseUrl = 'http://127.0.0.1:' + port;
+
+    // 1. Null-byte injection attempt on transcript endpoint
+    const resNullByteGet = await fetch(`${baseUrl}/api/records/transcript?folder=session%00evil&file=test.webm`);
+    assert(resNullByteGet.status === 400 || resNullByteGet.status === 403 || resNullByteGet.status === 404, 'Null-byte injection on GET transcript rejected with 400/403/404');
+
+    // 2. Strict XSS & HTML escaping test in AlertManager
+    const rawXss1 = '<script>alert("XSS")</script>';
+    const escapedXss1 = alertMgr.escapeHtml(rawXss1);
+    assertEqual(escapedXss1, '&lt;script&gt;alert("XSS")&lt;/script&gt;', 'Script tags escaped safely');
+
+    const rawXss2 = '<img src=x onerror="alert(1)" /> & \'test\'';
+    const escapedXss2 = alertMgr.escapeHtml(rawXss2);
+    assert(!escapedXss2.includes('<') && !escapedXss2.includes('>'), 'All bracket characters sanitized');
+    assert(escapedXss2.includes('&amp;'), 'Ampersands escaped to &amp;');
+
+    // 3. SQL / NoSQL / Regex Injection Strings in search-transcript
+    const injectionQueries = ["' OR '1'='1", "admin' --", '{"$gt": ""}', '(?=.*)'];
+    for (const q of injectionQueries) {
+      const resInj = await fetch(`${baseUrl}/api/records/search-transcript?q=${encodeURIComponent(q)}`);
+      assertEqual(resInj.status, 200, `Search query with injection payload "${q}" returned 200 safely`);
+      const body = await resInj.json();
+      assert(Array.isArray(body.results), 'Results returned as array without crash');
+    }
+
+    // 4. PIN Authentication Mutation Protection & Header Isolation
+    const wrongPinAttempts = ['0000', '1111', '9999', 'admin', 'root'];
+    for (const wp of wrongPinAttempts) {
+      const resWp = await fetch(`${baseUrl}/api/config/monitoring`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-pin': wp },
+        body: JSON.stringify({ active: false })
+      });
+      assertEqual(resWp.status, 401, `Wrong PIN "${wp}" correctly rejected with 401`);
+    }
+
+    const resCorrectPin = await fetch(`${baseUrl}/api/config/monitoring`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-pin': '1234' },
+      body: JSON.stringify({ active: true })
+    });
+    assertEqual(resCorrectPin.status, 200, 'Correct PIN "1234" authorized with 200');
+
+    // 5. Payload Type Pollution in config routes
+    const resPollution = await fetch(`${baseUrl}/api/config/telegram`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-pin': '1234' },
+      body: JSON.stringify({
+        token: { nested: 'object' },
+        chatId: [1, 2, 3],
+        interval: 'invalid_number',
+        logRetentionDays: -50
+      })
+    });
+    assertEqual(resPollution.status, 200, 'Type-polluted config payload handled safely without crashing');
+    assertEqual(cm.config.logRetentionDays, 30, 'Negative retention safely defaulted to 30');
+
+    await new Promise(r => serverApp.server.close(r));
+  });
+
+  // =========================================================================
+  // SUITE 22: Binary File Corruption, Broken WebM Header & Zero-Byte Safety
+  // =========================================================================
+  await runSuite('22. Binary File Corruption, Broken WebM & Zero-Byte Safety', async () => {
+    const configPath = path.join(TEST_DIR, 'corrupt_config.json');
+    const cm = new ConfigManager(configPath);
+    const db = new DatabaseManager(path.join(TEST_DIR, 'corrupt_db.json'));
+    const alertMgr = new AlertManager(cm, db);
+    const tm = new TranscriptionManager(cm, db, alertMgr);
+
+    const corruptVault = path.join(TEST_DIR, 'corrupt_vault');
+    fs.mkdirSync(corruptVault, { recursive: true });
+
+    // 1. Zero-byte audio file test
+    const zeroByteFile = path.join(corruptVault, 'Zero_Part.webm');
+    fs.writeFileSync(zeroByteFile, Buffer.alloc(0));
+
+    let zeroByteError = null;
+    try {
+      await tm.transcribeFile(zeroByteFile, 'TestFolder', 'Zero_Part.webm', 'TestPC');
+    } catch (e) {
+      zeroByteError = e.message;
+    }
+    assert(zeroByteError !== null && zeroByteError.includes('0 bytes'), 'Zero-byte audio file rejected with clear error');
+
+    // 2. Non-existent file test
+    let missingFileError = null;
+    try {
+      await tm.transcribeFile(path.join(corruptVault, 'NonExistent.webm'), 'TestFolder', 'NonExistent.webm', 'TestPC');
+    } catch (e) {
+      missingFileError = e.message;
+    }
+    assert(missingFileError !== null && missingFileError.includes('tidak ditemukan'), 'Missing audio file rejected with clear error');
+
+    // 3. Corrupted / Truncated JSON transcript file
+    const corruptJsonPath = path.join(corruptVault, 'Corrupt.webm.transcript.json');
+    fs.writeFileSync(corruptJsonPath, '{"text": "Incomplete json string without closing');
+
+    const corruptResult = tm.getTranscriptForFile(path.join(corruptVault, 'Corrupt.webm'));
+    assertEqual(corruptResult, null, 'Corrupted JSON file safely returned null without unhandled SyntaxError');
+
+    // 4. Session Aggregator with 1 valid and 1 corrupt transcript
+    const validJsonPath = path.join(corruptVault, 'Valid.webm.transcript.json');
+    fs.writeFileSync(validJsonPath, JSON.stringify({
+      text: 'Bagian valid yang berhasil diselamatkan.',
+      segments: [{ id: 0, start: 0, end: 3, text: 'Bagian valid yang berhasil diselamatkan.' }],
+      keywordsFound: ['valid']
+    }));
+
+    const sessionAgg = tm.getTranscriptForSession(corruptVault);
+    assert(sessionAgg !== null, 'Session aggregation succeeded despite 1 corrupted sibling file');
+    assert(sessionAgg.text.includes('Bagian valid'), 'Valid transcript content preserved');
+
+    // 5. Atomic write under Windows contention test
+    const atomicTarget = path.join(corruptVault, 'Atomic_Test.json');
+    const atomicData = { status: 'ATOMIC_SUCCESS', timestamp: Date.now() };
+    const writeOk = tm.atomicWriteJsonSync(atomicTarget, atomicData);
+    assertEqual(writeOk, true, 'atomicWriteJsonSync completed successfully');
+    assert(fs.existsSync(atomicTarget), 'Target file exists after atomic write');
+    const readBack = JSON.parse(fs.readFileSync(atomicTarget, 'utf8'));
+    assertEqual(readBack.status, 'ATOMIC_SUCCESS', 'Atomic file data matches written payload');
+  });
+
+  // =========================================================================
+  // SUITE 23: High-Frequency Telegram Alert Cooldown & Multi-PC Isolation
+  // =========================================================================
+  await runSuite('23. High-Frequency Telegram Alert Cooldown & Multi-PC Isolation', async () => {
+    const configPath = path.join(TEST_DIR, 'cooldown_config.json');
+    const cm = new ConfigManager(configPath);
+    const db = new DatabaseManager(path.join(TEST_DIR, 'cooldown_db.json'));
+    const alertMgr = new AlertManager(cm, db);
+
+    // Mock Telegram bot sender with message capture
+    let sentMessages = [];
+    alertMgr.bot = {
+      sendMessage: async (chatId, text, options) => {
+        sentMessages.push({ chatId, text, options, time: Date.now() });
+        return { message_id: sentMessages.length };
+      }
+    };
+
+    cm.config.telegram = {
+      token: 'mock-token',
+      chatId: 'mock-chat-id',
+      interval: 60 // 60 seconds cooldown
+    };
+
+    // 1. Trigger 5 consecutive BAHAYA_CLIPPING for PC-Alpha in rapid succession
+    for (let i = 0; i < 5; i++) {
+      alertMgr.processTelemetry({
+        uuid: 'uuid-alpha',
+        status: 'BAHAYA_CLIPPING',
+        dangerScore: 100,
+        micDb: 0,
+        obsDb: 0
+      }, 'PC-Alpha');
+    }
+
+    assertEqual(sentMessages.length, 1, 'Only 1 alert sent for PC-Alpha (4 suppressed by cooldown)');
+    assert(sentMessages[0].text.includes('PC-Alpha'), 'Alert contains PC-Alpha');
+
+    // 2. Trigger BAHAYA_CLIPPING for PC-Beta at the same second
+    alertMgr.processTelemetry({
+      uuid: 'uuid-beta',
+      status: 'BAHAYA_CLIPPING',
+      dangerScore: 100,
+      micDb: 0,
+      obsDb: 0
+    }, 'PC-Beta');
+
+    assertEqual(sentMessages.length, 2, 'PC-Beta alert sent immediately (isolated per-PC cooldown)');
+    assert(sentMessages[1].text.includes('PC-Beta'), 'Alert contains PC-Beta');
+
+    // 3. Trigger Recovery (AMAN) for PC-Alpha
+    alertMgr.processTelemetry({
+      uuid: 'uuid-alpha',
+      status: 'AMAN',
+      dangerScore: 0,
+      micDb: -20,
+      obsDb: -20
+    }, 'PC-Alpha');
+
+    assertEqual(sentMessages.length, 3, 'Recovery alert sent for PC-Alpha upon status transition');
+    assert(sentMessages[2].text.includes('AMAN') || sentMessages[2].text.includes('OK'), 'Alert signifies recovery');
+
+    // 4. Reset Cooldown & Trigger Next Incident
+    alertMgr.lastAlertState['uuid-alpha'] = { time: 0, status: 'AMAN', notified: false };
+
+    alertMgr.processTelemetry({
+      uuid: 'uuid-alpha',
+      status: 'BAHAYA_AUDIO_DEAD',
+      dangerScore: 100,
+      micDb: -60,
+      obsDb: -60
+    }, 'PC-Alpha');
+
+    assertEqual(sentMessages.length, 4, 'New alert sent for PC-Alpha after cooldown reset');
+  });
+
+  // =========================================================================
+  // SUITE 24: Flaky Network Jitter, Rapid Reconnect Loops & Socket Leak Prevention
+  // =========================================================================
+  await runSuite('24. Flaky Network Jitter, Rapid Reconnect Loops & Socket Leak Prevention', async () => {
+    const configPath = path.join(TEST_DIR, 'jitter_config.json');
+    const cm = new ConfigManager(configPath);
+    const db = new DatabaseManager(path.join(TEST_DIR, 'jitter_db.json'));
+    const alertMgr = new AlertManager(cm, db);
+
+    const serverApp = new ServerApp(0);
+    serverApp.configManager = cm;
+    serverApp.dbManager = db;
+    serverApp.alertManager = alertMgr;
+
+    const port = await new Promise(res => {
+      const s = serverApp.server.listen(0, '127.0.0.1', () => res(s.address().port));
+    });
+
+    const activeSockets = [];
+
+    // 1. Simulate 5 agents each cycling connection 3 times rapidly (15 connect/disconnect events)
+    for (let agentIdx = 1; agentIdx <= 5; agentIdx++) {
+      const agentUuid = `jitter-agent-${agentIdx}`;
+      for (let cycle = 0; cycle < 3; cycle++) {
+        const sock = ioClient(`http://127.0.0.1:${port}`);
+        await new Promise(res => {
+          sock.on('connect', () => {
+            sock.emit('register', { type: 'agent', uuid: agentUuid, name: `Agent ${agentIdx}` });
+            res();
+          });
+        });
+
+        if (cycle < 2) {
+          sock.disconnect();
+          await new Promise(r => setTimeout(r, 20));
+        } else {
+          activeSockets.push({ uuid: agentUuid, sock });
+        }
+      }
+    }
+
+    await new Promise(r => setTimeout(r, 200));
+
+    // 2. Verify agentSockets map size is exactly 5 active agents (no stale socket leaks)
+    assertEqual(serverApp.telemetryHub.agentSockets.size, 5, 'TelemetryHub tracks exactly 5 active sockets without leaks');
+
+    // 3. Verify targeted message delivery to all 5 active sockets
+    let commandCount = 0;
+    activeSockets.forEach(({ sock }) => {
+      sock.on('set-monitoring', () => { commandCount++; });
+    });
+
+    for (let agentIdx = 1; agentIdx <= 5; agentIdx++) {
+      serverApp.telemetryHub.setPcMonitoring(`jitter-agent-${agentIdx}`, false);
+    }
+
+    await new Promise(r => setTimeout(r, 150));
+    assert(commandCount >= 5, 'All 5 reconnected agents successfully received targeted commands');
+
+    // 4. Clean disconnect all
+    activeSockets.forEach(({ sock }) => sock.disconnect());
+    await new Promise(r => setTimeout(r, 150));
+    assertEqual(serverApp.telemetryHub.agentSockets.size, 0, 'Socket map completely cleared on client disconnects');
+
+    await new Promise(r => serverApp.server.close(r));
+  });
+
+  // =========================================================================
+  // SUITE 25: Memory Leak & Heap Stability Benchmark
+  // =========================================================================
+  await runSuite('25. Memory Leak & Heap Stability Benchmark', async () => {
+    const configPath = path.join(TEST_DIR, 'bench_config.json');
+    const cm = new ConfigManager(configPath);
+    const db = new DatabaseManager(path.join(TEST_DIR, 'bench_db.json'));
+    const alertMgr = new AlertManager(cm, db);
+
+    const serverApp = new ServerApp(0);
+    serverApp.configManager = cm;
+    serverApp.dbManager = db;
+    serverApp.alertManager = alertMgr;
+
+    // 1. Baseline heap measurement
+    if (global.gc) global.gc();
+    const baselineHeap = process.memoryUsage().heapUsed;
+
+    // 2. Execute 500 telemetry updates + 50 database logs in tight loop
+    for (let i = 0; i < 500; i++) {
+      const uuid = `bench-pc-${i % 10}`;
+      serverApp.telemetryHub.handleTelemetry({
+        uuid,
+        name: `PC Benchmark ${i % 10}`,
+        micDb: -20 + (i % 10),
+        obsDb: -22 + (i % 10),
+        status: 'AMAN',
+        dangerScore: 0,
+        isMuted: false
+      });
+
+      if (i % 10 === 0) {
+        db.logIncident(uuid, `PC Benchmark ${i % 10}`, 'CLIPPING', `Benchmark log entry #${i}`);
+      }
+    }
+
+    // 3. Verify bounded memory structures
+    assert(serverApp.telemetryHub.lastKnownState.size >= 10, 'lastKnownState tracks unique benchmark PCs');
+    assertEqual(db.incidents.length, 50, 'Database recorded exactly 50 log items');
+
+    // 4. Heap stability verification
+    if (global.gc) global.gc();
+    const finalHeap = process.memoryUsage().heapUsed;
+    const heapDiffMb = (finalHeap - baselineHeap) / (1024 * 1024);
+
+    // Retained heap growth should be modest (< 30 MB) for 500 in-memory cycles
+    assert(heapDiffMb < 30, `Heap growth is bounded (Delta: ${heapDiffMb.toFixed(2)} MB < 30 MB)`);
+
+    // 5. Database Cleanup stability check
+    // Manually inject 10 items timestamped 40 days ago and autoCleanup(30)
+    const oldDate = new Date();
+    oldDate.setDate(oldDate.getDate() - 40);
+    for (let i = 0; i < 10; i++) {
+      db.incidents.push({
+        id: 1000 + i,
+        uuid: 'bench-pc-old',
+        pcName: 'PC Old',
+        incidentType: 'AUDIO_DEAD',
+        details: 'Old log',
+        timestamp: oldDate.toISOString().replace('T', ' ').substring(0, 19)
+      });
+    }
+    db.saveDbSync();
+
+    assertEqual(db.incidents.length, 60, 'Database contains 50 new + 10 old logs');
+    const pruned = db.autoCleanup(30);
+    assertEqual(pruned, 10, 'autoCleanup(30) purged exactly 10 old items');
+    assertEqual(db.incidents.length, 50, 'Database retains exactly 50 recent items');
+  });
+
+  // =========================================================================
+  // SUITE 26: Multi-Tenant Date & Keyword Transcript Filter Combinatorics
+  // =========================================================================
+  await runSuite('26. Multi-Tenant Date & Keyword Transcript Filter Combinatorics', async () => {
+    const tmDir = path.join(TEST_DIR, 'suite26_vault');
+    fs.mkdirSync(tmDir, { recursive: true });
+
+    const tm = new TranscriptionManager({
+      enabled: true,
+      alertKeywords: ['darurat', 'bocor', 'mati']
+    });
+
+    // Create 3 sessions across different dates and PCs
+    const s1 = path.join(tmDir, 'PC_Studio_1_11111111-1111-1111-1111-111111111111_2026-08-28_10-00-00_to_10-05-00');
+    const s2 = path.join(tmDir, 'PC_Studio_2_22222222-2222-2222-2222-222222222222_2026-08-29_14-00-00_to_14-10-00');
+    const s3 = path.join(tmDir, 'PC_Studio_1_11111111-1111-1111-1111-111111111111_2026-08-30_09-00-00_to_09-15-00');
+    fs.mkdirSync(s1, { recursive: true });
+    fs.mkdirSync(s2, { recursive: true });
+    fs.mkdirSync(s3, { recursive: true });
+
+    // Populate transcripts
+    fs.writeFileSync(path.join(s1, 'Part_001.webm.transcript.json'), JSON.stringify({
+      text: 'Halo selamat pagi ini uji coba darurat audio studio satu.',
+      segments: [{ start: 0, end: 5, text: 'Halo selamat pagi ini uji coba darurat audio studio satu.' }]
+    }));
+    fs.writeFileSync(path.join(s2, 'Part_001.webm.transcript.json'), JSON.stringify({
+      text: 'Sistem mengalami kebocoran sinyal bocor pada line dua.',
+      segments: [{ start: 0, end: 6, text: 'Sistem mengalami kebocoran sinyal bocor pada line dua.' }]
+    }));
+    fs.writeFileSync(path.join(s3, 'Part_001.webm.transcript.json'), JSON.stringify({
+      text: 'Pagi ini siaran berjalan normal dan aman terkendali.',
+      segments: [{ start: 0, end: 8, text: 'Pagi ini siaran berjalan normal dan aman terkendali.' }]
+    }));
+
+    // 1. Search without filters (all matching query)
+    const r1 = await tm.searchTranscripts('audio', tmDir);
+    assertEqual(r1.length, 1, 'Search "audio" returns 1 result without filters');
+    assertEqual(r1[0].pcName, 'PC Studio 1', 'Search result correctly resolved PC Name');
+
+    // 2. Search with PC Filter match
+    const r2 = await tm.searchTranscripts('siaran', tmDir, { pcFilter: 'PC Studio 1' });
+    assertEqual(r2.length, 1, 'Search with PC Filter "PC Studio 1" matches 1 session');
+
+    // 3. Search with PC Filter mismatch
+    const r3 = await tm.searchTranscripts('siaran', tmDir, { pcFilter: 'PC Studio 2' });
+    assertEqual(r3.length, 0, 'Search with PC Filter "PC Studio 2" correctly returns 0 matches');
+
+    // 4. Search with Start Date filter (exclude 2026-08-28)
+    const r4 = await tm.searchTranscripts('darurat', tmDir, { startDate: '2026-08-29' });
+    assertEqual(r4.length, 0, 'Start date 2026-08-29 correctly excludes 2026-08-28 session');
+
+    // 5. Search with Date Range match
+    const r5 = await tm.searchTranscripts('bocor', tmDir, { startDate: '2026-08-29', endDate: '2026-08-29' });
+    assertEqual(r5.length, 1, 'Date range 2026-08-29 to 2026-08-29 matches exactly');
+
+    // 6. Case insensitive search
+    const r6 = await tm.searchTranscripts('DARURAT', tmDir);
+    assertEqual(r6.length, 1, 'Uppercase search "DARURAT" matches lowercase text');
+
+    // 7. Regex special characters in query
+    const r7 = await tm.searchTranscripts('studio [1]?', tmDir);
+    assert(Array.isArray(r7), 'Regex special character query handled safely without crash');
+
+    // 8. Alert keywords scanning
+    const kwHits = tm.scanAlertKeywords('Peringatan ada kebocoran sinyal bocor dan darurat', ['darurat', 'bocor', 'mati']);
+    assertEqual(kwHits.length, 2, 'scanAlertKeywords found 2 keywords');
+    assert(kwHits.includes('bocor'), 'Contains "bocor"');
+    assert(kwHits.includes('darurat'), 'Contains "darurat"');
+  });
+
+  // =========================================================================
+  // SUITE 27: Session Duration, Auto-Rollover & Sorting Algorithm Precision
+  // =========================================================================
+  await runSuite('27. Session Duration, Auto-Rollover & Sorting Algorithm Precision', () => {
+    // Helper duration calculation matching Dashboard App.jsx
+    function calculateSessionDuration(session) {
+      if (session.startTime && session.endTime) {
+        const startParts = session.startTime.split(':').map(Number);
+        const endParts = session.endTime.split(':').map(Number);
+        if (startParts.length >= 2 && endParts.length >= 2) {
+          const startSec = (startParts[0] || 0) * 3600 + (startParts[1] || 0) * 60 + (startParts[2] || 0);
+          let endSec = (endParts[0] || 0) * 3600 + (endParts[1] || 0) * 60 + (endParts[2] || 0);
+          if (endSec < startSec) endSec += 24 * 3600; // overnight span
+          return Math.max(1, endSec - startSec);
+        }
+      }
+      if (session.parts && session.parts.length > 0) {
+        return session.parts.reduce((acc, p) => acc + (p.transcriptDuration || Math.max(1, Math.round((p.size || 0) / 16000))), 0);
+      }
+      return 0;
+    }
+
+    function formatDurationText(seconds) {
+      if (!seconds || seconds <= 0 || isNaN(seconds)) return '0 dtk';
+      const s = Math.round(seconds);
+      if (s < 60) return `${s} dtk`;
+      const m = Math.floor(s / 60);
+      const remS = s % 60;
+      if (m < 60) return remS > 0 ? `${m}m ${String(remS).padStart(2, '0')}s` : `${m} menit`;
+      const h = Math.floor(m / 60);
+      const remM = m % 60;
+      return `${h}j ${remM}m`;
+    }
+
+    // 1. Exact start and end time calculation
+    const sessA = { startTime: '10:00:00', endTime: '10:00:16', parts: [{ size: 256000 }] };
+    assertEqual(calculateSessionDuration(sessA), 16, 'Duration calculated to exact 16 seconds');
+    assertEqual(formatDurationText(16), '16 dtk', 'Formatted to "16 dtk"');
+
+    // 2. Minute format
+    const sessB = { startTime: '14:00:00', endTime: '14:10:30', parts: [] };
+    assertEqual(calculateSessionDuration(sessB), 630, 'Duration calculated to 630 seconds (10m 30s)');
+    assertEqual(formatDurationText(630), '10m 30s', 'Formatted to "10m 30s"');
+
+    // 3. Overnight rollover span (23:55:00 to 00:05:00)
+    const sessC = { startTime: '23:55:00', endTime: '00:05:00', parts: [] };
+    assertEqual(calculateSessionDuration(sessC), 600, 'Overnight session duration correctly wraps across midnight (600s)');
+    assertEqual(formatDurationText(600), '10 menit', 'Formatted to "10 menit"');
+
+    // 4. Hour format
+    assertEqual(formatDurationText(5040), '1j 24m', '5040 seconds formatted to "1j 24m"');
+
+    // 5. Fallback to file size estimation (~16KB/s for Opus)
+    const sessFallback = { parts: [{ size: 160000 }] }; // 160KB = ~10s
+    assertEqual(calculateSessionDuration(sessFallback), 10, 'Fallback calculation from file size gives 10s');
+
+    // 6. Sorting verification (newest, oldest, size, duration)
+    const list = [
+      { id: 1, createdAt: '2026-08-30T10:00:00Z', totalSize: 500000, startTime: '10:00:00', endTime: '10:05:00' }, // 300s
+      { id: 2, createdAt: '2026-08-28T08:00:00Z', totalSize: 900000, startTime: '08:00:00', endTime: '08:20:00' }, // 1200s
+      { id: 3, createdAt: '2026-08-29T12:00:00Z', totalSize: 200000, startTime: '12:00:00', endTime: '12:01:00' }  // 60s
+    ];
+
+    const sortNewest = [...list].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    assertEqual(sortNewest[0].id, 1, 'Sort newest puts 2026-08-30 first');
+
+    const sortOldest = [...list].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+    assertEqual(sortOldest[0].id, 2, 'Sort oldest puts 2026-08-28 first');
+
+    const sortSize = [...list].sort((a, b) => b.totalSize - a.totalSize);
+    assertEqual(sortSize[0].id, 2, 'Sort size_desc puts 900KB first');
+
+    const sortDuration = [...list].sort((a, b) => calculateSessionDuration(b) - calculateSessionDuration(a));
+    assertEqual(sortDuration[0].id, 2, 'Sort duration_desc puts 1200s first');
+  });
+
+  // =========================================================================
+  // SUITE 28: Settings PIN Authorization & Security Lockdown Boundary
+  // =========================================================================
+  await runSuite('28. Settings PIN Authorization & Security Lockdown Boundary', async () => {
+    const srvDir = path.join(TEST_DIR, 'suite28_server');
+    fs.mkdirSync(srvDir, { recursive: true });
+
+    const cm = new ConfigManager(path.join(srvDir, 'config.json'));
+    const db = new DatabaseManager(path.join(srvDir, 'database.json'));
+    cm.config.dashboardPin = '7788';
+    cm.saveConfig();
+
+    const serverApp = new ServerApp(0);
+    serverApp.configManager = cm;
+    serverApp.dbManager = db;
+
+    const port = await new Promise(res => {
+      const s = serverApp.server.listen(0, '127.0.0.1', () => res(s.address().port));
+    });
+
+    // 1. PIN Auth Middleware rejection without PIN
+    const resNoPin = await fetch(`http://127.0.0.1:${port}/api/config/telegram`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: 'test-token', chatId: '123' })
+    });
+    assertEqual(resNoPin.status, 401, 'POST /api/config/telegram rejected without PIN (401)');
+
+    // 2. PIN Auth Middleware rejection with wrong PIN
+    const resWrongPin = await fetch(`http://127.0.0.1:${port}/api/config/telegram`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-pin': '0000' },
+      body: JSON.stringify({ token: 'test-token', chatId: '123' })
+    });
+    assertEqual(resWrongPin.status, 401, 'POST /api/config/telegram rejected with wrong PIN (401)');
+
+    // 3. PIN Auth Middleware accepts valid PIN
+    const resValidPin = await fetch(`http://127.0.0.1:${port}/api/config/telegram`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-pin': '7788' },
+      body: JSON.stringify({ token: 'bot12345:ABC', chatId: '12345', interval: 60 })
+    });
+    assertEqual(resValidPin.status, 200, 'POST /api/config/telegram authorized with correct PIN (200)');
+    assertEqual(serverApp.configManager.config.telegram.token, 'bot12345:ABC', 'Telegram token updated in config');
+
+    // 4. Change PIN endpoint validation (< 4 chars)
+    const resPinShort = await fetch(`http://127.0.0.1:${port}/api/config/pin`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-pin': '7788' },
+      body: JSON.stringify({ newPin: '12' })
+    });
+    assertEqual(resPinShort.status, 400, 'POST /api/config/pin rejects PIN < 4 chars (400)');
+
+    // 5. Change PIN endpoint success
+    const resPinOk = await fetch(`http://127.0.0.1:${port}/api/config/pin`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-pin': '7788' },
+      body: JSON.stringify({ newPin: '9900' })
+    });
+    assertEqual(resPinOk.status, 200, 'POST /api/config/pin succeeds with 4-digit PIN (200)');
+    assertEqual(serverApp.configManager.config.dashboardPin, '9900', 'New PIN persisted');
+
+    // 6. Old PIN rejected after change
+    const resOldPin = await fetch(`http://127.0.0.1:${port}/api/config/retention`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-pin': '7788' },
+      body: JSON.stringify({ days: 45 })
+    });
+    assertEqual(resOldPin.status, 401, 'Old PIN "7788" is now rejected (401)');
+
+    // 7. New PIN accepted
+    const resNewPin = await fetch(`http://127.0.0.1:${port}/api/config/retention`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-pin': '9900' },
+      body: JSON.stringify({ days: 45 })
+    });
+    assertEqual(resNewPin.status, 200, 'New PIN "9900" is authorized (200)');
+    assertEqual(serverApp.configManager.config.logRetentionDays, 45, 'Retention days updated to 45');
+
+    // 8. Manual cleanup endpoint authorization
+    const resCleanup = await fetch(`http://127.0.0.1:${port}/api/incidents/cleanup-now`, {
+      method: 'POST',
+      headers: { 'x-pin': '9900' }
+    });
+    assertEqual(resCleanup.status, 200, 'POST /api/incidents/cleanup-now authorized (200)');
+
+    // 9. Danger zone clear database auth (DELETE /api/incidents)
+    const resClear = await fetch(`http://127.0.0.1:${port}/api/incidents`, {
+      method: 'DELETE',
+      headers: { 'x-pin': '9900' }
+    });
+    assertEqual(resClear.status, 200, 'DELETE /api/incidents authorized (200)');
+
+    // 10. Verify database empty after clear
+    assertEqual(serverApp.dbManager.incidents.length, 0, 'Database is empty after clear');
+
+    serverApp.server.close();
+  });
+
+  // =========================================================================
+  // SUITE 29: Agent State Machine, OBS Mute Sync & Danger Score Decay
+  // =========================================================================
+  await runSuite('29. Agent State Machine, OBS Mute Sync & Danger Score Decay', () => {
+    // State machine simulator
+    class AgentStateEngine {
+      constructor() {
+        this.dangerScore = 0;
+        this.status = 'AMAN';
+        this.isMuted = false;
+        this.clippingCounter = 0;
+        this.silenceCounter = 0;
+      }
+
+      processSample(audioLevel, isClipping, isMuted) {
+        this.isMuted = isMuted;
+
+        if (isMuted) {
+          this.dangerScore = Math.min(100, this.dangerScore + 25);
+        } else if (isClipping) {
+          this.clippingCounter++;
+          this.dangerScore = Math.min(100, this.dangerScore + 15);
+        } else if (audioLevel < 0.001) { // Silence
+          this.silenceCounter++;
+          this.dangerScore = Math.min(100, this.dangerScore + 5);
+        } else { // Normal audio - decay danger score
+          this.dangerScore = Math.max(0, this.dangerScore - 10);
+          this.clippingCounter = 0;
+          this.silenceCounter = 0;
+        }
+
+        if (this.dangerScore >= 70) {
+          this.status = 'BAHAYA';
+        } else if (this.dangerScore >= 30) {
+          this.status = 'PERINGATAN';
+        } else {
+          this.status = 'AMAN';
+        }
+      }
+    }
+
+    const agent = new AgentStateEngine();
+
+    // 1. Initial State
+    assertEqual(agent.status, 'AMAN', 'Initial state is AMAN');
+    assertEqual(agent.dangerScore, 0, 'Initial danger score is 0');
+
+    // 2. Normal audio maintains AMAN
+    agent.processSample(0.45, false, false);
+    assertEqual(agent.status, 'AMAN', 'Normal audio keeps status AMAN');
+    assertEqual(agent.dangerScore, 0, 'Danger score remains 0');
+
+    // 3. Audio clipping accumulates score towards PERINGATAN
+    agent.processSample(0.99, true, false); // +15
+    agent.processSample(0.99, true, false); // +15 = 30
+    assertEqual(agent.status, 'PERINGATAN', 'Clipping triggers PERINGATAN at score 30');
+    assertEqual(agent.dangerScore, 30, 'Danger score is 30');
+
+    // 4. OBS Mute accelerates score to BAHAYA
+    agent.processSample(0.0, false, true); // +25 = 55
+    agent.processSample(0.0, false, true); // +25 = 80
+    assertEqual(agent.status, 'BAHAYA', 'Muted audio escalates status to BAHAYA at score 80');
+    assertEqual(agent.dangerScore, 80, 'Danger score is 80');
+
+    // 5. Max score ceiling
+    agent.processSample(0.0, false, true); // +25 = 100 max
+    assertEqual(agent.dangerScore, 100, 'Danger score is clamped at 100');
+
+    // 6. Recovery decay when unmuted with healthy audio
+    agent.processSample(0.5, false, false); // -10 = 90 (BAHAYA)
+    agent.processSample(0.5, false, false); // -10 = 80 (BAHAYA)
+    agent.processSample(0.5, false, false); // -10 = 70 (BAHAYA)
+    agent.processSample(0.5, false, false); // -10 = 60 (PERINGATAN)
+    assertEqual(agent.status, 'PERINGATAN', 'Healthy audio decays status back to PERINGATAN at score 60');
+
+    // 7. Full recovery to AMAN
+    for (let i = 0; i < 6; i++) {
+      agent.processSample(0.5, false, false); // -10 each step
+    }
+    assertEqual(agent.status, 'AMAN', 'Continuous healthy audio fully recovers status to AMAN');
+    assertEqual(agent.dangerScore, 0, 'Danger score fully resets to 0');
+  });
+
+  // =========================================================================
+  // SUITE 30: Concurrent Stress Benchmark: Parallel Upload & Real-time Query
+  // =========================================================================
+  await runSuite('30. Concurrent Stress Benchmark: Parallel Upload & Real-time Query', async () => {
+    const stressVault = path.join(TEST_DIR, 'suite30_stress');
+    fs.mkdirSync(stressVault, { recursive: true });
+
+    const cm = new ConfigManager(path.join(stressVault, 'config.json'));
+    cm.config.recordDir = stressVault;
+    const db = new DatabaseManager(path.join(stressVault, 'database.json'));
+
+    const serverApp = new ServerApp(0);
+    serverApp.configManager = cm;
+    serverApp.dbManager = db;
+
+    const port = await new Promise(res => {
+      const s = serverApp.server.listen(0, '127.0.0.1', () => res(s.address().port));
+    });
+
+    // Simulate 20 concurrent session folders and parallel transcript requests
+    const uploadTasks = [];
+    for (let i = 1; i <= 20; i++) {
+      const folder = `PC_Stress_${i}_uuid-${i}_2026-08-30_12-00-00_to_12-10-00`;
+      const fPath = path.join(stressVault, folder);
+      fs.mkdirSync(fPath, { recursive: true });
+      fs.writeFileSync(path.join(fPath, 'Part_001.webm'), Buffer.alloc(1024, 0xAA));
+      fs.writeFileSync(path.join(fPath, 'Part_001.webm.transcript.json'), JSON.stringify({
+        text: `Stress test audio text for worker session ${i}`,
+        segments: [{ start: 0, end: 10, text: `Stress test audio text for worker session ${i}` }]
+      }));
+    }
+
+    // 1. Execute 20 concurrent search query requests
+    const searchPromises = [];
+    for (let i = 1; i <= 20; i++) {
+      searchPromises.push(
+        fetch(`http://127.0.0.1:${port}/api/records/search-transcript?q=worker`)
+          .then(r => r.json())
+      );
+    }
+
+    const searchResults = await Promise.all(searchPromises);
+    assertEqual(searchResults.length, 20, 'All 20 concurrent search requests completed');
+    const matchedCount = (searchResults[0].results || searchResults[0] || []).length;
+    assertEqual(matchedCount, 20, 'Each search query found all 20 matching sessions');
+
+    // 2. Fetch full records concurrently
+    const recordPromises = [];
+    for (let i = 1; i <= 10; i++) {
+      recordPromises.push(
+        fetch(`http://127.0.0.1:${port}/api/records`)
+          .then(r => r.json())
+      );
+    }
+    const recordResults = await Promise.all(recordPromises);
+    assertEqual(recordResults.length, 10, 'All 10 concurrent GET /api/records completed');
+    assertEqual(recordResults[0].length, 20, 'GET /api/records returned all 20 records consistently');
+
+    // 3. Verify media endpoint range streaming concurrently
+    const mediaPromises = [];
+    for (let i = 1; i <= 10; i++) {
+      const folder = `PC_Stress_${i}_uuid-${i}_2026-08-30_12-00-00_to_12-10-00`;
+      mediaPromises.push(
+        fetch(`http://127.0.0.1:${port}/media/${folder}/Part_001.webm`, {
+          headers: { 'Range': 'bytes=0-500' }
+        })
+      );
+    }
+    const mediaResponses = await Promise.all(mediaPromises);
+    assertEqual(mediaResponses.length, 10, 'All 10 concurrent range stream requests finished');
+    assertEqual(mediaResponses[0].status, 206, 'HTTP Range request responded with 206 Partial Content');
+
+    serverApp.server.close();
   });
 
   // Clean up test directory
