@@ -340,19 +340,13 @@ function App() {
     }
   }, []);
 
-  const handleToggleAutoStart = async (newVal) => {
+  const handleToggleAutoStart = (newVal) => {
     setAutoStart(newVal);
     localStorage.setItem('autoStart', newVal ? 'true' : 'false');
     if (window.electronAPI && window.electronAPI.setAutostart) {
-      try {
-        const actual = await window.electronAPI.setAutostart(newVal);
-        if (typeof actual === 'boolean') {
-          setAutoStart(actual);
-          localStorage.setItem('autoStart', actual ? 'true' : 'false');
-        }
-      } catch (err) {
+      window.electronAPI.setAutostart(newVal).catch(err => {
         console.error('Failed to set autostart:', err);
-      }
+      });
     }
   };
 

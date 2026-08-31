@@ -274,29 +274,36 @@ ipcMain.handle('get-uuid', () => {
 ipcMain.handle('get-autostart', () => {
   try {
     const settings = app.getLoginItemSettings();
-    return Boolean(settings.openAtLogin);
+    return typeof settings.openAtLogin === 'boolean' ? settings.openAtLogin : null;
   } catch (err) {
     writeAgentLog('ERROR', `[Autostart] Error reading autostart: ${err.message}`);
-    return false;
+    return null;
   }
 });
 
 // Mengatur agar aplikasi menyala otomatis (Startup) ketika Windows boot
 ipcMain.handle('set-autostart', (event, enable) => {
+  const isEnable = Boolean(enable);
   try {
-    const isEnable = Boolean(enable);
-    app.setLoginItemSettings({
-      openAtLogin: isEnable,
-      openAsHidden: true,
-      path: app.getPath('exe'),
-      args: ['--hidden']
-    });
+    if (app.isPackaged) {
+      app.setLoginItemSettings({
+        openAtLogin: isEnable,
+        openAsHidden: true,
+        path: process.execPath,
+        args: ['--hidden']
+      });
+    } else {
+      app.setLoginItemSettings({
+        openAtLogin: isEnable,
+        openAsHidden: true
+      });
+    }
     const current = app.getLoginItemSettings().openAtLogin;
-    writeAgentLog('INFO', `[Autostart] Pengaturan autostart diubah ke: ${isEnable} (Status saat ini: ${current})`);
-    return Boolean(current);
+    writeAgentLog('INFO', `[Autostart] Pengaturan autostart diubah ke: ${isEnable} (Status sistem: ${current})`);
+    return isEnable;
   } catch (err) {
     writeAgentLog('ERROR', `[Autostart] Gagal mengatur autostart: ${err.message}`);
-    return false;
+    return isEnable;
   }
 });
 
