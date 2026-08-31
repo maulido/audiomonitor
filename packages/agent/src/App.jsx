@@ -248,9 +248,26 @@ function App() {
   const handleDeleteAudioFiles = async (deleteMode = 'all', days = 0) => {
     if (isCleaningStorage) return;
 
+    // Refresh info storage terbaru
+    if (window.electronAPI && window.electronAPI.getStorageInfo) {
+      try {
+        const freshInfo = await window.electronAPI.getStorageInfo(recordDirRef.current);
+        if (freshInfo) setLocalStorageInfo(freshInfo);
+      } catch (e) {}
+    }
+
+    const availableUploadedMb = parseFloat(localStorageInfo.uploadedMb || '0');
+    const uploadedFolders = localStorageInfo.uploadedFolderCount || 0;
+
+    if (uploadedFolders === 0 && availableUploadedMb === 0) {
+      setCleanupFeedback('Info: Tidak ada file audio terupload untuk dibersihkan (Penyimpanan lokal sudah bersih atau belum ada rekaman yang selesai diunggah ke Server).');
+      setTimeout(() => setCleanupFeedback(''), 6000);
+      return;
+    }
+
     let confirmMsg = '';
     if (deleteMode === 'all') {
-      confirmMsg = `Hapus file rekaman audio lokal di PC ini yang SUDAH BERHASIL TERUPLOAD ke Server?\n\nTotal saat ini: ${localStorageInfo.uploadedMb || localStorageInfo.totalMb} MB siap dibersihkan.\nFile yang belum terupload akan tetap aman dan tidak akan dihapus.`;
+      confirmMsg = `Hapus file rekaman audio lokal di PC ini yang SUDAH BERHASIL TERUPLOAD ke Server?\n\nTotal saat ini: ${localStorageInfo.uploadedMb || localStorageInfo.totalMb} MB (${uploadedFolders} folder sesi) siap dibersihkan.\nFile yang belum terupload akan tetap aman dan tidak akan dihapus.`;
     } else if (deleteMode === 'older_than_days') {
       confirmMsg = `Hapus file rekaman lokal (yang sudah terupload) yang usianya lebih dari ${days} hari?`;
     }
@@ -956,7 +973,7 @@ REC
 
         <div className="tabs">
         <div className={`tab ${activeTab === 'monitoring' ? 'active' : ''}`} onClick={() => setActiveTab('monitoring')}>Monitoring</div>
-        <div className={`tab ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => setActiveTab('settings')}>Settings</div>
+        <div className={`tab ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => { setActiveTab('settings'); fetchLocalStorageInfo(); }}>Settings</div>
       </div>
 
       <div className="tab-content" style={{ padding: activeTab === 'settings' ? '10px 15px' : '15px' }}>
@@ -1067,7 +1084,7 @@ REC
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                       <span style={{ fontSize: '11px', color: '#aaa' }}>Bersihkan Audio:</span>
                       <select 
-                        disabled={isCleaningStorage || localStorageInfo.uploadedFolderCount === 0}
+                        disabled={isCleaningStorage}
                         onChange={(e) => {
                           const val = e.target.value;
                           if (!val) return;
@@ -1079,6 +1096,7 @@ REC
                         style={{ background: '#262626', color: '#e0e0e0', border: '1px solid #444', borderRadius: '3px', padding: '4px 6px', fontSize: '11px', cursor: 'pointer' }}
                       >
                         <option value="" disabled>Pilih Opsi Hapus (Hanya Terupload)...</option>
+                        <option value="all">Hapus Semua File Terupload</option>
                         <option value="1">Hapus Terupload &gt; 1 Hari</option>
                         <option value="3">Hapus Terupload &gt; 3 Hari</option>
                         <option value="7">Hapus Terupload &gt; 7 Hari</option>
@@ -1089,23 +1107,24 @@ REC
 
                     <button 
                       onClick={() => handleDeleteAudioFiles('all')}
-                      disabled={isCleaningStorage || localStorageInfo.uploadedFolderCount === 0}
+                      disabled={isCleaningStorage}
                       style={{
-                        background: localStorageInfo.uploadedFolderCount > 0 && !isCleaningStorage ? '#c0392b' : '#555',
-                        color: '#fff',
-                        border: 'none',
+                        background: (localStorageInfo.uploadedFolderCount > 0 || parseFloat(localStorageInfo.uploadedMb || '0') > 0) && !isCleaningStorage ? '#c0392b' : '#333',
+                        color: (localStorageInfo.uploadedFolderCount > 0 || parseFloat(localStorageInfo.uploadedMb || '0') > 0) ? '#fff' : '#aaa',
+                        border: '1px solid ' + ((localStorageInfo.uploadedFolderCount > 0 || parseFloat(localStorageInfo.uploadedMb || '0') > 0) ? '#e74c3c' : '#444'),
                         padding: '4px 10px',
                         borderRadius: '3px',
                         fontSize: '11px',
                         fontWeight: 'bold',
-                        cursor: localStorageInfo.uploadedFolderCount > 0 && !isCleaningStorage ? 'pointer' : 'not-allowed',
+                        cursor: isCleaningStorage ? 'wait' : 'pointer',
                         display: 'flex',
                         alignItems: 'center',
-                        gap: '4px'
+                        gap: '5px'
                       }}
                       title="Hapus file rekaman lokal yang SUDAH TERUPLOAD ke Server"
                     >
-                      Hapus Audio Yang Terupload
+                      <i className="fa-solid fa-trash-can"></i>
+                      {isCleaningStorage ? 'Sedang Menghapus...' : `Hapus Audio Terupload (${localStorageInfo.uploadedMb || '0.0'} MB)`}
                     </button>
                   </div>
 
