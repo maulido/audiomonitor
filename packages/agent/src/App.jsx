@@ -1200,91 +1200,95 @@ function App() {
               </div>
 
               <div className="setting-group full" style={{ marginTop: '5px', paddingTop: '10px', borderTop: '1px dashed #333' }}>
-                <label>System Settings</label>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '8px', color: '#ccc', fontSize: '12px' }}>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', color: '#fff', fontSize: '12px' }}>
+                <label style={{ margin: '0 0 6px 0', fontWeight: 'bold', color: '#fff', fontSize: '12px' }}>System Settings</label>
+                
+                <div style={{ background: '#181818', border: '1px solid #2e2e2e', borderRadius: '6px', padding: '10px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', color: '#eee', fontSize: '12px' }}>
                     <div className="switch">
                       <input type="checkbox" checked={autoStart} onChange={e => handleToggleAutoStart(e.target.checked)} />
                       <span className="slider"></span>
                     </div>
                     Auto Start with Windows
                   </label>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', color: '#fff', fontSize: '12px' }}>
+
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', color: '#eee', fontSize: '12px' }}>
                     <div className="switch">
                       <input type="checkbox" checked={obsSyncStreaming} onChange={e => setObsSyncStreaming(e.target.checked)} />
                       <span className="slider"></span>
                     </div>
                     Auto-Monitor on OBS Live
-                    </label>
-                    
-                      <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', color: '#fff', fontSize: '12px' }}>
-                        <div className="switch">
-                          <input type="checkbox" checked={autoRecoveryUnmute} onChange={e => setAutoRecoveryUnmute(e.target.checked)} />
-                          <span className="slider"></span>
-                        </div>
-                        Auto-Unmute OBS
-                      </label>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', color: '#fff', fontSize: '12px' }}>
-                        <div className="switch">
-                          <input type="checkbox" checked={obsSyncRecording} onChange={e => setObsSyncRecording(e.target.checked)} />
-                          <span className="slider"></span>
-                        </div>
-                        Auto-Record on OBS Live
-                      </label>
+                  </label>
 
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', gap: '8px' }}>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', color: '#fff', fontSize: '12px' }}>
-                          <div className="switch">
-                            <input type="checkbox" checked={enableWindowsNotif} onChange={e => setEnableWindowsNotif(e.target.checked)} />
-                            <span className="slider"></span>
-                          </div>
-                          Windows Notification
-                        </label>
-                        {enableWindowsNotif && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (window.electronAPI && window.electronAPI.showNotification) {
-                                window.electronAPI.showNotification(
-                                  'Uji Notifikasi Windows',
-                                  'Notifikasi Windows Audio Monitor Agent berfungsi dengan baik dan siap memberikan peringatan!'
-                                );
-                              }
-                            }}
-                            style={{
-                              background: '#2c3e50',
-                              color: '#ecf0f1',
-                              border: '1px solid #34495e',
-                              padding: '3px 8px',
-                              borderRadius: '3px',
-                              fontSize: '10px',
-                              fontWeight: 'bold',
-                              cursor: 'pointer',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '4px'
-                            }}
-                            title="Kirim notifikasi uji coba ke Windows Action Center"
-                          >
-                            <i className="fa-solid fa-bell"></i>
-                            Tes Notifikasi
-                          </button>
-                        )}
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', color: '#eee', fontSize: '12px' }}>
+                    <div className="switch">
+                      <input type="checkbox" checked={autoRecoveryUnmute} onChange={e => setAutoRecoveryUnmute(e.target.checked)} />
+                      <span className="slider"></span>
+                    </div>
+                    Auto-Unmute OBS
+                  </label>
+
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', color: '#eee', fontSize: '12px' }}>
+                    <div className="switch">
+                      <input type="checkbox" checked={obsSyncRecording} onChange={e => setObsSyncRecording(e.target.checked)} />
+                      <span className="slider"></span>
+                    </div>
+                    Auto-Record on OBS Live
+                  </label>
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', color: '#eee', fontSize: '12px', margin: 0 }}>
+                      <div className="switch">
+                        <input type="checkbox" checked={enableWindowsNotif} onChange={e => setEnableWindowsNotif(e.target.checked)} />
+                        <span className="slider"></span>
                       </div>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#fff', fontSize: '12px', whiteSpace: 'nowrap' }}>
-                      Data Polling Rate:
-                      <select 
-                        style={{background: 'var(--bg-card)', color: '#fff', border: '1px solid #333', padding: '2px 4px', borderRadius: '4px'}}
-                        value={telemetryInterval}
-                        onChange={e => setTelemetryInterval(parseInt(e.target.value, 10))}
-                      >
-                        <option value="500">Realtime (0.5s)</option>
-                        <option value="2000">Normal (2s)</option>
-                        <option value="5000">Eco Mode (5s)</option>
-                      </select>
+                      Windows Notification
                     </label>
+                    {enableWindowsNotif && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (window.electronAPI && window.electronAPI.showNotification) {
+                            window.electronAPI.showNotification(
+                              'Uji Notifikasi Windows',
+                              'Notifikasi Windows Audio Monitor Agent berfungsi dengan baik dan siap memberikan peringatan!'
+                            );
+                          }
+                        }}
+                        style={{
+                          background: '#2c3e50',
+                          color: '#ecf0f1',
+                          border: '1px solid #34495e',
+                          padding: '2px 8px',
+                          borderRadius: '3px',
+                          fontSize: '10px',
+                          fontWeight: 'bold',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '4px'
+                        }}
+                        title="Kirim notifikasi uji coba ke Windows Action Center"
+                      >
+                        <i className="fa-solid fa-bell"></i>
+                        Tes Notif
+                      </button>
+                    )}
                   </div>
-            </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px', color: '#aaa', borderTop: '1px solid #252525', paddingTop: '8px', marginTop: '2px' }}>
+                    <span>Data Polling Rate:</span>
+                    <select 
+                      value={telemetryInterval}
+                      onChange={e => setTelemetryInterval(parseInt(e.target.value, 10))}
+                      style={{ background: '#222', color: '#ccc', border: '1px solid #3c3c3c', borderRadius: '4px', padding: '3px 8px', fontSize: '11px', cursor: 'pointer', width: '58%' }}
+                    >
+                      <option value="500">Realtime (0.5s)</option>
+                      <option value="2000">Normal (2s)</option>
+                      <option value="5000">Eco Mode (5s)</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
 
             <div className="setting-group full" style={{ marginTop: '5px', paddingTop: '10px', borderTop: '1px dashed #333' }}>
               <label>Hardware Microphone</label>
