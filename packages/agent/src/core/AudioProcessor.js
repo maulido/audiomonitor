@@ -156,18 +156,13 @@ class AudioProcessor {
     this.chunkTimer = setTimeout(() => {
       if (this.mediaRecorder && this.mediaRecorder.state === 'recording') {
         this.mediaRecorder.onstop = () => {
-          setTimeout(() => {
-            if (window.electronAPI && window.electronAPI.stopRecording) { 
-              window.electronAPI.stopRecording(true); 
-            }
-            this.partNumber++;
-            this.rolloverRestartTimer = setTimeout(() => {
-              this.rolloverRestartTimer = null;
-              if (this.isRecording) {
-                this._startMediaRecorderChunk();
-              }
-            }, 150);
-          }, 50);
+          if (window.electronAPI && window.electronAPI.stopRecording) { 
+            window.electronAPI.stopRecording(true); 
+          }
+          this.partNumber++;
+          if (this.isRecording) {
+            this._startMediaRecorderChunk();
+          }
         };
         this.mediaRecorder.stop();
       }

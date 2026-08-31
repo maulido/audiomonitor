@@ -298,7 +298,9 @@ ipcMain.handle('get-hardware-telemetry', () => {
 
   for (let i = 0; i < cpus.length; i++) {
     const cpu = cpus[i];
-    const prevCpu = previousCpus[i] || cpu;
+    if (!cpu || !cpu.times) continue;
+    const prevCpu = (previousCpus && previousCpus[i]) || cpu;
+    if (!prevCpu || !prevCpu.times) continue;
 
     let cpuTotal = 0;
     for (let type in cpu.times) cpuTotal += cpu.times[type];
@@ -307,7 +309,7 @@ ipcMain.handle('get-hardware-telemetry', () => {
     for (let type in prevCpu.times) prevTotal += prevCpu.times[type];
 
     totalDelta += (cpuTotal - prevTotal);
-    idleDelta += (cpu.times.idle - prevCpu.times.idle);
+    idleDelta += ((cpu.times.idle || 0) - (prevCpu.times.idle || 0));
   }
 
   const cpuUsage = totalDelta === 0 ? 0 : Math.round(((totalDelta - idleDelta) / totalDelta) * 100);
@@ -420,6 +422,54 @@ function uploadToServer(filePath, serverUrl, agentName, sessionFolder) {
     writeAgentLog('ERROR', `Error fungsi uploadToServer: ${err.message}`);
   }
 }
+
+// Background Worker: Auto-Retry upload file audio yang belum terupload saat server sempat offline
+let isRetryingUploads = false;
+function retryPendingUploads(recordDir, serverIp, agentName) {
+  if (isRetryingUploads || !serverIp || serverIp.trim() === '') return;
+  const baseDir = recordDir && recordDir.trim() !== '' 
+    ? recordDir 
+    : path.join(app.getPath('documents'), 'AudioMonitor-Recordings');
+
+  if (!fs.existsSync(baseDir)) return;
+
+  isRetryingUploads = true;
+  try {
+    const entries = fs.readdirSync(baseDir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const sessionPath = path.join(baseDir, entry.name);
+      
+      // Jangan sentuh sesi yang sedang aktif merekam saat ini
+      if (currentSessionDir && (path.resolve(currentSessionDir) === path.resolve(sessionPath) || path.resolve(currentSessionDir).startsWith(path.resolve(sessionPath)))) {
+        continue;
+      }
+
+      const files = fs.readdirSync(sessionPath);
+      for (const f of files) {
+        if (f.toLowerCase().endsWith('.webm') || f.toLowerCase().endsWith('.wav') || f.toLowerCase().endsWith('.mp3')) {
+          const filePath = path.join(sessionPath, f);
+          const markerPath = `${filePath}.uploaded`;
+          if (!fs.existsSync(markerPath)) {
+            writeAgentLog('INFO', `[AutoRetry] Mengunggah ulang file rekaman pending: ${entry.name}/${f}`);
+            uploadToServer(filePath, serverIp, agentName, entry.name);
+          }
+        }
+      }
+    }
+  } catch (err) {
+    writeAgentLog('WARN', `Error pada retryPendingUploads: ${err.message}`);
+  } finally {
+    isRetryingUploads = false;
+  }
+}
+
+// Jalankan retry background scanner setiap 60 detik
+setInterval(() => {
+  if (currentServerIp) {
+    retryPendingUploads(null, currentServerIp, currentAgentName);
+  }
+}, 60000);
 
 let currentSessionDir = null;
 let currentAgentName = null;
@@ -598,9 +648,9 @@ ipcMain.handle('delete-local-recordings', async (event, { recordDir, deleteMode 
 
       // KEBIJAKAN KEAMANAN DATA: Jika onlyUploaded aktif, jangan hapus jika ada file audio yang belum terupload!
       if (onlyUploaded !== false) {
-        if (audioFiles.length === 0 || !allAudioUploaded) {
+        if (audioFiles.length > 0 && !allAudioUploaded) {
           skippedUnuploaded++;
-          continue; // Lewati folder ini untuk mencegah kehilangan rekaman yang belum tersimpan di server
+          continue; // Lewati folder yang masih memiliki file audio yang belum terupload
         }
       }
 

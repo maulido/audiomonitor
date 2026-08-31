@@ -682,10 +682,16 @@ function App() {
       dangerScore.current = 0;
     } else if (isTalking && isActuallyMuted) {
       dangerScore.current += 100;
+    } else if (isActuallyMuted) {
+      // Masih mute tapi jeda bicara: kurangi perlahan (50ms per 100ms tick) agar jeda napas/kata tidak menghapus akumulasi skor
+      if (dangerScore.current > 0) {
+        dangerScore.current = Math.max(0, dangerScore.current - 50);
+      }
     } else {
+      // Sudah unmute: reset atau kurangi cepat
       if (dangerScore.current > 0) {
         dangerScore.current = Math.max(0, dangerScore.current - 500);
-      } else if (!isActuallyMuted) {
+      } else {
         dangerScore.current = 0;
       }
     }
