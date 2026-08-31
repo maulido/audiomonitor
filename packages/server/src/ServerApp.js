@@ -676,6 +676,12 @@ class ServerApp {
       res.json({ success: true, results });
     });
 
+    // API: Mengambil status antrean transkripsi Whisper secara real-time
+    this.app.get('/api/transcription/queue', (req, res) => {
+      const status = this.transcriptionManager ? this.transcriptionManager.getQueueStatus() : { isProcessing: false, currentTask: null, queue: [], queueLength: 0 };
+      res.json({ success: true, status });
+    });
+
     // API: Mengambil konfigurasi Speech-to-Text Whisper
     this.app.get('/api/config/transcription', (req, res) => {
       res.json({ success: true, transcription: this.configManager.getTranscriptionConfig() });

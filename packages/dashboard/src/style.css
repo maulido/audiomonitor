@@ -1552,6 +1552,12 @@ label.btn-filter.disabled {
   border: 1px solid rgba(245, 158, 11, 0.25);
 }
 
+.transcript-status-badge.queued {
+  background: rgba(59, 130, 246, 0.12);
+  color: #60a5fa;
+  border: 1px solid rgba(59, 130, 246, 0.3);
+}
+
 .transcript-status-badge.none {
   background: rgba(255, 255, 255, 0.05);
   color: var(--text-muted);

@@ -271,11 +271,34 @@ function App() {
   const [transcriptSearchResults, setTranscriptSearchResults] = useState([]);
   const [isSearchingTranscript, setIsSearchingTranscript] = useState(false);
   const [transcribingFiles, setTranscribingFiles] = useState({});
+  const [whisperQueueStatus, setWhisperQueueStatus] = useState({ isProcessing: false, currentTask: null, queue: [], queueLength: 0 });
   const [keywordAlertToast, setKeywordAlertToast] = useState(null);
 
   const searchDebounceRef = useRef(null);
   const latestSearchQueryRef = useRef('');
   const toastTimerRef = useRef(null);
+
+  const fetchQueueStatus = async () => {
+    try {
+      const res = await fetch(`${SERVER_URL}/api/transcription/queue`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.status) {
+          setWhisperQueueStatus(data.status);
+          const map = {};
+          if (data.status.currentTask) {
+            map[`${data.status.currentTask.sessionFolder}/${data.status.currentTask.fileName}`] = 'processing';
+          }
+          if (Array.isArray(data.status.queue)) {
+            data.status.queue.forEach(q => {
+              map[`${q.sessionFolder}/${q.fileName}`] = 'queued';
+            });
+          }
+          setTranscribingFiles(prev => ({ ...prev, ...map }));
+        }
+      }
+    } catch (e) {}
+  };
 
   // Auth State
   const [pin, setPin] = useState(sessionStorage.getItem('dashboardPin') || '');
@@ -1170,6 +1193,7 @@ function App() {
       fetchPcNames();
     } else if (isAuthenticated && currentView === 'records') {
       fetchRecords();
+      fetchQueueStatus();
     } else if (isAuthenticated && currentView === 'settings') {
       fetchConfig();
       fetchTranscriptionConfig();
@@ -1294,10 +1318,18 @@ function App() {
       },
       (transData) => {
         if (transData) {
-          setTranscribingFiles(prev => ({
-            ...prev,
-            [`${transData.sessionFolder}/${transData.fileName}`]: transData.status
-          }));
+          setTranscribingFiles(prev => {
+            const next = { ...prev };
+            if (transData.status === 'completed' || transData.status === 'failed') {
+              delete next[`${transData.sessionFolder}/${transData.fileName}`];
+            } else {
+              next[`${transData.sessionFolder}/${transData.fileName}`] = transData.status;
+            }
+            return next;
+          });
+          if (transData.queueStatus) {
+            setWhisperQueueStatus(transData.queueStatus);
+          }
           if (transData.status === 'completed') {
             fetchRecords();
           }
@@ -2639,6 +2671,23 @@ function App() {
                 </div>
               </div>
 
+              {/* Live Whisper STT Queue Indicator */}
+              {(whisperQueueStatus.isProcessing || whisperQueueStatus.queueLength > 0) && (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px', padding: '10px 16px', background: 'rgba(59, 130, 246, 0.08)', border: '1px solid rgba(59, 130, 246, 0.25)', borderRadius: '8px', marginBottom: '14px', fontSize: '0.85rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#93c5fd' }}>
+                    <i className="fa-solid fa-spinner fa-spin" style={{ color: '#60a5fa', fontSize: '1rem' }}></i>
+                    <span>
+                      <strong>Antrean Whisper STT:</strong> {whisperQueueStatus.isProcessing ? `Sedang memproses ${whisperQueueStatus.currentTask?.fileName || 'audio'} (${whisperQueueStatus.currentTask?.pcName || 'PC'})` : 'Standby'}
+                    </span>
+                  </div>
+                  {whisperQueueStatus.queueLength > 0 && (
+                    <span style={{ padding: '2px 8px', background: 'rgba(59, 130, 246, 0.2)', color: '#bfdbfe', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 600 }}>
+                      <i className="fa-solid fa-clock-rotate-left" style={{ marginRight: '4px' }}></i> {whisperQueueStatus.queueLength} File Menunggu Antrean
+                    </span>
+                  )}
+                </div>
+              )}
+
               {/* 5. Status Filter Pills, View Switcher & Toolbar */}
               <div className="record-filter-toolbar">
                 <div className="status-pills-wrap">
@@ -2995,6 +3044,7 @@ function App() {
                                 const isSessionActive = playingSession?.folderName === session.folderName;
                                 const sessionDurationSec = calculateSessionDuration(session);
                                 const hasProcessing = session.parts.some(p => transcribingFiles[`${session.folderName}/${p.fileName}`] === 'processing');
+                                const hasQueued = session.parts.some(p => transcribingFiles[`${session.folderName}/${p.fileName}`] === 'queued');
 
                                 // COMPACT VIEW RENDERING
                                 if (recordViewLayout === 'compact') {
@@ -3037,6 +3087,10 @@ function App() {
                                         ) : hasProcessing ? (
                                           <span className="transcript-status-badge processing" style={{ fontSize: '0.7rem' }}>
                                             <i className="fa-solid fa-spinner fa-spin"></i> Proses
+                                          </span>
+                                        ) : hasQueued ? (
+                                          <span className="transcript-status-badge queued" style={{ fontSize: '0.7rem' }}>
+                                            <i className="fa-solid fa-clock-rotate-left"></i> Antre
                                           </span>
                                         ) : session.hasTranscript ? (
                                           <span className="transcript-status-badge ready" style={{ fontSize: '0.7rem' }}>
@@ -3145,7 +3199,11 @@ function App() {
                                             </span>
                                           ) : hasProcessing ? (
                                             <span className="transcript-status-badge processing">
-                                              <i className="fa-solid fa-spinner fa-spin"></i> Mentranskripsi...
+                                              <i className="fa-solid fa-spinner fa-spin"></i> Sedang Diproses...
+                                            </span>
+                                          ) : hasQueued ? (
+                                            <span className="transcript-status-badge queued">
+                                              <i className="fa-solid fa-clock-rotate-left"></i> Dalam Antrean Transkripsi
                                             </span>
                                           ) : session.hasTranscript ? (
                                             <span className="transcript-status-badge ready">
@@ -3281,7 +3339,10 @@ function App() {
                                                   <i className="fa-solid fa-file-lines" style={{ color: 'var(--accent)', fontSize: '0.75rem', marginLeft: '4px' }} title="Transkrip tersedia"></i>
                                                 )}
                                                 {transStatus === 'processing' && (
-                                                  <i className="fa-solid fa-spinner fa-spin" style={{ color: '#eab308', fontSize: '0.75rem', marginLeft: '4px' }} title="Sedang mentranskrip..."></i>
+                                                  <i className="fa-solid fa-spinner fa-spin" style={{ color: '#eab308', fontSize: '0.75rem', marginLeft: '4px' }} title="Sedang diproses transkripsi..."></i>
+                                                )}
+                                                {transStatus === 'queued' && (
+                                                  <i className="fa-solid fa-clock-rotate-left" style={{ color: '#60a5fa', fontSize: '0.75rem', marginLeft: '4px' }} title="Dalam antrean transkripsi..."></i>
                                                 )}
                                               </button>
                                               <button
@@ -4216,31 +4277,71 @@ function App() {
             </div>
 
             <div className="transcript-modal-body">
-              {activeTranscriptModal.loading ? (
-                <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-muted)' }}>
-                  <i className="fa-solid fa-spinner fa-spin" style={{ fontSize: '1.8rem', color: 'var(--accent)', marginBottom: '12px' }}></i>
-                  <div>Sedang memproses / memuat transkrip audio...</div>
-                </div>
-              ) : activeTranscriptModal.error ? (
-                <div style={{ textAlign: 'center', padding: '30px 20px' }}>
-                  <div style={{ color: 'var(--text-muted)', marginBottom: '16px', fontSize: '0.9rem' }}>
-                    {activeTranscriptModal.error}
-                  </div>
-                  {transcriptionConfig.enabled && transcriptionConfig.apiUrl && (
-                    <button 
-                      className="btn btn-primary"
-                      onClick={() => {
-                        handleManualTranscribe(activeTranscriptModal.folderName, activeTranscriptModal.fileName, activeTranscriptModal.pcName);
-                      }}
-                    >
-                      <i className="fa-solid fa-wand-magic-sparkles" style={{ marginRight: '6px' }}></i>
-                      {activeTranscriptModal.fileName ? 'Transkrip Potongan Ini Sekarang' : 'Transkrip Seluruh Sesi Sekarang'}
-                    </button>
-                  )}
-                </div>
-              ) : activeTranscriptModal.transcript ? (
-                <>
-                  {/* Meta info & Action bar */}
+              {(() => {
+                const modalKey = activeTranscriptModal.fileName 
+                  ? `${activeTranscriptModal.folderName}/${activeTranscriptModal.fileName}`
+                  : null;
+                const isModalProcessing = modalKey 
+                  ? transcribingFiles[modalKey] === 'processing' 
+                  : Object.keys(transcribingFiles).some(k => k.startsWith(`${activeTranscriptModal.folderName}/`) && transcribingFiles[k] === 'processing');
+                const isModalQueued = modalKey 
+                  ? transcribingFiles[modalKey] === 'queued' 
+                  : Object.keys(transcribingFiles).some(k => k.startsWith(`${activeTranscriptModal.folderName}/`) && transcribingFiles[k] === 'queued');
+
+                if (activeTranscriptModal.loading) {
+                  return (
+                    <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-muted)' }}>
+                      <i className="fa-solid fa-spinner fa-spin" style={{ fontSize: '1.8rem', color: 'var(--accent)', marginBottom: '12px' }}></i>
+                      <div>Sedang memproses / memuat transkrip audio...</div>
+                    </div>
+                  );
+                }
+
+                if (isModalProcessing && !activeTranscriptModal.transcript) {
+                  return (
+                    <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-muted)' }}>
+                      <i className="fa-solid fa-spinner fa-spin" style={{ fontSize: '2.4rem', color: '#eab308', marginBottom: '14px' }}></i>
+                      <div style={{ fontSize: '1.05rem', fontWeight: 600, color: '#fbbf24', marginBottom: '6px' }}>Sedang Diproses Transkripsi</div>
+                      <div style={{ fontSize: '0.85rem' }}>Audio sedang aktif dikonversi ke teks oleh Whisper AI. Hasil akan otomatis muncul begitu selesai.</div>
+                    </div>
+                  );
+                }
+
+                if (isModalQueued && !activeTranscriptModal.transcript) {
+                  return (
+                    <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-muted)' }}>
+                      <i className="fa-solid fa-clock-rotate-left" style={{ fontSize: '2.4rem', color: '#60a5fa', marginBottom: '14px' }}></i>
+                      <div style={{ fontSize: '1.05rem', fontWeight: 600, color: '#93c5fd', marginBottom: '6px' }}>Dalam Antrean Transkripsi</div>
+                      <div style={{ fontSize: '0.85rem' }}>File audio ini sudah masuk antrean dan sedang menunggu giliran pemrosesan otomatis.</div>
+                    </div>
+                  );
+                }
+
+                if (activeTranscriptModal.error) {
+                  return (
+                    <div style={{ textAlign: 'center', padding: '30px 20px' }}>
+                      <div style={{ color: 'var(--text-muted)', marginBottom: '16px', fontSize: '0.9rem' }}>
+                        {activeTranscriptModal.error}
+                      </div>
+                      {transcriptionConfig.enabled && transcriptionConfig.apiUrl && (
+                        <button 
+                          className="btn btn-primary"
+                          onClick={() => {
+                            handleManualTranscribe(activeTranscriptModal.folderName, activeTranscriptModal.fileName, activeTranscriptModal.pcName);
+                          }}
+                        >
+                          <i className="fa-solid fa-wand-magic-sparkles" style={{ marginRight: '6px' }}></i>
+                          {activeTranscriptModal.fileName ? 'Transkrip Potongan Ini Sekarang' : 'Transkrip Seluruh Sesi Sekarang'}
+                        </button>
+                      )}
+                    </div>
+                  );
+                }
+
+                if (activeTranscriptModal.transcript) {
+                  return (
+                    <>
+                      {/* Meta info & Action bar */}
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', paddingBottom: '12px', borderBottom: '1px solid var(--border)' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                       <span className="session-time-badge">
@@ -4342,7 +4443,10 @@ function App() {
                     )}
                   </div>
                 </>
-              ) : null}
+              );
+            }
+            return null;
+          })()}
             </div>
           </div>
         </div>

@@ -17,6 +17,7 @@ class TranscriptionManager {
 
     this.queue = [];
     this.isProcessing = false;
+    this.currentTask = null;
     this.activeTasks = new Map();
   }
 
@@ -32,13 +33,14 @@ class TranscriptionManager {
       return false;
     }
 
-    if (this.queue.some(item => item.filePath === filePath)) {
+    if (this.activeTasks.has(filePath) || this.queue.some(item => item.filePath === filePath)) {
       return false;
     }
 
     this.queue.push({ filePath, sessionFolder, fileName, pcName, enqueuedAt: Date.now() });
     logger.info(`[Whisper] File ditambahkan ke antrean transkripsi: ${fileName} (${this.queue.length} antre)`);
     
+    this.broadcastStatus(sessionFolder, fileName, 'queued');
     this.processQueue();
     return true;
   }
@@ -51,6 +53,7 @@ class TranscriptionManager {
 
     this.isProcessing = true;
     const task = this.queue.shift();
+    this.currentTask = task;
 
     try {
       this.activeTasks.set(task.filePath, 'processing');
@@ -65,6 +68,7 @@ class TranscriptionManager {
       this.activeTasks.delete(task.filePath);
       this.broadcastStatus(task.sessionFolder, task.fileName, 'failed', err.message);
     } finally {
+      this.currentTask = null;
       this.isProcessing = false;
       if (this.queue.length > 0) {
         setTimeout(() => this.processQueue(), 500);
@@ -523,6 +527,25 @@ class TranscriptionManager {
     }
   }
 
+  getQueueStatus() {
+    return {
+      isProcessing: this.isProcessing,
+      currentTask: this.currentTask ? {
+        sessionFolder: this.currentTask.sessionFolder,
+        fileName: this.currentTask.fileName,
+        pcName: this.currentTask.pcName
+      } : null,
+      queue: this.queue.map((item, idx) => ({
+        position: idx + 1,
+        sessionFolder: item.sessionFolder,
+        fileName: item.fileName,
+        pcName: item.pcName,
+        enqueuedAt: item.enqueuedAt
+      })),
+      queueLength: this.queue.length
+    };
+  }
+
   broadcastStatus(sessionFolder, fileName, status, error = null) {
     if (this.telemetryHub && this.telemetryHub.io) {
       this.telemetryHub.io.to('dashboards').emit('transcription-status', {
@@ -530,6 +553,7 @@ class TranscriptionManager {
         fileName,
         status,
         error,
+        queueStatus: this.getQueueStatus(),
         timestamp: new Date().toISOString()
       });
     }
