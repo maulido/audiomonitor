@@ -1002,14 +1002,16 @@ function App() {
         <div className={`tab ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => { setActiveTab('settings'); fetchLocalStorageInfo(); }}>Settings</div>
       </div>
 
-      <div className="tab-content" style={{ padding: activeTab === 'settings' ? '10px 15px' : '15px' }}>
+      <div className="tab-content" style={{ padding: '12px' }}>
         {activeTab === 'monitoring' ? (
           <div className="meters-grid">
             <div className="meter-row">
               <div className="meter-header">
-                <span title={micDriverName}>Hardware Mic ({micDriverName.length > 20 ? micDriverName.substring(0,20)+'...' : micDriverName})</span>
+                <span title={micDriverName} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '200px' }}>
+                  Hardware Mic ({micDriverName.length > 20 ? micDriverName.substring(0,20)+'...' : micDriverName})
+                </span>
                 <span className="meter-val" style={{ color: micLevel === 0 ? '#888' : '#fff' }}>
-                  {rawMicLevel.toFixed(1).padStart(4, '0')}%
+                  {rawMicLevel.toFixed(1)}%
                 </span>
               </div>
               <div className="meter-bar" style={{ position: 'relative' }}>
@@ -1025,8 +1027,10 @@ function App() {
 
             <div className="meter-row">
               <div className="meter-header">
-                <span>OBS Output ({obsSourceName})</span>
-                <span className="meter-val">{obsLevel.toFixed(1).padStart(4, '0')}%</span>
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '200px' }}>
+                  OBS Output ({obsSourceName})
+                </span>
+                <span className="meter-val">{obsLevel.toFixed(1)}%</span>
               </div>
               <div className="meter-bar">
                 <div className="meter-fill obs" style={{ width: `${Math.min(obsLevel, 100)}%` }}></div>
@@ -1043,9 +1047,20 @@ function App() {
                 }
               }}
               style={{
-                background: isMonitoringActive ? '#1e3a24' : '#3a1e1e',
+                background: isMonitoringActive ? 'rgba(76, 175, 80, 0.15)' : 'rgba(244, 67, 54, 0.12)',
                 color: isMonitoringActive ? '#4caf50' : '#f44336',
-                borderColor: isMonitoringActive ? '#4caf50' : '#f44336'
+                borderColor: isMonitoringActive ? 'rgba(76, 175, 80, 0.4)' : 'rgba(244, 67, 54, 0.4)',
+                borderRadius: '6px',
+                padding: '9px 12px',
+                fontWeight: 'bold',
+                fontSize: '12px',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
+                width: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '6px'
               }}
             >
               {isMonitoringActive ? '● MONITORING ON' : '● MONITORING OFF'}

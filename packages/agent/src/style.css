@@ -56,7 +56,7 @@ body {
   font-size: 18px;
   font-weight: bold;
   width: 140px;
-    text-overflow: ellipsis;
+  text-overflow: ellipsis;
   outline: none;
   padding: 0;
 }
@@ -76,9 +76,9 @@ body {
   text-align: center;
 }
 
-.status-badge.AMAN { background: rgba(76, 175, 80, 0.15); color: #4caf50; border: 1px solid 2gba(76, 175, 80, 0.5); }
-.status-badge.BAHAYA_OBS_MUTE { background: rgba(244, 67, 54, 0.15); color: #f44336; border: 1px solid 2gba(244, 67, 54, 0.5); animation: blink 1s infinite; }
-.status-badge.BAHAYA_MIC_MATI { background: rgba(255, 152, 0, 0.15); color: #ff9800; border: 1px solid 2gba(255, 152, 0, 0.5); animation: blink 1s infinite; }
+.status-badge.AMAN { background: rgba(76, 175, 80, 0.15); color: #4caf50; border: 1px solid rgba(76, 175, 80, 0.5); }
+.status-badge.BAHAYA_OBS_MUTE { background: rgba(244, 67, 54, 0.15); color: #f44336; border: 1px solid rgba(244, 67, 54, 0.5); animation: blink 1s infinite; }
+.status-badge.BAHAYA_MIC_MATI { background: rgba(255, 152, 0, 0.15); color: #ff9800; border: 1px solid rgba(255, 152, 0, 0.5); animation: blink 1s infinite; }
 .status-badge.BAHAYA_AUDIO_PECAH { background: rgba(156, 39, 176, 0.15); color: #9c27b0; border: 1px solid rgba(156, 39, 176, 0.5); animation: blink 0.5s infinite; }
 .status-badge.STANDBY_DIAM { background: rgba(33, 150, 243, 0.15); color: #2196f3; border: 1px solid rgba(33, 150, 243, 0.5); }
 
@@ -90,38 +90,39 @@ body {
 
 .tabs {
   display: flex;
-  border-bottom: 1px solid #333;
-  background: #1a1a1a;
+  background: #141414;
   border-radius: 6px 6px 0 0;
-  border: 1px solid #333;
-  border-bottom: none;
+  border: 1px solid #2e2e2e;
+  border-bottom: 1px solid #252525;
+  overflow: hidden;
 }
 
 .tab {
   flex: 1;
   text-align: center;
-  padding: 10px;
+  padding: 9px 12px;
   font-size: 12px;
   cursor: pointer;
   color: #888;
   font-weight: 600;
-  transition: 0.2s;
+  transition: all 0.2s ease;
+  border-bottom: 2px solid transparent;
 }
 
 .tab:hover {
   color: #ccc;
-  background: #222;
+  background: #1c1c1c;
 }
 
 .tab.active {
   color: #fff;
+  background: #1c1c1c;
   border-bottom: 2px solid #2196f3;
-  background: #222;
 }
 
 .tab-content {
-  background: #1a1a1a;
-  border: 1px solid #333;
+  background: #141414;
+  border: 1px solid #2e2e2e;
   border-top: none;
   border-radius: 0 0 6px 6px;
 }
@@ -129,44 +130,50 @@ body {
 .meters-grid {
   display: flex;
   flex-direction: column;
-  gap: 15px;
+  gap: 10px;
 }
 
 .meter-row {
-  background: #222;
-  padding: 12px;
+  background: #1c1c1c;
+  padding: 10px 12px;
   border-radius: 6px;
-  border: 1px solid #333;
+  border: 1px solid #2e2e2e;
 }
 
 .meter-header {
   display: flex;
   justify-content: space-between;
-  font-size: 12px;
-  margin-bottom: 8px;
+  align-items: center;
+  font-size: 11.5px;
+  margin-bottom: 7px;
   color: #ccc;
 }
 
 .meter-val {
-  font-family: monospace;
-  font-weight: bold;
+  font-family: 'Consolas', 'Segoe UI Mono', monospace;
+  font-weight: 700;
+  font-size: 12px;
   color: #fff;
+  letter-spacing: 0.5px;
+  min-width: 45px;
+  text-align: right;
 }
 
 .meter-bar {
-  height: 10px;
-  background: #111;
-  border-radius: 5px;
+  height: 8px;
+  background: #0f0f0f;
+  border-radius: 4px;
   overflow: hidden;
   position: relative;
+  border: 1px solid #222;
 }
 
 .meter-fill {
   height: 100%;
-  transition: width 0.1s linear;
+  transition: width 0.08s ease-out;
 }
-.meter-fill.mic { background: linear-gradient(90deg, #4caf50 0%, #ffeb3b 80%, #f44336 100%); }
-.meter-fill.obs { background: linear-gradient(90deg, #1565c0 0%, #2196f3 100%); }
+.meter-fill.mic { background: linear-gradient(90deg, #4caf50 0%, #ffeb3b 75%, #f44336 100%); }
+.meter-fill.obs { background: linear-gradient(90deg, #1976d2 0%, #42a5f5 100%); }
 
 .settings-grid {
   display: flex;
