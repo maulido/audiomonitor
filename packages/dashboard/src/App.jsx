@@ -38,6 +38,13 @@ const SERVER_URL = window.location.port.startsWith('517') ? `http://${window.loc
 
 // Cache global untuk menyimpan durasi audio yang telah didecode (menghemat CPU & network)
 const audioDurationCache = new Map();
+const setAudioDurationCache = (url, duration) => {
+  if (audioDurationCache.size >= 500) {
+    const firstKey = audioDurationCache.keys().next().value;
+    if (firstKey) audioDurationCache.delete(firstKey);
+  }
+  audioDurationCache.set(url, duration);
+};
 
 const getMediaUrl = (url) => {
   if (!url) return '';
@@ -1070,7 +1077,7 @@ function App() {
               const decoded = await ctx.decodeAudioData(buf);
               const d = decoded.duration;
               if (d && isFinite(d) && !isNaN(d) && d > 0) {
-                audioDurationCache.set(mediaUrl, d);
+                setAudioDurationCache(mediaUrl, d);
                 return d;
               }
             } catch (err) {

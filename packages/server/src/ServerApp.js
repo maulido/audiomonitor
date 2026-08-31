@@ -68,6 +68,9 @@ class ServerApp {
       const origJson = res.json;
 
       res.send = function (body) {
+        if (req.method === 'HEAD' || res.statusCode === 204 || res.statusCode === 304 || res.headersSent) {
+          return origSend.call(this, body);
+        }
         if (typeof body === 'string' && body.length > 1024 && !res.getHeader('Content-Encoding')) {
           res.setHeader('Content-Encoding', 'gzip');
           const gzipped = zlib.gzipSync(Buffer.from(body, 'utf8'));
@@ -81,8 +84,11 @@ class ServerApp {
       };
 
       res.json = function (obj) {
+        if (req.method === 'HEAD' || res.statusCode === 204 || res.statusCode === 304 || res.headersSent) {
+          return origJson.call(this, obj);
+        }
         const jsonStr = JSON.stringify(obj);
-        if (jsonStr.length > 1024 && !res.getHeader('Content-Encoding')) {
+        if (jsonStr && jsonStr.length > 1024 && !res.getHeader('Content-Encoding')) {
           res.setHeader('Content-Type', 'application/json; charset=utf-8');
           res.setHeader('Content-Encoding', 'gzip');
           const gzipped = zlib.gzipSync(Buffer.from(jsonStr, 'utf8'));
