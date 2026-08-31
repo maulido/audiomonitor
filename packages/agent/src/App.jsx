@@ -1059,8 +1059,25 @@ function App() {
           </div>
         ) : (
           <div className="settings-grid">
-            <div className="setting-group full">
-              <label>Server URL {serverConnected ? <span style={{color: '#4caf50'}}>(Connected)</span> : <span style={{color: '#f44336'}}>(Disconnected)</span>}</label>
+            <div className="setting-group full" style={{ marginBottom: '4px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                <label style={{ margin: 0, fontWeight: 'bold', color: '#fff', fontSize: '12px' }}>Server URL</label>
+                <span style={{
+                  fontSize: '10px',
+                  fontWeight: 'bold',
+                  color: serverConnected ? '#4caf50' : '#e74c3c',
+                  background: serverConnected ? '#132817' : '#2b1414',
+                  border: '1px solid ' + (serverConnected ? '#23522b' : '#5c2222'),
+                  padding: '2px 7px',
+                  borderRadius: '3px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px'
+                }}>
+                  <i className="fa-solid fa-circle" style={{ fontSize: '6px' }}></i>
+                  {serverConnected ? 'Connected' : 'Disconnected'}
+                </span>
+              </div>
               <input 
                 type="text" 
                 value={serverIp} 
@@ -1068,6 +1085,7 @@ function App() {
                 onBlur={e => setCommittedServerIp(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter') setCommittedServerIp(e.target.value); }}
                 placeholder="http://192.168.1.100:4000" 
+                style={{ fontSize: '12px', width: '100%', boxSizing: 'border-box' }}
               />
             </div>
 
