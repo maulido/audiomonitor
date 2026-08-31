@@ -209,6 +209,11 @@ ipcMain.handle('get-obs-global-device', async (event, { collectionName, deviceKe
 });
 
 app.whenReady().then(() => {
+  // Daftarkan AppUserModelId agar Notifikasi Toast Windows dikenali dengan benar
+  if (process.platform === 'win32') {
+    app.setAppUserModelId('com.audiomonitor.agent');
+  }
+
   // Setup Auto Updater
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
@@ -847,9 +852,46 @@ ipcMain.on('stop-recording', (event, isRollover) => {
   }
 });
 
-// Menampilkan Pop-Up Notifikasi Windows
-ipcMain.on('show-notification', (event, { title, body }) => {
-  new Notification({ title, body }).show();
+// Menampilkan Pop-Up Notifikasi Windows Host
+ipcMain.on('show-notification', (event, { title, body, sound = true, urgency = 'normal' }) => {
+  if (!Notification.isSupported()) {
+    writeAgentLog('WARN', 'Notifikasi sistem tidak didukung di lingkungan ini');
+    return;
+  }
+
+  try {
+    let iconPath = path.join(__dirname, '../public/icon.png');
+    if (!isDev) {
+      iconPath = path.join(__dirname, '../dist/icon.png');
+    }
+
+    const notifOptions = {
+      title: title || 'Audio Monitor Agent',
+      body: body || '',
+      silent: !sound,
+      urgency: urgency || 'normal'
+    };
+
+    if (fs.existsSync(iconPath)) {
+      notifOptions.icon = iconPath;
+    }
+
+    const notif = new Notification(notifOptions);
+
+    // Saat pengguna mengklik notifikasi popup di layar Windows, buka dan fokuskan jendela Agent
+    notif.on('click', () => {
+      if (mainWindow) {
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        if (!mainWindow.isVisible()) mainWindow.show();
+        mainWindow.focus();
+      }
+    });
+
+    notif.show();
+    writeAgentLog('INFO', `[Notifikasi Windows] Ditampilkan: "${title}" - "${body}"`);
+  } catch (err) {
+    writeAgentLog('ERROR', `[Notifikasi Windows] Gagal menampilkan notifikasi: ${err.message}`);
+  }
 });
 
 // Mengambil Versi Aplikasi

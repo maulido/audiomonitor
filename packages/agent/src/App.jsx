@@ -783,8 +783,8 @@ function App() {
       const now = Date.now();
       if (now - lastNotificationTime.current > 10000 && enableWindowsNotifRef.current) { // 10 seconds throttle
         window.electronAPI.showNotification(
-          'Bahaya Audio!',
-          'Suara masuk ke Mic, tapi tidak masuk ke OBS. Periksa mute di OBS!'
+          'Bahaya Audio: OBS Mute!',
+          'Suara mikrofon terdeteksi aktif, namun input OBS dalam keadaan MUTE. Buka mute di OBS!'
         );
         lastNotificationTime.current = now;
       }
@@ -792,8 +792,8 @@ function App() {
       const now = Date.now();
       if (now - lastNotificationTime.current > 10000 && enableWindowsNotifRef.current) {
         window.electronAPI.showNotification(
-          'Suara Pecah / Clipping!',
-          'Volume mikrofon terlalu keras dan berisiko pecah di siaran!'
+          'Audio Clipping / Suara Pecah!',
+          'Volume mikrofon melebihi batas toleransi aman dan berisiko distorsi di siaran.'
         );
         lastNotificationTime.current = now;
       }
@@ -801,8 +801,8 @@ function App() {
       const now = Date.now();
       if (now - lastNotificationTime.current > 10000 && enableWindowsNotifRef.current) {
         window.electronAPI.showNotification(
-          'Hardware Mic Mati!',
-          'Tidak ada suara fisik yang masuk ke mikrofon selama beberapa waktu. Cek mute fisik atau kabel!'
+          'Hardware Mic Tidak Merespons!',
+          'Tidak ada sinyal suara fisik dari mikrofon selama batas waktu yang ditentukan. Periksa kabel atau mute fisik!'
         );
         lastNotificationTime.current = now;
       }
@@ -1218,13 +1218,45 @@ REC
                         Auto-Record on OBS Live
                       </label>
 
-                      <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', color: '#fff', fontSize: '12px' }}>
-                        <div className="switch">
-                          <input type="checkbox" checked={enableWindowsNotif} onChange={e => setEnableWindowsNotif(e.target.checked)} />
-                        <span className="slider"></span>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', gap: '8px' }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', color: '#fff', fontSize: '12px' }}>
+                          <div className="switch">
+                            <input type="checkbox" checked={enableWindowsNotif} onChange={e => setEnableWindowsNotif(e.target.checked)} />
+                            <span className="slider"></span>
+                          </div>
+                          Windows Notification
+                        </label>
+                        {enableWindowsNotif && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (window.electronAPI && window.electronAPI.showNotification) {
+                                window.electronAPI.showNotification(
+                                  'Uji Notifikasi Windows',
+                                  'Notifikasi Windows Audio Monitor Agent berfungsi dengan baik dan siap memberikan peringatan!'
+                                );
+                              }
+                            }}
+                            style={{
+                              background: '#2c3e50',
+                              color: '#ecf0f1',
+                              border: '1px solid #34495e',
+                              padding: '3px 8px',
+                              borderRadius: '3px',
+                              fontSize: '10px',
+                              fontWeight: 'bold',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '4px'
+                            }}
+                            title="Kirim notifikasi uji coba ke Windows Action Center"
+                          >
+                            <i className="fa-solid fa-bell"></i>
+                            Tes Notifikasi
+                          </button>
+                        )}
                       </div>
-                      Windows Notification
-                    </label>
                     <label style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#fff', fontSize: '12px', whiteSpace: 'nowrap' }}>
                       Data Polling Rate:
                       <select 
