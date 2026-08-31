@@ -148,24 +148,54 @@ function App() {
   // Helper estimasi / kalkulasi durasi rekaman sesi
   const calculateSessionDuration = (session) => {
     if (!session) return 0;
-    // 1. Total dari durasi transkrip jika tersedia
-    const sumPartDurations = (session.parts || []).reduce((acc, p) => acc + (p.transcriptDuration || 0), 0);
-    if (sumPartDurations > 0) return sumPartDurations;
 
-    // 2. Dari selisih jam mulai dan selesai
+    // 1. Total dari durasi transkrip jika semua part sudah ditranskrip
+    const sumPartDurations = (session.parts || []).reduce((acc, p) => acc + (p.transcriptDuration || 0), 0);
+    if (sumPartDurations > 0 && session.parts && session.parts.every(p => p.transcriptDuration > 0)) {
+      return sumPartDurations;
+    }
+
+    // 2. Dari selisih jam mulai dan selesai (untuk sesi yang sudah selesai)
     if (session.startTime && session.endTime && session.isCompleted) {
-      const [h1, m1, s1] = session.startTime.split(':').map(Number);
-      const [h2, m2, s2] = session.endTime.split(':').map(Number);
-      if (!isNaN(h1) && !isNaN(h2)) {
-        let diffSec = (h2 * 3600 + m2 * 60 + (s2 || 0)) - (h1 * 3600 + m1 * 60 + (s1 || 0));
-        if (diffSec < 0) diffSec += 86400; // lewat tengah malam
+      const startParts = session.startTime.replace(/-/g, ':').split(':').map(Number);
+      const endParts = session.endTime.replace(/-/g, ':').split(':').map(Number);
+      if (startParts.length >= 2 && endParts.length >= 2 && !isNaN(startParts[0]) && !isNaN(endParts[0])) {
+        const startSec = (startParts[0] || 0) * 3600 + (startParts[1] || 0) * 60 + (startParts[2] || 0);
+        let endSec = (endParts[0] || 0) * 3600 + (endParts[1] || 0) * 60 + (endParts[2] || 0);
+        if (endSec < startSec) endSec += 24 * 3600; // lewat tengah malam (overnight)
+        const diffSec = endSec - startSec;
         if (diffSec > 0) return diffSec;
       }
     }
 
-    // 3. Fallback estimasi dari ukuran WebM (~4 KB/s)
+    // 3. Untuk sesi yang sedang berlangsung (LIVE / Berlanjut...)
+    if (!session.isCompleted && session.startTime && session.dateStr) {
+      try {
+        const startParts = session.startTime.replace(/-/g, ':').split(':').map(Number);
+        const dateParts = session.dateStr.split('-').map(Number);
+        if (dateParts.length === 3 && startParts.length >= 2 && !isNaN(startParts[0]) && !isNaN(dateParts[0])) {
+          const startDate = new Date(dateParts[0], dateParts[1] - 1, dateParts[2], startParts[0], startParts[1], startParts[2] || 0);
+          const now = new Date();
+          const elapsedSec = Math.round((now.getTime() - startDate.getTime()) / 1000);
+          if (elapsedSec > 0 && elapsedSec < 7 * 86400) {
+            return elapsedSec;
+          }
+        }
+      } catch (e) {}
+    }
+
+    // 4. Hitung dari potongan part (estimasi per-part berdasar ukuran ~16KB/s Opus WebM)
+    if (session.parts && session.parts.length > 0) {
+      const partsDuration = session.parts.reduce((acc, p) => {
+        if (p.transcriptDuration && p.transcriptDuration > 0) return acc + p.transcriptDuration;
+        return acc + Math.max(1, Math.round((p.size || 0) / 16000));
+      }, 0);
+      if (partsDuration > 0) return partsDuration;
+    }
+
+    // 5. Fallback estimasi dari total ukuran WebM Opus (~16 KB/s / 128 kbps)
     if (session.totalSize > 0) {
-      return Math.max(1, Math.round(session.totalSize / 4096));
+      return Math.max(1, Math.round(session.totalSize / 16000));
     }
     return 0;
   };
