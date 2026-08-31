@@ -4024,25 +4024,25 @@ function App() {
 
                 {/* Storage Metric Grid */}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '12px', marginBottom: '20px' }}>
-                  <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px', padding: '12px', textAlign: 'center' }}>
+                  <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '8px', padding: '14px 12px', textAlign: 'center' }}>
                     <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Total Ukuran</div>
-                    <div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: '#f59e0b', marginTop: '2px' }}>{storageStatus?.totalMb || 0} MB</div>
-                    <div style={{ fontSize: '0.7rem', color: '#888' }}>({storageStatus?.totalGb || 0} GB)</div>
+                    <div style={{ fontSize: '1.25rem', fontWeight: 700, color: '#f59e0b', marginTop: '4px' }}>{storageStatus?.totalMb || 0} MB</div>
+                    <div style={{ fontSize: '0.7rem', color: '#888', marginTop: '2px' }}>({storageStatus?.totalGb || 0} GB)</div>
                   </div>
-                  <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px', padding: '12px', textAlign: 'center' }}>
+                  <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '8px', padding: '14px 12px', textAlign: 'center' }}>
                     <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Total Sesi</div>
-                    <div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: 'var(--text-main)', marginTop: '2px' }}>{storageStatus?.totalSessions || 0}</div>
-                    <div style={{ fontSize: '0.7rem', color: '#888' }}>{storageStatus?.totalFiles || 0} files</div>
+                    <div style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--text-main)', marginTop: '4px' }}>{storageStatus?.totalSessions || 0}</div>
+                    <div style={{ fontSize: '0.7rem', color: '#888', marginTop: '2px' }}>{storageStatus?.totalFiles || 0} files</div>
                   </div>
-                  <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px', padding: '12px', textAlign: 'center' }}>
+                  <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '8px', padding: '14px 12px', textAlign: 'center' }}>
                     <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Terarsip</div>
-                    <div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: '#10b981', marginTop: '2px' }}>{storageStatus?.archivedSessions || 0}</div>
-                    <div style={{ fontSize: '0.7rem', color: '#888' }}>Sesi Lama</div>
+                    <div style={{ fontSize: '1.25rem', fontWeight: 700, color: '#10b981', marginTop: '4px' }}>{storageStatus?.archivedSessions || 0}</div>
+                    <div style={{ fontSize: '0.7rem', color: '#888', marginTop: '2px' }}>Sesi Lama</div>
                   </div>
-                  <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px', padding: '12px', textAlign: 'center' }}>
-                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Tersinkron NAS/Cloud</div>
-                    <div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: '#38bdf8', marginTop: '2px' }}>{storageStatus?.syncedSessions || 0}</div>
-                    <div style={{ fontSize: '0.7rem', color: '#888' }}>Tercadangkan</div>
+                  <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '8px', padding: '14px 12px', textAlign: 'center' }}>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Tersinkron NAS</div>
+                    <div style={{ fontSize: '1.25rem', fontWeight: 700, color: '#38bdf8', marginTop: '4px' }}>{storageStatus?.syncedSessions || 0}</div>
+                    <div style={{ fontSize: '0.7rem', color: '#888', marginTop: '2px' }}>Tercadangkan</div>
                   </div>
                 </div>
 
@@ -4064,7 +4064,7 @@ function App() {
                   </div>
                 )}
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px', marginBottom: '16px' }}>
                   <div className="form-group" style={{ margin: 0 }}>
                     <label className="form-label">Direktori Cadangan Sekunder (NAS / External Drive)</label>
                     <input 
@@ -4091,7 +4091,7 @@ function App() {
                   </div>
                 </div>
 
-                <div className="form-group" style={{ marginBottom: '16px' }}>
+                <div className="form-group" style={{ marginBottom: '20px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
                     <label className="form-label" style={{ margin: 0 }}>Cloud Webhook Sync</label>
                     <label className="toggle-switch">
@@ -4114,22 +4114,32 @@ function App() {
                   <span className="form-help">Mengirim sinyal webhook dan metadata rekaman ke endpoint cloud saat sesi selesai.</span>
                 </div>
 
-                <div className="button-group">
+                <div className="button-group" style={{ marginTop: '0', marginBottom: '16px' }}>
                   <button className={`btn btn-primary ${isSavingStorageConfig ? 'is-loading' : ''}`} onClick={saveStorageAutomationConfig} disabled={isSavingStorageConfig}>
                     <i className={`fa-solid ${isSavingStorageConfig ? 'fa-spinner fa-spin' : 'fa-floppy-disk'}`}></i>
                     {isSavingStorageConfig ? 'Menyimpan...' : 'Simpan Konfigurasi Storage'}
                   </button>
-                  <button className={`btn btn-secondary ${isTriggeringSync ? 'is-loading' : ''}`} onClick={triggerManualBackupSync} disabled={isTriggeringSync}>
-                    <i className={`fa-solid ${isTriggeringSync ? 'fa-spinner fa-spin' : 'fa-arrows-rotate'}`}></i>
-                    {isTriggeringSync ? 'Menyinkronkan...' : 'Sinkronkan Cadangan Sekarang'}
-                  </button>
-                  <button className={`btn btn-secondary ${isTriggeringArchive ? 'is-loading' : ''}`} onClick={triggerManualArchive} disabled={isTriggeringArchive} style={{ background: 'rgba(245, 158, 11, 0.12)', borderColor: 'rgba(245, 158, 11, 0.3)', color: '#fbbf24' }}>
-                    <i className={`fa-solid ${isTriggeringArchive ? 'fa-spinner fa-spin' : 'fa-box-archive'}`}></i>
-                    {isTriggeringArchive ? 'Mengarsipkan...' : 'Arsipkan Berkas Lawas'}
-                  </button>
-                  <button className="btn btn-secondary" onClick={() => handleCleanHostStorage('all')} style={{ background: 'rgba(239, 68, 68, 0.12)', borderColor: 'rgba(239, 68, 68, 0.3)', color: '#f87171' }}>
-                    <i className="fa-solid fa-trash-can"></i> Hapus Audio di Semua PC Host
-                  </button>
+                </div>
+
+                {/* Sub-section: Tindakan Pemeliharaan & Sinkronisasi Manual */}
+                <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                  <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '10px' }}>
+                    Tindakan Pemeliharaan & Operasi Manual:
+                  </div>
+                  <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                    <button className="btn-filter secondary" onClick={triggerManualBackupSync} disabled={isTriggeringSync} style={{ padding: '8px 14px' }}>
+                      <i className={`fa-solid ${isTriggeringSync ? 'fa-spinner fa-spin' : 'fa-arrows-rotate'}`}></i>
+                      <span>{isTriggeringSync ? 'Menyinkronkan...' : 'Sinkronkan Cadangan ke NAS'}</span>
+                    </button>
+                    <button className="btn-filter secondary" onClick={triggerManualArchive} disabled={isTriggeringArchive} style={{ padding: '8px 14px', color: '#fbbf24', borderColor: 'rgba(251, 191, 36, 0.35)' }}>
+                      <i className={`fa-solid ${isTriggeringArchive ? 'fa-spinner fa-spin' : 'fa-box-archive'}`}></i>
+                      <span>{isTriggeringArchive ? 'Mengarsipkan...' : 'Arsipkan Berkas Lawas'}</span>
+                    </button>
+                    <button className="btn-filter secondary" onClick={() => handleCleanHostStorage('all')} style={{ padding: '8px 14px', color: '#f87171', borderColor: 'rgba(248, 113, 113, 0.35)' }}>
+                      <i className="fa-solid fa-trash-can"></i>
+                      <span>Hapus Audio Terupload di Semua PC Host</span>
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
