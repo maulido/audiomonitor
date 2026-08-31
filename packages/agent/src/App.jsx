@@ -195,7 +195,8 @@ function App() {
       clearInterval(sourcesTimer);
     };
   }, [obsConnected]);
-  const [autoStart, setAutoStart] = useState(false);
+
+  const [autoStart, setAutoStart] = useState(() => localStorage.getItem('autoStart') === 'true');
   
     const [obsSyncRecording, setObsSyncRecording] = useState(() => localStorage.getItem('obsSyncRecording') === 'true');
     const obsSyncRecordingRef = useRef(obsSyncRecording);
@@ -329,8 +330,31 @@ function App() {
   }, []);
 
   useEffect(() => {
-    window.electronAPI.getAutostart().then(val => setAutoStart(val)).catch(console.error);
+    if (window.electronAPI && window.electronAPI.getAutostart) {
+      window.electronAPI.getAutostart().then(val => {
+        if (typeof val === 'boolean') {
+          setAutoStart(val);
+          localStorage.setItem('autoStart', val ? 'true' : 'false');
+        }
+      }).catch(console.error);
+    }
   }, []);
+
+  const handleToggleAutoStart = async (newVal) => {
+    setAutoStart(newVal);
+    localStorage.setItem('autoStart', newVal ? 'true' : 'false');
+    if (window.electronAPI && window.electronAPI.setAutostart) {
+      try {
+        const actual = await window.electronAPI.setAutostart(newVal);
+        if (typeof actual === 'boolean') {
+          setAutoStart(actual);
+          localStorage.setItem('autoStart', actual ? 'true' : 'false');
+        }
+      } catch (err) {
+        console.error('Failed to set autostart:', err);
+      }
+    }
+  };
 
   
   
@@ -1166,11 +1190,7 @@ REC
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '8px', color: '#ccc', fontSize: '12px' }}>
                   <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', color: '#fff', fontSize: '12px' }}>
                     <div className="switch">
-                      <input type="checkbox" checked={autoStart} onChange={e => {
-                        const val = e.target.checked;
-                        setAutoStart(val);
-                        window.electronAPI.setAutostart(val);
-                      }} />
+                      <input type="checkbox" checked={autoStart} onChange={e => handleToggleAutoStart(e.target.checked)} />
                       <span className="slider"></span>
                     </div>
                     Auto Start with Windows

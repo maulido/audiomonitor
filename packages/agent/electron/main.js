@@ -267,16 +267,32 @@ ipcMain.handle('get-uuid', () => {
 });
 
 ipcMain.handle('get-autostart', () => {
-  return app.getLoginItemSettings().openAtLogin;
+  try {
+    const settings = app.getLoginItemSettings();
+    return Boolean(settings.openAtLogin);
+  } catch (err) {
+    logger.error(`[Autostart] Error reading autostart: ${err.message}`);
+    return false;
+  }
 });
 
 // Mengatur agar aplikasi menyala otomatis (Startup) ketika Windows boot
-ipcMain.on('set-autostart', (event, enable) => {
-  app.setLoginItemSettings({
-    openAtLogin: enable,
-    path: app.getPath('exe'),
-    args: ['--hidden']
-  });
+ipcMain.handle('set-autostart', (event, enable) => {
+  try {
+    const isEnable = Boolean(enable);
+    app.setLoginItemSettings({
+      openAtLogin: isEnable,
+      openAsHidden: true,
+      path: app.getPath('exe'),
+      args: ['--hidden']
+    });
+    const current = app.getLoginItemSettings().openAtLogin;
+    logger.info(`[Autostart] Pengaturan autostart diubah ke: ${isEnable} (Status saat ini: ${current})`);
+    return Boolean(current);
+  } catch (err) {
+    logger.error(`[Autostart] Gagal mengatur autostart: ${err.message}`);
+    return false;
+  }
 });
 
 let previousCpus = require('os').cpus();
