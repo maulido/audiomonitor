@@ -1715,9 +1715,6 @@ function App() {
                               <div className="pc-name-wrapper">
                                 <span className="pc-name-title" title={agent.pcName}>{agent.pcName}</span>
                                 <span className="badge-agent-version">v{agent.appVersion || '1.0.2'}</span>
-                                {agent.isStreaming && (
-                                  <span className="live-badge">LIVE {agent.streamTimecode || ''}</span>
-                                )}
                               </div>
                               <div className="card-actions">
                                 <button 
@@ -1776,16 +1773,26 @@ function App() {
                         </div>
                         {isCompactMode ? (
                           <div className="pc-meta-row">
+                            {agent.isStreaming && (
+                              <span className="live-badge">LIVE {agent.streamTimecode || ''}</span>
+                            )}
                             <span className="pc-meta-item">IP: {agent.localIp || 'Unknown'}</span>
                             {agent.currentScene && (
-                              <span className="pc-meta-item scene-pill"><i className="fa-solid fa-film" style={{ marginRight: '4px' }}></i>{agent.currentScene}</span>
+                              <span className="pc-meta-item scene-pill" title={agent.currentScene}>
+                                <i className="fa-solid fa-film" style={{ marginRight: '4px' }}></i>{agent.currentScene}
+                              </span>
                             )}
                           </div>
                         ) : (
                           <>
-                            <div className="pc-id">ID: {agent.uuid} &bull; IP: {agent.localIp || 'Unknown'}</div>
+                            <div className="pc-meta-row">
+                              {agent.isStreaming && (
+                                <span className="live-badge">LIVE {agent.streamTimecode || ''}</span>
+                              )}
+                              <span className="pc-id" style={{ margin: 0 }}>ID: {agent.uuid} &bull; IP: {agent.localIp || 'Unknown'}</span>
+                            </div>
                             {agent.currentScene && (
-                              <div className="pc-id" style={{ marginTop: '3px', color: 'var(--accent)', fontWeight: 'bold' }}>
+                              <div className="pc-id pc-scene-line" title={agent.currentScene}>
                                 <i className="fa-solid fa-film" style={{ marginRight: '5px' }}></i>Scene: {agent.currentScene}
                               </div>
                             )}
