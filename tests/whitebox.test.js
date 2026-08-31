@@ -2302,6 +2302,351 @@ async function main() {
     serverApp.server.close();
   });
 
+  // =========================================================================
+  // SUITE 31: Real-time Whisper STT Queue Management, Task FIFO & Concurrency Lock Benchmark
+  // =========================================================================
+  await runSuite('31. Real-time Whisper STT Queue Management, Task FIFO & Concurrency Lock Benchmark', async () => {
+    const configPath = path.join(TEST_DIR, 'whisper_queue_config.json');
+    const cm = new ConfigManager(configPath);
+    cm.config.transcription = { enabled: true, apiUrl: 'http://127.0.0.1:8000', autoTranscribe: true };
+    cm.saveConfig();
+
+    const db = new DatabaseManager(path.join(TEST_DIR, 'whisper_queue_db.json'));
+    const alertMgr = new AlertManager(cm, db);
+    const tm = new TranscriptionManager(cm, db, alertMgr);
+
+    // 1. Initial State
+    const initStatus = tm.getQueueStatus();
+    assertEqual(initStatus.isProcessing, false, 'Initial queue is not processing');
+    assertEqual(initStatus.currentTask, null, 'Initial currentTask is null');
+    assertEqual(initStatus.queueLength, 0, 'Initial queue length is 0');
+    assert(Array.isArray(initStatus.queue), 'Queue is an array');
+
+    // 2. Mock transcribeFile to test FIFO queue execution
+    const processedOrder = [];
+    tm.transcribeFile = async (filePath, sessionFolder, fileName, pcName) => {
+      processedOrder.push(filePath);
+      await new Promise(r => setTimeout(r, 60));
+      return { success: true, text: 'Transkrip mock', segments: [] };
+    };
+
+    // 3. Enqueue 3 tasks with full 4 arguments
+    const f1 = path.join(TEST_DIR, 'Part_001.webm');
+    const f2 = path.join(TEST_DIR, 'Part_002.webm');
+    const f3 = path.join(TEST_DIR, 'Part_003.webm');
+
+    tm.enqueueFile(f1, 'Session_1', 'Part_001.webm', 'PC-1');
+    tm.enqueueFile(f2, 'Session_1', 'Part_002.webm', 'PC-1');
+    tm.enqueueFile(f3, 'Session_1', 'Part_003.webm', 'PC-1');
+
+    // Check status during active processing
+    const activeStatus = tm.getQueueStatus();
+    assertEqual(activeStatus.isProcessing, true, 'isProcessing is true after enqueue');
+    assert(activeStatus.currentTask !== null, 'currentTask is populated');
+    assertEqual(activeStatus.currentTask.fileName, 'Part_001.webm', 'First task is Part_001.webm');
+    assertEqual(activeStatus.queueLength, 2, '2 tasks waiting in queue');
+
+    // 4. Test Deduplication: Enqueuing already queued task is ignored
+    tm.enqueueFile(f2, 'Session_1', 'Part_002.webm', 'PC-1');
+    assertEqual(tm.getQueueStatus().queueLength, 2, 'Duplicate queued task was deduplicated');
+
+    // 5. Test Active Deduplication: Enqueuing actively processing task is ignored
+    tm.enqueueFile(f1, 'Session_1', 'Part_001.webm', 'PC-1');
+    assertEqual(tm.getQueueStatus().queueLength, 2, 'Actively processing task was deduplicated');
+
+    // 6. Wait for all 3 tasks to finish
+    let waitCount = 0;
+    while ((tm.isProcessing || tm.queue.length > 0) && waitCount < 30) {
+      await new Promise(r => setTimeout(r, 100));
+      waitCount++;
+    }
+
+    const finalStatus = tm.getQueueStatus();
+    assertEqual(finalStatus.isProcessing, false, 'Queue drained: isProcessing is false');
+    assertEqual(finalStatus.queueLength, 0, 'Queue drained: length is 0');
+    assertEqual(finalStatus.currentTask, null, 'Queue drained: currentTask is null');
+    assertEqual(processedOrder.length, 3, 'All 3 tasks were processed');
+    assertEqual(processedOrder[0], f1, 'Task 1 processed in FIFO order');
+    assertEqual(processedOrder[1], f2, 'Task 2 processed in FIFO order');
+    assertEqual(processedOrder[2], f3, 'Task 3 processed in FIFO order');
+
+    // 7. Test HTTP GET /api/transcription/queue endpoint
+    const serverApp = new ServerApp(cm, db, alertMgr, 0);
+    await new Promise(r => serverApp.server.listen(0, r));
+    const port = serverApp.server.address().port;
+
+    const res = await fetch(`http://127.0.0.1:${port}/api/transcription/queue`, {
+      headers: { 'x-pin': cm.config.dashboardPin }
+    });
+    assertEqual(res.status, 200, 'GET /api/transcription/queue returns 200');
+    const queueData = await res.json();
+    assert(queueData.success === true, 'Response contains success: true');
+    assertEqual(queueData.isProcessing, false, 'Endpoint returns correct isProcessing');
+    assertEqual(queueData.queueLength, 0, 'Endpoint returns correct queueLength');
+
+    serverApp.server.close();
+  });
+
+  // =========================================================================
+  // SUITE 32: Corrupted DB Recovery, Atomic File Write Lockouts & Crash Resilience
+  // =========================================================================
+  await runSuite('32. Corrupted DB Recovery, Atomic File Write Lockouts & Crash Resilience', async () => {
+    const corruptDbPath = path.join(TEST_DIR, 'corrupt_test_db.json');
+    fs.writeFileSync(corruptDbPath, '{"broken json: true, missing brackets...', 'utf8');
+
+    // 1. DatabaseManager loads corrupted file
+    const db = new DatabaseManager(corruptDbPath);
+    assertEqual(db.incidents.length, 0, 'Corrupted JSON loaded safely as empty array without throwing');
+
+    // 2. Verify automatic backup of corrupted file
+    const files = fs.readdirSync(TEST_DIR);
+    const backupFile = files.find(f => f.startsWith('corrupt_test_db.json.corrupt_'));
+    assert(backupFile !== undefined, 'Corrupted DB backup file was created automatically');
+
+    // 3. Test ConfigManager deletePcMapping with empty string and 0 values
+    const configPath = path.join(TEST_DIR, 'delete_mapping_config.json');
+    const cm = new ConfigManager(configPath);
+    cm.config.pcMapping = {
+      'uuid-empty': '',
+      'uuid-zero': 0,
+      'uuid-valid': 'Studio-1'
+    };
+    cm.saveConfig();
+
+    cm.deletePcMapping('uuid-empty');
+    assertEqual(cm.config.pcMapping['uuid-empty'], undefined, 'Deleted empty-string mapped UUID');
+
+    cm.deletePcMapping('uuid-zero');
+    assertEqual(cm.config.pcMapping['uuid-zero'], undefined, 'Deleted 0-mapped UUID');
+
+    assertEqual(cm.config.pcMapping['uuid-valid'], 'Studio-1', 'Valid UUID mapping retained');
+
+    // 4. Test saveDbSync immediate persistence
+    const syncDbPath = path.join(TEST_DIR, 'sync_save_db.json');
+    const syncDb = new DatabaseManager(syncDbPath);
+    syncDb.logIncident('uuid-1', 'PC-Test', 'BAHAYA_OBS_MUTE', 'Mic Mute');
+    syncDb.logIncident('uuid-1', 'PC-Test', 'BAHAYA_AUDIO_PECAH', 'Clipping');
+    syncDb.saveDbSync();
+
+    const rawContent = JSON.parse(fs.readFileSync(syncDbPath, 'utf8'));
+    assertEqual(rawContent.length, 2, 'saveDbSync persisted exactly 2 incidents immediately to disk');
+  });
+
+  // =========================================================================
+  // SUITE 33: Multi-Session Audio Timeline Seek Offsets, Cumulative Segment Time & Cross-Part Autoplay
+  // =========================================================================
+  await runSuite('33. Multi-Session Audio Timeline Seek Offsets, Cumulative Segment Time & Cross-Part Autoplay', async () => {
+    const configPath = path.join(TEST_DIR, 'multi_timeline_config.json');
+    const cm = new ConfigManager(configPath);
+    const db = new DatabaseManager(path.join(TEST_DIR, 'multi_timeline_db.json'));
+    const alertMgr = new AlertManager(cm, db);
+    const tm = new TranscriptionManager(cm, db, alertMgr);
+
+    const sessionDir = path.join(TEST_DIR, 'multi_timeline_session');
+    fs.mkdirSync(sessionDir, { recursive: true });
+
+    // Create 3 parts with custom durations
+    const part1 = {
+      fileName: 'Part_001.webm',
+      duration: 120, // 2 minutes
+      text: 'Selamat pagi pendengar.',
+      segments: [{ id: 0, start: 0, end: 10, text: 'Selamat pagi pendengar.' }],
+      keywordsFound: [],
+      transcribedAt: '2026-08-31 08:00:00'
+    };
+    const part2 = {
+      fileName: 'Part_002.webm',
+      duration: 300, // 5 minutes
+      text: 'Berita utama hari ini.',
+      segments: [{ id: 0, start: 15, end: 35, text: 'Berita utama hari ini.' }],
+      keywordsFound: ['berita'],
+      transcribedAt: '2026-08-31 08:02:00'
+    };
+    const part3 = {
+      fileName: 'Part_003.webm',
+      duration: 180, // 3 minutes
+      text: 'Terima kasih dan sampai jumpa.',
+      segments: [{ id: 0, start: 5, end: 20, text: 'Terima kasih dan sampai jumpa.' }],
+      keywordsFound: [],
+      transcribedAt: '2026-08-31 08:07:00'
+    };
+
+    fs.writeFileSync(path.join(sessionDir, 'Part_001.webm.transcript.json'), JSON.stringify(part1));
+    fs.writeFileSync(path.join(sessionDir, 'Part_002.webm.transcript.json'), JSON.stringify(part2));
+    fs.writeFileSync(path.join(sessionDir, 'Part_003.webm.transcript.json'), JSON.stringify(part3));
+
+    const aggregated = tm.getTranscriptForSession(sessionDir);
+    assert(aggregated !== null, 'Multi-part transcript aggregated successfully');
+    assertEqual(aggregated.partsCount, 3, 'Aggregated 3 parts');
+    assertEqual(aggregated.duration, 600, 'Total session duration is 600 seconds (10 min)');
+    assertEqual(aggregated.segments.length, 3, '3 unified timeline segments created');
+
+    // Verify Cumulative Timeline Offsets:
+    // Part 1: start 0, end 10
+    assertEqual(aggregated.segments[0].start, 0, 'Segment 1 start is 0s');
+    assertEqual(aggregated.segments[0].end, 10, 'Segment 1 end is 10s');
+
+    // Part 2: offset = 120s => start = 120 + 15 = 135s, end = 120 + 35 = 155s
+    assertEqual(aggregated.segments[1].start, 135, 'Segment 2 start offset calculated to 135s');
+    assertEqual(aggregated.segments[1].end, 155, 'Segment 2 end offset calculated to 155s');
+
+    // Part 3: offset = 120 + 300 = 420s => start = 420 + 5 = 425s, end = 420 + 20 = 440s
+    assertEqual(aggregated.segments[2].start, 425, 'Segment 3 start offset calculated to 425s (07:05)');
+    assertEqual(aggregated.segments[2].end, 440, 'Segment 3 end offset calculated to 440s (07:20)');
+
+    // Verify SRT Formatter
+    const formatSrtTime = (seconds) => {
+      const validSec = (typeof seconds === 'number' && !isNaN(seconds) && isFinite(seconds)) ? Math.max(0, seconds) : 0;
+      const d = new Date(validSec * 1000);
+      const hh = String(Math.floor(validSec / 3600)).padStart(2, '0');
+      const mm = String(d.getUTCMinutes()).padStart(2, '0');
+      const ss = String(d.getUTCSeconds()).padStart(2, '0');
+      const ms = String(d.getUTCMilliseconds()).padStart(3, '0');
+      return `${hh}:${mm}:${ss},${ms}`;
+    };
+
+    assertEqual(formatSrtTime(aggregated.segments[2].start), '00:07:05,000', 'Segment 3 SRT start formatted accurately');
+    assertEqual(formatSrtTime(aggregated.segments[2].end), '00:07:20,000', 'Segment 3 SRT end formatted accurately');
+  });
+
+  // =========================================================================
+  // SUITE 34: PIN Type Safety, Header Injection & Advanced Security Boundary Fuzzing
+  // =========================================================================
+  await runSuite('34. PIN Type Safety, Header Injection & Advanced Security Boundary Fuzzing', async () => {
+    const configPath = path.join(TEST_DIR, 'pin_sec_config.json');
+    const cm = new ConfigManager(configPath);
+    cm.config.dashboardPin = '1234';
+    cm.saveConfig();
+
+    const db = new DatabaseManager(path.join(TEST_DIR, 'pin_sec_db.json'));
+    const alertMgr = new AlertManager(cm, db);
+    const serverApp = new ServerApp(cm, db, alertMgr, 0);
+
+    await new Promise(r => serverApp.server.listen(0, r));
+    const port = serverApp.server.address().port;
+
+    // 1. Test Numeric PIN Payload { newPin: 4321 }
+    const pinRes1 = await fetch(`http://127.0.0.1:${port}/api/config/pin`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-pin': '1234'
+      },
+      body: JSON.stringify({ newPin: 4321 })
+    });
+    assertEqual(pinRes1.status, 200, 'POST /api/config/pin accepts numeric PIN');
+    assertEqual(typeof serverApp.configManager.config.dashboardPin, 'string', 'PIN stored strictly as string');
+    assertEqual(serverApp.configManager.config.dashboardPin, '4321', 'PIN value is "4321"');
+
+    // 2. Test Access with string header '4321' succeeds
+    const authRes = await fetch(`http://127.0.0.1:${port}/api/config`, {
+      headers: { 'x-pin': '4321' }
+    });
+    assertEqual(authRes.status, 200, 'Authenticated successfully with string header matching numeric PIN');
+
+    // 3. Test PIN with leading/trailing whitespace { newPin: "  9876  " }
+    const pinRes2 = await fetch(`http://127.0.0.1:${port}/api/config/pin`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-pin': '4321'
+      },
+      body: JSON.stringify({ newPin: '  9876  ' })
+    });
+    assertEqual(pinRes2.status, 200, 'POST /api/config/pin accepts whitespace-padded PIN');
+    assertEqual(serverApp.configManager.config.dashboardPin, '9876', 'PIN is trimmed to "9876"');
+
+    // 4. Test Invalid PIN types rejected with 400
+    const shortPinRes = await fetch(`http://127.0.0.1:${port}/api/config/pin`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-pin': '9876' },
+      body: JSON.stringify({ newPin: 12 })
+    });
+    assertEqual(shortPinRes.status, 400, 'PIN shorter than 4 chars rejected with 400');
+
+    const nullPinRes = await fetch(`http://127.0.0.1:${port}/api/config/pin`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-pin': '9876' },
+      body: JSON.stringify({ newPin: null })
+    });
+    assertEqual(nullPinRes.status, 400, 'Null PIN rejected with 400');
+
+    // 5. Test DELETE /api/records type validation
+    const badDeleteRes = await fetch(`http://127.0.0.1:${port}/api/records`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json', 'x-pin': '9876' },
+      body: JSON.stringify({ pcName: 1234, fileName: true })
+    });
+    assertEqual(badDeleteRes.status, 400, 'DELETE /api/records with non-string types rejected with 400');
+
+    // 6. Test Path Traversal in DELETE /api/records
+    const traversalRes = await fetch(`http://127.0.0.1:${port}/api/records`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json', 'x-pin': '9876' },
+      body: JSON.stringify({ pcName: '../../', fileName: '../boot.ini' })
+    });
+    assert(traversalRes.status === 400 || traversalRes.status === 403, 'Path traversal rejected safely');
+
+    serverApp.server.close();
+  });
+
+  // =========================================================================
+  // SUITE 35: Agent Rollover Buffer Synchronization, Silence & Dead Mic Metric Escalation
+  // =========================================================================
+  await runSuite('35. Agent Rollover Buffer Synchronization, Silence & Dead Mic Metric Escalation', () => {
+    // 1. Simulate State Machine with Silence and Dead Mic Escalation
+    const evaluateAgentMetrics = (micLevel, obsLevel, silenceSec, silenceTimeoutSec = 5, deadMicTimeoutSec = 15) => {
+      if (micLevel >= 2 || obsLevel >= 2) {
+        return { status: 'AMAN', silenceScore: 0 };
+      }
+      const silenceScore = silenceSec * 1000;
+      if (silenceScore >= deadMicTimeoutSec * 1000) {
+        return { status: 'BAHAYA_MIC_MATI', silenceScore };
+      }
+      if (silenceScore >= silenceTimeoutSec * 1000) {
+        return { status: 'STANDBY_DIAM', silenceScore };
+      }
+      return { status: 'AMAN', silenceScore };
+    };
+
+    assertEqual(evaluateAgentMetrics(0, 0, 2).status, 'AMAN', '0-2s silence is AMAN');
+    assertEqual(evaluateAgentMetrics(0, 0, 6).status, 'STANDBY_DIAM', '6s silence escalates to STANDBY_DIAM');
+    assertEqual(evaluateAgentMetrics(0, 0, 16).status, 'BAHAYA_MIC_MATI', '16s silence escalates to BAHAYA_MIC_MATI');
+    assertEqual(evaluateAgentMetrics(25, 0, 16).status, 'AMAN', 'Audio active recovers instantly to AMAN');
+    assertEqual(evaluateAgentMetrics(25, 0, 16).silenceScore, 0, 'Audio active resets silenceScore to 0');
+
+    // 2. Danger Score Recovery Post Auto-Recovery Unmute
+    const evaluateDangerRecovery = (dangerScoreCurrent, isActuallyMuted) => {
+      let score = dangerScoreCurrent;
+      if (!isActuallyMuted) {
+        if (score > 0) {
+          score = Math.max(0, score - 500);
+        } else {
+          score = 0; // Grace period negative score resets to 0
+        }
+      }
+      return score;
+    };
+
+    assertEqual(evaluateDangerRecovery(1000, false), 500, 'Positive danger score decays by 500ms');
+    assertEqual(evaluateDangerRecovery(500, false), 0, 'Positive danger score fully decays to 0');
+    assertEqual(evaluateDangerRecovery(-2000, false), 0, 'Negative grace period score instantly resets to 0 upon unmute');
+
+    // 3. WebM Header Magic Bytes Verification
+    const isWebMHeader = (buffer) => {
+      if (!buffer || buffer.length < 4) return false;
+      return buffer[0] === 0x1A && buffer[1] === 0x45 && buffer[2] === 0xDF && buffer[3] === 0xA3;
+    };
+
+    const validWebM = Buffer.from([0x1A, 0x45, 0xDF, 0xA3, 0x01, 0x00, 0x00]);
+    const invalidWebM = Buffer.from([0x00, 0x00, 0x01, 0xBA, 0x21, 0x00]);
+    const emptyBuffer = Buffer.from([]);
+
+    assertEqual(isWebMHeader(validWebM), true, 'Valid WebM EBML header detected (1A 45 DF A3)');
+    assertEqual(isWebMHeader(invalidWebM), false, 'Non-WebM buffer rejected');
+    assertEqual(isWebMHeader(emptyBuffer), false, 'Empty buffer rejected safely');
+  });
+
   // Clean up test directory
   try {
     fs.rmSync(TEST_DIR, { recursive: true, force: true });

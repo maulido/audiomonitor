@@ -22,17 +22,21 @@ class ServerApp {
    * Konstruktor inisiasi Server HTTP.
    * @param {number} port - Port jaringan yang akan digunakan (default 4000).
    */
-  constructor(port = 4000) {
-    this.port = port;
+  constructor(configManagerOrPort = 4000, dbManager = null, alertManager = null, port = 4000) {
+    if (typeof configManagerOrPort === 'object' && configManagerOrPort !== null) {
+      this.port = typeof port === 'number' ? port : 4000;
+      this.configManager = configManagerOrPort;
+      this.dbManager = dbManager || new DatabaseManager();
+      this.alertManager = alertManager || new AlertManager(this.configManager, this.dbManager);
+    } else {
+      this.port = typeof configManagerOrPort === 'number' ? configManagerOrPort : 4000;
+      this.configManager = new ConfigManager();
+      this.dbManager = new DatabaseManager();
+      this.alertManager = new AlertManager(this.configManager, this.dbManager);
+    }
     this.app = express();
     this.server = http.createServer(this.app);
     
-    // Inisialisasi Modul-Modul Inti (Roda Gigi Utama Server)
-    this.configManager = new ConfigManager();
-    this.dbManager = new DatabaseManager();
-    
-    // AlertManager butuh akses ke Config (untuk token) & DB (untuk simpan log)
-    this.alertManager = new AlertManager(this.configManager, this.dbManager);
     this.dbManager.autoCleanup(this.configManager.config.logRetentionDays || 30);
     
     // TelemetryHub mengatur lalu-lintas WebSocket
@@ -686,7 +690,7 @@ class ServerApp {
     // API: Mengambil status antrean transkripsi Whisper secara real-time
     this.app.get('/api/transcription/queue', (req, res) => {
       const status = this.transcriptionManager ? this.transcriptionManager.getQueueStatus() : { isProcessing: false, currentTask: null, queue: [], queueLength: 0 };
-      res.json({ success: true, status });
+      res.json({ success: true, status, ...status });
     });
 
     // API: Mengambil konfigurasi Speech-to-Text Whisper
