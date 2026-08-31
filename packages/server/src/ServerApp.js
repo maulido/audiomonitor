@@ -127,10 +127,7 @@ class ServerApp {
     const mediaRepairLocks = new Set();
 
     this.app.use('/media', (req, res, next) => {
-      const recordDir = path.resolve(
-        this.configManager.config.recordDir || 
-        path.join(os.homedir(), 'Documents', 'AudioMonitor-Recordings-Server')
-      );
+      const recordDir = this.getRecordsDir();
       
       let decodedPath = '';
       try {
@@ -826,7 +823,7 @@ class ServerApp {
       const { folder, file } = req.query || {};
       if (!folder || typeof folder !== 'string') return res.status(400).json({ success: false, error: 'Folder parameter is required' });
 
-      const baseDir = path.resolve(this.configManager.config.recordDir || path.join(os.homedir(), 'Documents', 'AudioMonitor-Recordings-Server'));
+      const baseDir = this.getRecordsDir();
       const safeFolder = path.basename(folder).replace(/[^a-zA-Z0-9_\-\. ]/g, '').trim();
       if (!safeFolder || safeFolder === '.' || safeFolder === '..' || safeFolder.startsWith('..')) {
         return res.status(400).json({ success: false, error: 'Invalid folder path' });
@@ -868,7 +865,7 @@ class ServerApp {
         return res.status(400).json({ success: false, error: 'folder parameter is required' });
       }
 
-      const baseDir = path.resolve(this.configManager.config.recordDir || path.join(os.homedir(), 'Documents', 'AudioMonitor-Recordings-Server'));
+      const baseDir = this.getRecordsDir();
       const safeFolder = path.basename(folder).replace(/[^a-zA-Z0-9_\-\. ]/g, '').trim();
 
       if (!safeFolder || safeFolder === '.' || safeFolder === '..' || safeFolder.startsWith('..')) {
@@ -939,7 +936,7 @@ class ServerApp {
       const cleanQuery = q.trim().substring(0, 200);
       if (!cleanQuery) return res.json({ success: true, results: [] });
 
-      const baseDir = path.resolve(this.configManager.config.recordDir || path.join(os.homedir(), 'Documents', 'AudioMonitor-Recordings-Server'));
+      const baseDir = this.getRecordsDir();
       const results = this.transcriptionManager.searchTranscripts(cleanQuery, baseDir, {
         startDate: typeof startDate === 'string' ? startDate : '',
         endDate: typeof endDate === 'string' ? endDate : '',
