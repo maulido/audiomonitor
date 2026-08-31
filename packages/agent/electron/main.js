@@ -276,7 +276,7 @@ ipcMain.handle('get-autostart', () => {
     const settings = app.getLoginItemSettings();
     return Boolean(settings.openAtLogin);
   } catch (err) {
-    logger.error(`[Autostart] Error reading autostart: ${err.message}`);
+    writeAgentLog('ERROR', `[Autostart] Error reading autostart: ${err.message}`);
     return false;
   }
 });
@@ -292,10 +292,10 @@ ipcMain.handle('set-autostart', (event, enable) => {
       args: ['--hidden']
     });
     const current = app.getLoginItemSettings().openAtLogin;
-    logger.info(`[Autostart] Pengaturan autostart diubah ke: ${isEnable} (Status saat ini: ${current})`);
+    writeAgentLog('INFO', `[Autostart] Pengaturan autostart diubah ke: ${isEnable} (Status saat ini: ${current})`);
     return Boolean(current);
   } catch (err) {
-    logger.error(`[Autostart] Gagal mengatur autostart: ${err.message}`);
+    writeAgentLog('ERROR', `[Autostart] Gagal mengatur autostart: ${err.message}`);
     return false;
   }
 });
