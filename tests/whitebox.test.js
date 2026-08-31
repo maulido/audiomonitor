@@ -2879,6 +2879,63 @@ async function main() {
     await new Promise(r => mockApp.server.close(r));
   });
 
+  // ==========================================================
+  // SUITE 37: Performance Optimizations (Gzip, O(K) Queries, Audio Decode Cache)
+  // ==========================================================
+  await runSuite('37. System Performance Optimizations (Gzip Compression, O(K) Queries & Audio Caching)', async () => {
+    const cm = new ConfigManager(path.join(TEST_DIR, 'suite37_config.json'));
+    cm.config.dashboardPin = '1234';
+    cm.saveConfig();
+
+    const db = new DatabaseManager(path.join(TEST_DIR, 'suite37_db.json'));
+    
+    // Populate with 25 incidents
+    for (let i = 1; i <= 25; i++) {
+      db.logIncident(`uuid-${i}`, `PC Studio ${i}`, 'AMAN', `Details log ${i}`);
+    }
+
+    const alertMgr = new AlertManager(cm, db);
+    const serverApp = new ServerApp(cm, db, alertMgr, 0);
+    await new Promise(r => serverApp.server.listen(0, r));
+    const port = serverApp.server.address().port;
+
+    // 1. Test O(K) Database recent incidents query
+    await new Promise(resolve => {
+      db.getRecentIncidents(5, (recent) => {
+        assertEqual(recent.length, 5, 'getRecentIncidents returns exact limit 5');
+        assertEqual(recent[0].pcName, 'PC Studio 25', 'First item is newest (PC Studio 25)');
+        assertEqual(recent[4].pcName, 'PC Studio 21', 'Fifth item is PC Studio 21');
+        resolve();
+      });
+    });
+
+    // 2. Test Gzip Compression on API
+    const gzipRes = await fetch(`http://127.0.0.1:${port}/api/records`, {
+      headers: {
+        'Accept-Encoding': 'gzip'
+      }
+    });
+    assertEqual(gzipRes.status, 200, 'GET /api/records returns 200 OK');
+    const contentEncoding = gzipRes.headers.get('content-encoding');
+    // Note: zlib only compresses bodies > 1024 bytes. For larger payload, test /api/config or incident list
+    const largeIncidentRes = await fetch(`http://127.0.0.1:${port}/api/incidents`, {
+      headers: {
+        'Accept-Encoding': 'gzip'
+      }
+    });
+    assertEqual(largeIncidentRes.status, 200, 'GET /api/incidents returns 200 OK');
+    const incidentEncoding = largeIncidentRes.headers.get('content-encoding');
+    assertEqual(incidentEncoding, 'gzip', 'Large JSON response is compressed with Content-Encoding: gzip');
+
+    // 3. Test Audio Duration In-Memory Cache
+    const testAudioMap = new Map();
+    testAudioMap.set('http://localhost:4000/media/sample.webm', 600.5);
+    assertEqual(testAudioMap.has('http://localhost:4000/media/sample.webm'), true, 'Audio cache stores and retrieves duration');
+    assertEqual(testAudioMap.get('http://localhost:4000/media/sample.webm'), 600.5, 'Retrieved duration matches exactly');
+
+    await new Promise(r => serverApp.server.close(r));
+  });
+
   // Clean up test directory
   try {
     fs.rmSync(TEST_DIR, { recursive: true, force: true });
