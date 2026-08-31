@@ -46,7 +46,9 @@ function App() {
   const [agents, setAgents] = useState({});
   const [isConnected, setIsConnected] = useState(false);
   const [editingId, setEditingId] = useState(null);
-    const [dialogParams, setDialogParams] = useState(null);
+  const [dialogParams, setDialogParams] = useState(null);
+  const [dialogInputValue, setDialogInputValue] = useState('');
+
   const customAlert = (message, title = 'Notifikasi') => {
     return new Promise((resolve) => {
       setDialogParams({
@@ -56,12 +58,24 @@ function App() {
       });
     });
   };
+
   const customConfirm = (message, title = 'Konfirmasi') => {
     return new Promise((resolve) => {
       setDialogParams({
         type: 'confirm', title, message,
         onConfirm: () => { setDialogParams(null); resolve(true); },
         onCancel: () => { setDialogParams(null); resolve(false); }
+      });
+    });
+  };
+
+  const customPrompt = (message, title = 'Input Diperlukan', defaultValue = '', isPassword = false) => {
+    setDialogInputValue(defaultValue);
+    return new Promise((resolve) => {
+      setDialogParams({
+        type: 'prompt', title, message, isPassword,
+        onConfirm: (val) => { setDialogParams(null); resolve(val); },
+        onCancel: () => { setDialogParams(null); resolve(null); }
       });
     });
   };
@@ -269,9 +283,10 @@ function App() {
   const [loginError, setLoginError] = useState('');
 
   const apiFetch = async (endpoint, options = {}) => {
+    let activePin = pin || sessionStorage.getItem('dashboardPin') || '';
     const headers = {
       'Content-Type': 'application/json',
-      'x-pin': pin,
+      'x-pin': activePin,
       ...(options.headers || {})
     };
     const res = await fetch(`${SERVER_URL}${endpoint}`, { ...options, headers });
@@ -280,6 +295,18 @@ function App() {
       sessionStorage.removeItem('dashboardPin');
     }
     return res;
+  };
+
+  const ensurePin = async () => {
+    let currentPin = pin || sessionStorage.getItem('dashboardPin') || '';
+    if (!currentPin) {
+      const entered = await customPrompt('Masukkan PIN Dashboard (default: 1234) untuk otorisasi:', 'PIN Diperlukan', '', true);
+      if (!entered) return null;
+      currentPin = entered.trim();
+      setPin(currentPin);
+      sessionStorage.setItem('dashboardPin', currentPin);
+    }
+    return currentPin;
   };
 
   const handleLogin = async (e) => {
@@ -1296,28 +1323,40 @@ function App() {
 
   const submitInlineRename = async (e, uuid) => {
     e.preventDefault();
-    if (client.current && editingName.trim() !== '') {
-      try {
-        await client.current.renamePC(uuid, editingName.trim(), pin);
+    if (editingName.trim() === '') return;
 
-        // Optimistically update the UI immediately
-        setAgents((prev) => {
-          if (prev[uuid]) {
-            return {
-              ...prev,
-              [uuid]: {
-                ...prev[uuid],
-                pcName: editingName.trim()
-              }
-            };
-          }
-          return prev;
-        });
+    const activePin = await ensurePin();
+    if (!activePin) return;
 
-        setEditingId(null);
-      } catch (err) {
-        console.error(err);
-        await customAlert('Error renaming PC', 'Error');
+    try {
+      if (client.current) {
+        await client.current.renamePC(uuid, editingName.trim(), activePin);
+      }
+
+      // Optimistically update the UI immediately
+      setAgents((prev) => {
+        if (prev[uuid]) {
+          return {
+            ...prev,
+            [uuid]: {
+              ...prev[uuid],
+              pcName: editingName.trim()
+            }
+          };
+        }
+        return prev;
+      });
+
+      setEditingId(null);
+    } catch (err) {
+      console.error(err);
+      if (err.message && err.message.includes('401')) {
+        sessionStorage.removeItem('dashboardPin');
+        setPin('');
+        setIsAuthenticated(false);
+        await customAlert('PIN salah atau otorisasi ditolak.', 'PIN Salah');
+      } else {
+        await customAlert('Gagal mengubah nama PC', 'Error');
       }
     }
   };
@@ -1479,17 +1518,48 @@ function App() {
 
 
   const handleDeletePC = async (uuid) => {
-    const confirmed = await customConfirm('Apakah Anda yakin ingin menghapus PC ini dari Dashboard?', 'Hapus PC?');
-      if (confirmed) {
-      try {
-        await client.current.deletePC(uuid, pin);
-      } catch (e) {
-        await customAlert('Gagal menghapus PC', 'Error');
+    const pcObj = agents[uuid];
+    const pcName = pcObj?.pcName || uuid;
+    const confirmed = await customConfirm(`Apakah Anda yakin ingin menghapus "${pcName}" dari Dashboard?`, 'Hapus PC?');
+    if (!confirmed) return;
+
+    const activePin = await ensurePin();
+    if (!activePin) return;
+
+    try {
+      const res = await fetch(`${SERVER_URL}/api/pc/${uuid}`, {
+        method: 'DELETE',
+        headers: { 'x-pin': activePin }
+      });
+
+      if (res.status === 401) {
+        sessionStorage.removeItem('dashboardPin');
+        setPin('');
+        setIsAuthenticated(false);
+        await customAlert('PIN salah atau otorisasi ditolak. PC gagal dihapus.', 'PIN Salah');
+        return;
       }
+
+      if (res.ok) {
+        setAgents(prev => {
+          const next = { ...prev };
+          delete next[uuid];
+          return next;
+        });
+        await customAlert(`PC "${pcName}" berhasil dihapus dari Dashboard.`, 'Berhasil Dihapus');
+      } else {
+        const err = await res.json().catch(() => ({}));
+        await customAlert(`Gagal menghapus PC: ${err.message || err.error || 'Server error'}`, 'Gagal');
+      }
+    } catch (e) {
+      await customAlert(`Gagal menghapus PC: ${e.message}`, 'Error');
     }
   };
 
   const togglePcMonitoring = async (uuid, active) => {
+    const activePin = await ensurePin();
+    if (!activePin) return;
+
     // Optimistically update local state so button responds immediately
     setAgents(prev => ({
       ...prev,
@@ -1497,17 +1567,37 @@ function App() {
     }));
 
     try {
-      await apiFetch(`/api/pc/${uuid}/monitoring`, {
+      const res = await fetch(`${SERVER_URL}/api/pc/${uuid}/monitoring`, {
         method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-pin': activePin
+        },
         body: JSON.stringify({ active })
       });
+
+      if (res.status === 401) {
+        sessionStorage.removeItem('dashboardPin');
+        setPin('');
+        setIsAuthenticated(false);
+        setAgents(prev => ({
+          ...prev,
+          [uuid]: { ...prev[uuid], isMonitoringActive: !active }
+        }));
+        await customAlert('PIN salah atau otorisasi ditolak.', 'PIN Salah');
+        return;
+      }
+
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
     } catch (e) {
       // Revert on failure
       setAgents(prev => ({
         ...prev,
         [uuid]: { ...prev[uuid], isMonitoringActive: !active }
       }));
-      await customAlert('Failed to toggle PC monitoring', 'Error');
+      await customAlert('Gagal mengubah status monitoring PC', 'Error');
     }
   };
 
@@ -1618,19 +1708,50 @@ function App() {
       
       {dialogParams && (
         <div className="modal-overlay" style={{ zIndex: 9999 }}>
-          <div className="modal" style={{ maxWidth: '400px', backgroundColor: '#1a1a1a', border: '1px solid rgba(255,255,255,0.1)' }}>
+          <div className="modal" style={{ maxWidth: '420px', backgroundColor: '#1a1a1a', border: '1px solid rgba(255,255,255,0.1)' }}>
             <div className="modal-header">
               <h3 style={{ margin: 0, fontSize: '1.1rem' }}>{dialogParams.title}</h3>
               <button type="button" className="close-btn" onClick={dialogParams.onCancel}>&times;</button>
             </div>
-            <div className="modal-body" style={{ padding: '24px' }}>
-              <p style={{ margin: 0, fontSize: '0.95rem', color: '#ccc' }}>{dialogParams.message}</p>
+            <div className="modal-body" style={{ padding: '20px 24px' }}>
+              <p style={{ margin: 0, fontSize: '0.95rem', color: '#ccc', lineHeight: '1.4' }}>{dialogParams.message}</p>
+              {dialogParams.type === 'prompt' && (
+                <form 
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    dialogParams.onConfirm(dialogInputValue);
+                  }}
+                  style={{ marginTop: '16px' }}
+                >
+                  <input
+                    autoFocus
+                    type={dialogParams.isPassword ? 'password' : 'text'}
+                    className="form-input"
+                    value={dialogInputValue}
+                    onChange={(e) => setDialogInputValue(e.target.value)}
+                    placeholder={dialogParams.isPassword ? 'Masukkan PIN Dashboard...' : ''}
+                    style={{ width: '100%', padding: '10px 14px' }}
+                  />
+                </form>
+              )}
             </div>
-            <div className="modal-footer" style={{ padding: '16px 24px', display: 'flex', justifyContent: 'flex-end', gap: '10px', background: 'rgba(255,255,255,0.02)', borderTop: '1px solid rgba(255,255,255,0.04)' }}>
-              {dialogParams.type === 'confirm' && (
+            <div className="modal-footer" style={{ padding: '14px 24px', display: 'flex', justifyContent: 'flex-end', gap: '10px', background: 'rgba(255,255,255,0.02)', borderTop: '1px solid rgba(255,255,255,0.04)' }}>
+              {(dialogParams.type === 'confirm' || dialogParams.type === 'prompt') && (
                 <button type="button" style={{ background: 'rgba(255,255,255,0.1)', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '6px', cursor: 'pointer', fontWeight: 600 }} onClick={dialogParams.onCancel}>Batal</button>
               )}
-              <button type="button" style={{ background: dialogParams.type === 'confirm' ? 'var(--danger)' : 'var(--accent)', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '6px', cursor: 'pointer', fontWeight: 600 }} onClick={dialogParams.onConfirm}>OK</button>
+              <button 
+                type="button" 
+                style={{ background: dialogParams.type === 'confirm' ? 'var(--danger)' : 'var(--accent)', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '6px', cursor: 'pointer', fontWeight: 600 }} 
+                onClick={() => {
+                  if (dialogParams.type === 'prompt') {
+                    dialogParams.onConfirm(dialogInputValue);
+                  } else {
+                    dialogParams.onConfirm();
+                  }
+                }}
+              >
+                OK
+              </button>
             </div>
           </div>
         </div>
