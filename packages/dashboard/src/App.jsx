@@ -1145,6 +1145,79 @@ function App() {
     }
   };
 
+  const handlePurgeSessionAudio = async (session) => {
+    if (!session || !session.folderName) return;
+    const activePin = await ensurePin();
+    if (!activePin) return;
+
+    const confirmed = await customConfirm(
+      `Hapus file audio (.webm) pada server untuk sesi:\n"${session.pcName} - ${session.dateStr || ''} (${session.timeStr || ''})"?\n\nKapasitas harddisk server akan dibebaskan, sedangkan file transkrip teks percakapan akan tetap tersimpan dan dapat dibaca kapan saja.`,
+      'Hapus Audio (Simpan Transkrip)'
+    );
+    if (!confirmed) return;
+
+    try {
+      const res = await apiFetch('/api/records/purge-session-audio', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ folderName: session.folderName })
+      });
+      let data = {};
+      try {
+        data = await res.json();
+      } catch (e) {
+        throw new Error(`Server tidak merespons JSON (Status: ${res.status}). Pastikan aplikasi Server backend telah dimulai ulang.`);
+      }
+
+      if (res.ok && data.success) {
+        await customAlert(`Pembersihan audio selesai.\n\nMembebaskan ${data.freedMb} MB ruang disk server. Berkas transkrip teks percakapan tetap tersimpan aman.`, 'Audio Berhasil Dihapus');
+        fetchRecords();
+      } else {
+        await customAlert(data.error || data.message || 'Gagal menghapus audio sesi.', 'Gagal');
+      }
+    } catch (e) {
+      await customAlert(`Terjadi kesalahan: ${e.message}`, 'Error');
+    }
+  };
+
+  const handleDeleteFullSession = async (session) => {
+    if (!session || !session.folderName) return;
+    const activePin = await ensurePin();
+    if (!activePin) return;
+
+    const confirmed = await customConfirm(
+      `PERINGATAN: Apakah Anda yakin ingin menghapus SELURUH sesi ini (termasuk seluruh file audio dan file transkripnya) dari Server?\n\nSesi: "${session.pcName} - ${session.dateStr || ''} (${session.timeStr || ''})"\n\nTindakan ini tidak dapat dibatalkan.`,
+      'Konfirmasi Hapus Total Sesi'
+    );
+    if (!confirmed) return;
+
+    try {
+      const res = await apiFetch('/api/records/session', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ folderName: session.folderName })
+      });
+      let data = {};
+      try {
+        data = await res.json();
+      } catch (e) {
+        throw new Error(`Server tidak merespons JSON (Status: ${res.status}). Pastikan aplikasi Server backend telah dimulai ulang.`);
+      }
+
+      if (res.ok && data.success) {
+        await customAlert('Seluruh sesi rekaman dan transkrip berhasil dihapus dari server.', 'Sesi Terhapus');
+        if (playingSession?.folderName === session.folderName) {
+          setPlayingSession(null);
+        }
+        fetchRecords();
+      } else {
+        await customAlert(data.error || data.message || 'Gagal menghapus sesi.', 'Gagal');
+      }
+    } catch (e) {
+      await customAlert(`Terjadi kesalahan: ${e.message}`, 'Error');
+    }
+  };
+
   useEffect(() => {
     fetchConfig();
     checkServerUpdates();
@@ -2615,6 +2688,8 @@ function App() {
                 endTime: r.endTime,
                 createdAt: r.createdAt,
                 totalSize: 0,
+                hasAudio: false,
+                audioPurged: false,
                 hasTranscript: false,
                 hasAlertKeyword: false,
                 transcriptSnippet: '',
@@ -2643,6 +2718,8 @@ function App() {
               sess.keywordsFound = [...new Set([...sess.keywordsFound, ...r.keywordsFound])];
             }
             sess.parts.push(r);
+            sess.hasAudio = sess.parts.some(p => p.hasAudio !== false && !p.audioPurged && (p.size > 0 || p.url));
+            sess.audioPurged = sess.parts.every(p => p.audioPurged === true || p.hasAudio === false);
           });
 
           // Sort parts inside each session by fileName
@@ -3375,17 +3452,31 @@ function App() {
                                           </button>
                                         )}
                                         <button 
-                                          className="btn-filter secondary"
-                                          style={{ padding: '4px 10px', fontSize: '0.75rem' }}
+                                          className="btn-filter secondary" 
+                                          style={{ padding: '4px 10px', fontSize: '0.75rem' }} 
                                           onClick={() => openTranscriptModal(session.folderName, null, session.pcName)}
                                           title="Buka transkrip sesi ini"
                                         >
                                           <i className="fa-solid fa-file-lines"></i> Transkrip
                                         </button>
+                                        {session.hasAudio !== false && !session.audioPurged && (
+                                          <button 
+                                            className="btn-export-action" 
+                                            style={{ color: '#f87171', borderColor: 'rgba(248, 113, 113, 0.35)' }}
+                                            onClick={() => handlePurgeSessionAudio(session)}
+                                            title="Hapus file audio (.webm) di server, simpan transkrip"
+                                          >
+                                            <i className="fa-solid fa-broom"></i>
+                                          </button>
+                                        )}
                                         <button 
-                                          className="btn-filter primary"
-                                          style={{ padding: '4px 10px', fontSize: '0.75rem' }}
+                                          className="btn-filter primary" 
+                                          style={{ padding: '4px 10px', fontSize: '0.75rem', opacity: (session.audioPurged || session.hasAudio === false) ? 0.6 : 1 }}
                                           onClick={() => {
+                                            if (session.audioPurged || session.hasAudio === false) {
+                                              customAlert('File audio untuk sesi ini telah dibersihkan dari server untuk menghemat storage. Anda tetap dapat membaca dan mengunduh transkrip percakapan ini.', 'Audio Telah Dibersihkan');
+                                              return;
+                                            }
                                             if (playingSession?.folderName !== session.folderName) {
                                               setPlayingSession(session);
                                             }
@@ -3393,9 +3484,17 @@ function App() {
                                             setCurrentPartIndex(0);
                                             setLocalCurrentTime(0);
                                           }}
-                                          title="Putar sesi ini"
+                                          title={session.audioPurged || session.hasAudio === false ? "Audio dibersihkan (Transkrip siap)" : "Putar sesi ini"}
                                         >
-                                          <i className="fa-solid fa-play"></i> Putar
+                                          <i className={`fa-solid ${session.audioPurged || session.hasAudio === false ? 'fa-file-lines' : 'fa-play'}`}></i> {session.audioPurged || session.hasAudio === false ? 'Transkrip' : 'Putar'}
+                                        </button>
+                                        <button 
+                                          className="btn-export-action" 
+                                          style={{ color: 'var(--text-muted)', borderColor: 'rgba(255, 255, 255, 0.1)' }}
+                                          onClick={() => handleDeleteFullSession(session)}
+                                          title="Hapus total sesi ini dari server"
+                                        >
+                                          <i className="fa-solid fa-trash"></i>
                                         </button>
                                       </div>
                                     </div>
@@ -3464,6 +3563,9 @@ function App() {
 
                                         <div className="session-meta" style={{ marginTop: '4px' }}>
                                           Total: {session.parts.length} Potongan &bull; {(session.totalSize / 1024 / 1024).toFixed(2)} MB
+                                          {(session.audioPurged || session.hasAudio === false) && (
+                                            <span style={{ color: '#94a3b8', marginLeft: '6px' }}>(Audio Dibersihkan)</span>
+                                          )}
                                         </div>
                                       </div>
 
@@ -3490,24 +3592,44 @@ function App() {
                                         )}
 
                                         {/* Download Audio */}
-                                        <button 
-                                          className="btn-export-action"
-                                          onClick={() => {
-                                            session.parts.forEach(p => {
-                                              const a = document.createElement('a');
-                                              a.href = getMediaUrl(p.url);
-                                              a.download = p.fileName || 'audio.webm';
-                                              a.click();
-                                            });
-                                          }}
-                                          title="Unduh seluruh potongan audio (.webm)"
-                                        >
-                                          <i className="fa-solid fa-download"></i> Audio
-                                        </button>
+                                        {session.hasAudio !== false && !session.audioPurged && (
+                                          <button 
+                                            className="btn-export-action"
+                                            onClick={() => {
+                                              session.parts.forEach(p => {
+                                                if (p.url) {
+                                                  const a = document.createElement('a');
+                                                  a.href = getMediaUrl(p.url);
+                                                  a.download = p.fileName || 'audio.webm';
+                                                  a.click();
+                                                }
+                                              });
+                                            }}
+                                            title="Unduh seluruh potongan audio (.webm)"
+                                          >
+                                            <i className="fa-solid fa-download"></i> Audio
+                                          </button>
+                                        )}
+
+                                        {/* Hapus Audio Saja (Simpan Transkrip) vs Audio Purged Badge */}
+                                        {session.hasAudio !== false && !session.audioPurged ? (
+                                          <button
+                                            className="btn-export-action"
+                                            style={{ color: '#f87171', borderColor: 'rgba(248, 113, 113, 0.35)' }}
+                                            onClick={() => handlePurgeSessionAudio(session)}
+                                            title="Hapus file audio (.webm) pada server untuk menghemat ruang disk, transkrip teks tetap disimpan"
+                                          >
+                                            <i className="fa-solid fa-file-audio"></i> Hapus Audio (Simpan Transkrip)
+                                          </button>
+                                        ) : (
+                                          <span className="transcript-status-badge" style={{ background: 'rgba(148, 163, 184, 0.12)', color: '#94a3b8', borderColor: 'rgba(148, 163, 184, 0.2)', fontSize: '0.74rem' }}>
+                                            <i className="fa-solid fa-file-lines"></i> Audio Dibersihkan (Transkrip Aman)
+                                          </span>
+                                        )}
 
                                         {/* View Transcript Modal */}
                                         <button 
-                                          className="btn-filter secondary"
+                                          className="btn-filter secondary" 
                                           style={{ padding: '6px 12px', fontSize: '0.85rem' }}
                                           onClick={() => openTranscriptModal(session.folderName, null, session.pcName)}
                                           title="Lihat transkrip teks percakapan seluruh sesi ini"
@@ -3515,21 +3637,36 @@ function App() {
                                           <i className="fa-solid fa-file-lines" style={{ color: 'var(--accent)', marginRight: '4px' }}></i> Transkrip Sesi
                                         </button>
 
-                                        {/* Play Continuous Session */}
-                                        <button 
-                                          className="btn-filter primary"
-                                          style={{ padding: '6px 14px', fontSize: '0.85rem' }}
-                                          onClick={() => {
-                                            if (playingSession?.folderName !== session.folderName) {
-                                              setPlayingSession(session);
-                                            }
-                                            pendingSeekOffsetRef.current = 0;
-                                            setCurrentPartIndex(0);
-                                            setLocalCurrentTime(0);
-                                          }}
-                                        >
-                                          <i className="fa-solid fa-play"></i> Putar Sesi Ini
-                                        </button>
+                                         {/* Play Continuous Session */}
+                                         <button 
+                                           className="btn-filter primary"
+                                           style={{ padding: '6px 14px', fontSize: '0.85rem', opacity: (session.audioPurged || session.hasAudio === false) ? 0.6 : 1 }}
+                                           onClick={() => {
+                                             if (session.audioPurged || session.hasAudio === false) {
+                                               customAlert('File audio (.webm) untuk sesi ini telah dihapus dari server untuk menghemat ruang disk. Anda tetap dapat membaca dan mengekspor seluruh transkrip percakapan sesi ini.', 'Audio Telah Dibersihkan');
+                                               return;
+                                             }
+                                             if (playingSession?.folderName !== session.folderName) {
+                                               setPlayingSession(session);
+                                             }
+                                             pendingSeekOffsetRef.current = 0;
+                                             setCurrentPartIndex(0);
+                                             setLocalCurrentTime(0);
+                                           }}
+                                         >
+                                           <i className={`fa-solid ${(session.audioPurged || session.hasAudio === false) ? 'fa-file-lines' : 'fa-play'}`}></i>
+                                           {(session.audioPurged || session.hasAudio === false) ? 'Audio Dibersihkan' : 'Putar Sesi Ini'}
+                                         </button>
+
+                                         {/* Delete Entire Session */}
+                                         <button 
+                                           className="btn-export-action"
+                                           style={{ color: 'var(--text-muted)', borderColor: 'rgba(255, 255, 255, 0.1)', padding: '6px 10px' }}
+                                           onClick={() => handleDeleteFullSession(session)}
+                                           title="Hapus total seluruh sesi rekaman dan transkrip dari Server"
+                                         >
+                                           <i className="fa-solid fa-trash"></i>
+                                         </button>
                                       </div>
                                     </div>
 
@@ -3563,6 +3700,10 @@ function App() {
                                               <button
                                                 className={`part-chip-btn ${isPartPlaying ? 'playing' : ''}`}
                                                 onClick={() => {
+                                                  if (part.audioPurged || part.hasAudio === false) {
+                                                    openTranscriptModal(session.folderName, part.fileName, session.pcName);
+                                                    return;
+                                                  }
                                                   if (playingSession?.folderName !== session.folderName) {
                                                     setPlayingSession(session);
                                                   }
@@ -3570,15 +3711,17 @@ function App() {
                                                   setCurrentPartIndex(pIdx);
                                                   setLocalCurrentTime(0);
                                                 }}
-                                                title={`Putar ${part.fileName}`}
+                                                title={(part.audioPurged || part.hasAudio === false) ? `Buka transkrip Part ${pIdx + 1}` : `Putar ${part.fileName}`}
                                               >
                                                 {isPartPlaying ? (
                                                   <i className="fa-solid fa-volume-high" style={{ color: 'var(--accent)' }}></i>
+                                                ) : (part.audioPurged || part.hasAudio === false) ? (
+                                                  <i className="fa-solid fa-file-lines" style={{ color: 'var(--accent)' }}></i>
                                                 ) : (
                                                   <i className="fa-solid fa-circle-play"></i>
                                                 )}
                                                 <span>Part {pIdx + 1}</span>
-                                                <span className="chip-size">({(((part.size || 0)) / 1024 / 1024).toFixed(2)} MB)</span>
+                                                <span className="chip-size">({(part.audioPurged || part.hasAudio === false) ? 'Transkrip' : `${(((part.size || 0)) / 1024 / 1024).toFixed(2)} MB`})</span>
                                                 {part.hasTranscript && (
                                                   <i className="fa-solid fa-file-lines" style={{ color: 'var(--accent)', fontSize: '0.75rem', marginLeft: '4px' }} title="Transkrip tersedia"></i>
                                                 )}

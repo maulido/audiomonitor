@@ -464,12 +464,11 @@ class ServerApp {
       });
     });
 
-    // API: Mengambil daftar file rekaman
+    // API: Mengambil daftar file rekaman (Termasuk sesi yang audionya telah dibersihkan namun transkrip tetap ada)
     this.app.get('/api/records', (req, res) => {
       const fs = require('fs');
       const path = require('path');
-      const os = require('os');
-      const recordDir = this.configManager.config.recordDir || path.join(os.homedir(), 'Documents', 'AudioMonitor-Recordings-Server');
+      const recordDir = this.getRecordsDir();
       
       const records = [];
       if (fs.existsSync(recordDir)) {
@@ -483,39 +482,51 @@ class ServerApp {
 
               const AUDIO_EXTS = new Set(['.webm', '.ogg', '.wav', '.mp3', '.m4a']);
               const files = fs.readdirSync(pcPath);
+              const audioFiles = [];
+              const transcriptFiles = [];
+              const isAudioPurged = fs.existsSync(path.join(pcPath, '.audio_purged.json'));
+
               for (const file of files) {
-                try {
-                  const ext = path.extname(file).toLowerCase();
-                  if (!AUDIO_EXTS.has(ext)) continue;
+                const ext = path.extname(file).toLowerCase();
+                if (AUDIO_EXTS.has(ext)) {
+                  audioFiles.push(file);
+                } else if (file.endsWith('.transcript.json')) {
+                  transcriptFiles.push(file);
+                }
+              }
 
-                  const filePath = path.join(pcPath, file);
-                  const stat = fs.statSync(filePath);
-                  if (!stat.isFile()) continue;
+              // Regex match folder: PC_Testing_3365df9b-62ec-46ed-8644-83db7d225868_2026-08-29_00-48-53_to_00-49-02
+              const match = pc.match(/^(.*)_([a-f0-9\-]{36})_(\d{4}-\d{2}-\d{2})_(\d{2}-\d{2}-\d{2})(?:_to_(\d{2}-\d{2}-\d{2}))?$/i);
+              let realPcName = pc;
+              let uuid = '';
+              let isParsed = false;
+              let isCompleted = /_to_\d{2}-\d{2}-\d{2}$/i.test(pc);
+              let baseSessionKey = pc.replace(/_to_\d{2}-\d{2}-\d{2}$/i, '');
+              let dateStr = '';
+              let timeStr = '';
+              
+              if (match) {
+                const pcNamePart = match[1];
+                uuid = match[2];
+                const datePart = match[3];
+                const startTime = match[4].replace(/-/g, ':');
+                const endTime = match[5] ? match[5].replace(/-/g, ':') : 'Berlanjut...';
+                isCompleted = !!match[5];
+                baseSessionKey = `${uuid}_${datePart}_${match[4]}`;
+                
+                realPcName = (this.configManager.getPcName ? this.configManager.getPcName(uuid) : this.configManager.config.pcMapping?.[uuid]) || pcNamePart.replace(/_/g, ' ') || uuid;
+                dateStr = datePart;
+                timeStr = `${startTime} - ${endTime}`;
+                isParsed = true;
+              }
 
-                  // Regex match folder: PC_Testing_3365df9b-62ec-46ed-8644-83db7d225868_2026-08-29_00-48-53_to_00-49-02
-                  const match = pc.match(/^(.*)_([a-f0-9\-]{36})_(\d{4}-\d{2}-\d{2})_(\d{2}-\d{2}-\d{2})(?:_to_(\d{2}-\d{2}-\d{2}))?$/i);
-                  let realPcName = pc;
-                  let uuid = '';
-                  let isParsed = false;
-                  let isCompleted = /_to_\d{2}-\d{2}-\d{2}$/i.test(pc);
-                  let baseSessionKey = pc.replace(/_to_\d{2}-\d{2}-\d{2}$/i, '');
-                  let dateStr = '';
-                  let timeStr = '';
-                  
-                  if (match) {
-                    const pcNamePart = match[1];
-                    uuid = match[2];
-                    const datePart = match[3];
-                    const startTime = match[4].replace(/-/g, ':');
-                    const endTime = match[5] ? match[5].replace(/-/g, ':') : 'Berlanjut...';
-                    isCompleted = !!match[5];
-                    baseSessionKey = `${uuid}_${datePart}_${match[4]}`;
-                    
-                    realPcName = (this.configManager.getPcName ? this.configManager.getPcName(uuid) : this.configManager.config.pcMapping?.[uuid]) || pcNamePart.replace(/_/g, ' ') || uuid;
-                    dateStr = datePart;
-                    timeStr = `${startTime} - ${endTime}`;
-                    isParsed = true;
-                  }
+              // 1. Jika ada file audio fisik
+              if (audioFiles.length > 0) {
+                for (const file of audioFiles) {
+                  try {
+                    const filePath = path.join(pcPath, file);
+                    const stat = fs.statSync(filePath);
+                    if (!stat.isFile()) continue;
 
                     const transcriptFile = path.join(pcPath, `${file}.transcript.json`);
                     const hasTranscript = fs.existsSync(transcriptFile);
@@ -540,7 +551,7 @@ class ServerApp {
                     }
 
                     records.push({
-                      folderName: pc, // original folder name for URL construction
+                      folderName: pc,
                       baseSessionKey,
                       isCompleted,
                       pcName: realPcName,
@@ -552,6 +563,8 @@ class ServerApp {
                       endTime: match && match[5] ? match[5] : '',
                       fileName: file,
                       size: stat.size,
+                      hasAudio: true,
+                      audioPurged: false,
                       hasTranscript,
                       transcriptSnippet,
                       keywordsFound,
@@ -563,19 +576,96 @@ class ServerApp {
                     logger.warn(`Gagal membaca file rekaman ${file}: ${fileErr.message}`);
                   }
                 }
-              } catch (folderErr) {
-                logger.warn(`Gagal membaca folder rekaman ${pc}: ${folderErr.message}`);
+              } 
+              // 2. Jika audio fisik telah dibersihkan tetapi file transkrip / marker masih ada
+              else if (transcriptFiles.length > 0 || isAudioPurged) {
+                if (transcriptFiles.length > 0) {
+                  for (const tf of transcriptFiles) {
+                    try {
+                      const transcriptPath = path.join(pcPath, tf);
+                      const tStat = fs.statSync(transcriptPath);
+                      let transcriptSnippet = '';
+                      let keywordsFound = [];
+                      let transcriptDuration = 0;
+
+                      try {
+                        const tData = JSON.parse(fs.readFileSync(transcriptPath, 'utf8'));
+                        if (tData.text) {
+                          const cleanT = tData.text.trim();
+                          transcriptSnippet = cleanT.length > 180 ? cleanT.substring(0, 180) + '...' : cleanT;
+                        }
+                        if (Array.isArray(tData.keywordsFound) && tData.keywordsFound.length > 0) {
+                          keywordsFound = tData.keywordsFound;
+                        }
+                        if (typeof tData.duration === 'number' && tData.duration > 0) {
+                          transcriptDuration = tData.duration;
+                        }
+                      } catch (e) {}
+
+                      records.push({
+                        folderName: pc,
+                        baseSessionKey,
+                        isCompleted,
+                        pcName: realPcName,
+                        uuid,
+                        isParsed,
+                        dateStr,
+                        timeStr,
+                        startTime: match ? match[4] : '',
+                        endTime: match && match[5] ? match[5] : '',
+                        fileName: tf.replace('.transcript.json', ''),
+                        size: 0,
+                        hasAudio: false,
+                        audioPurged: true,
+                        hasTranscript: true,
+                        transcriptSnippet,
+                        keywordsFound,
+                        transcriptDuration,
+                        createdAt: tStat.birthtime && tStat.birthtime.getTime() > 0 ? tStat.birthtime : tStat.mtime,
+                        url: ''
+                      });
+                    } catch (tErr) {
+                      logger.warn(`Gagal membaca transkrip terarsip ${tf}: ${tErr.message}`);
+                    }
+                  }
+                } else {
+                  records.push({
+                    folderName: pc,
+                    baseSessionKey,
+                    isCompleted,
+                    pcName: realPcName,
+                    uuid,
+                    isParsed,
+                    dateStr,
+                    timeStr,
+                    startTime: match ? match[4] : '',
+                    endTime: match && match[5] ? match[5] : '',
+                    fileName: 'audio.purged',
+                    size: 0,
+                    hasAudio: false,
+                    audioPurged: true,
+                    hasTranscript: false,
+                    transcriptSnippet: '',
+                    keywordsFound: [],
+                    transcriptDuration: 0,
+                    createdAt: pcStat.birthtime && pcStat.birthtime.getTime() > 0 ? pcStat.birthtime : pcStat.mtime,
+                    url: ''
+                  });
+                }
               }
+            } catch (folderErr) {
+              logger.warn(`Gagal membaca folder rekaman ${pc}: ${folderErr.message}`);
             }
-          } catch(e) {
-            logger.error("Error reading records directory", e);
           }
+        } catch(e) {
+          logger.error("Error reading records directory", e);
         }
-        
-        // Urutkan dari yang terbaru
-        records.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-        res.json(records);
-      });
+      }
+      
+      // Urutkan dari yang terbaru
+      records.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+      res.json(records);
+    });
 
     // API: Hapus file rekaman tunggal
     this.app.delete('/api/records', (req, res) => {
@@ -586,8 +676,7 @@ class ServerApp {
       
       const fs = require('fs');
       const path = require('path');
-      const os = require('os');
-      const baseDir = path.resolve(this.configManager.config.recordDir || path.join(os.homedir(), 'Documents', 'AudioMonitor-Recordings-Server'));
+      const baseDir = this.getRecordsDir();
       
       // Mencegah path traversal attack
       const safePcName = path.basename(pcName).replace(/[^a-zA-Z0-9_\-\. ]/g, '');
@@ -617,6 +706,118 @@ class ServerApp {
         }
       } else {
         res.status(404).json({ success: false, error: 'File not found' });
+      }
+    });
+
+    // API: Hapus file audio (.webm) pada server per sesi, namun tetap mempertahankan file transkrip
+    this.app.post('/api/records/purge-session-audio', (req, res) => {
+      const { folderName } = req.body || {};
+      if (!folderName || typeof folderName !== 'string') {
+        return res.status(400).json({ success: false, error: 'folderName is required' });
+      }
+
+      const fs = require('fs');
+      const path = require('path');
+      const baseDir = this.getRecordsDir();
+      const safeFolder = path.basename(folderName).replace(/[^a-zA-Z0-9_\-\. ]/g, '').trim();
+
+      if (!safeFolder || safeFolder === '.' || safeFolder === '..') {
+        return res.status(400).json({ success: false, error: 'Invalid folder path' });
+      }
+
+      const folderPath = path.resolve(baseDir, safeFolder);
+      const rel = path.relative(baseDir, folderPath);
+      if (rel.startsWith('..') || path.isAbsolute(rel)) {
+        return res.status(403).json({ success: false, error: 'Forbidden' });
+      }
+
+      if (!fs.existsSync(folderPath) || !fs.statSync(folderPath).isDirectory()) {
+        return res.status(404).json({ success: false, error: 'Folder sesi tidak ditemukan di server' });
+      }
+
+      const AUDIO_EXTS = new Set(['.webm', '.ogg', '.wav', '.mp3', '.m4a']);
+      let freedBytes = 0;
+      let deletedFiles = 0;
+      let preservedTranscripts = 0;
+
+      try {
+        const files = fs.readdirSync(folderPath);
+        for (const file of files) {
+          const ext = path.extname(file).toLowerCase();
+          const fullFilePath = path.join(folderPath, file);
+          try {
+            const stat = fs.statSync(fullFilePath);
+            if (AUDIO_EXTS.has(ext) && stat.isFile()) {
+              freedBytes += stat.size;
+              fs.unlinkSync(fullFilePath);
+              deletedFiles++;
+            } else if (file.endsWith('.transcript.json') || file.endsWith('.txt') || file.endsWith('.srt')) {
+              preservedTranscripts++;
+            }
+          } catch (err) {
+            logger.warn(`[PurgeAudio] Gagal menghapus file ${file}: ${err.message}`);
+          }
+        }
+
+        // Tulis penanda .audio_purged.json
+        const purgeMarkerPath = path.join(folderPath, '.audio_purged.json');
+        fs.writeFileSync(purgeMarkerPath, JSON.stringify({
+          purgedAt: new Date().toISOString(),
+          freedBytes,
+          freedMb: (freedBytes / (1024 * 1024)).toFixed(2),
+          deletedFiles,
+          preservedTranscripts
+        }));
+
+        const freedMb = (freedBytes / (1024 * 1024)).toFixed(2);
+        logger.info(`[PurgeAudio] Berhasil membersihkan audio sesi ${safeFolder} (${freedMb} MB dibebaskan, ${preservedTranscripts} transkrip dipertahankan).`);
+        res.json({
+          success: true,
+          freedBytes,
+          freedMb,
+          deletedFiles,
+          preservedTranscripts,
+          message: `Berhasil membebaskan ${freedMb} MB ruang disk server. Transkrip teks percakapan tetap tersimpan.`
+        });
+      } catch (err) {
+        logger.error(`[PurgeAudio] Gagal memproses pembersihan audio pada ${safeFolder}: ${err.message}`);
+        res.status(500).json({ success: false, error: err.message });
+      }
+    });
+
+    // API: Hapus seluruh sesi rekaman (audio beserta transkrip)
+    this.app.delete('/api/records/session', (req, res) => {
+      const { folderName } = req.body || {};
+      if (!folderName || typeof folderName !== 'string') {
+        return res.status(400).json({ success: false, error: 'folderName is required' });
+      }
+
+      const fs = require('fs');
+      const path = require('path');
+      const baseDir = this.getRecordsDir();
+      const safeFolder = path.basename(folderName).replace(/[^a-zA-Z0-9_\-\. ]/g, '').trim();
+
+      if (!safeFolder || safeFolder === '.' || safeFolder === '..') {
+        return res.status(400).json({ success: false, error: 'Invalid folder path' });
+      }
+
+      const folderPath = path.resolve(baseDir, safeFolder);
+      const rel = path.relative(baseDir, folderPath);
+      if (rel.startsWith('..') || path.isAbsolute(rel)) {
+        return res.status(403).json({ success: false, error: 'Forbidden' });
+      }
+
+      if (fs.existsSync(folderPath)) {
+        try {
+          fs.rmSync(folderPath, { recursive: true, force: true });
+          logger.info(`[DeleteSession] Seluruh sesi ${safeFolder} berhasil dihapus dari server.`);
+          res.json({ success: true, message: 'Seluruh sesi rekaman dan transkrip berhasil dihapus.' });
+        } catch (err) {
+          logger.error(`[DeleteSession] Gagal menghapus sesi ${safeFolder}: ${err.message}`);
+          res.status(500).json({ success: false, error: err.message });
+        }
+      } else {
+        res.status(404).json({ success: false, error: 'Folder sesi tidak ditemukan' });
       }
     });
 

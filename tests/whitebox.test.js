@@ -3476,6 +3476,88 @@ async function main() {
     await new Promise(r => serverApp.server.close(r));
   });
 
+  await runSuite('46. Server Per-Session Audio Purge, Transcript Preservation & Full Session Deletion', async () => {
+    const purgeTestDir = path.join(TEST_DIR, 'purge_session_records');
+    fs.mkdirSync(purgeTestDir, { recursive: true });
+
+    // Sesi 1: PC1_00000000-0000-0000-0000-000000000001_2026-08-31_10-00-00_to_10-15-00
+    const sessionFolderName = 'PC1_00000000-0000-0000-0000-000000000001_2026-08-31_10-00-00_to_10-15-00';
+    const sessionDir = path.join(purgeTestDir, sessionFolderName);
+    fs.mkdirSync(sessionDir, { recursive: true });
+
+    // Buat file audio dan file transkrip
+    const audioFilePath = path.join(sessionDir, 'part_1.webm');
+    const transcriptFilePath = path.join(sessionDir, 'part_1.webm.transcript.json');
+    fs.writeFileSync(audioFilePath, Buffer.alloc(102400)); // 100 KB
+    fs.writeFileSync(transcriptFilePath, JSON.stringify({
+      text: 'Halo ini rekaman penting rapat kerja',
+      keywordsFound: ['rapat'],
+      duration: 120
+    }));
+
+    const configManager = new ConfigManager(path.join(TEST_DIR, 'purge_test_config.json'));
+    const dbManager = new DatabaseManager(path.join(TEST_DIR, 'purge_test_db.json'));
+    const serverApp = new ServerApp(configManager, dbManager, null, 4399);
+    serverApp.getRecordsDir = () => purgeTestDir;
+    await new Promise(r => serverApp.server.listen(4399, r));
+
+    // 1. Verifikasi GET /api/records sebelum purge
+    const getBeforeRes = await fetch('http://localhost:4399/api/records');
+    assertEqual(getBeforeRes.status, 200, 'GET /api/records returns 200');
+    const recordsBefore = await getBeforeRes.json();
+    assertEqual(recordsBefore.length, 1, 'Found 1 record before purge');
+    assertEqual(recordsBefore[0].hasAudio, true, 'Record before purge has audio = true');
+    assertEqual(recordsBefore[0].audioPurged, false, 'Record before purge has audioPurged = false');
+    assertEqual(recordsBefore[0].hasTranscript, true, 'Record before purge has transcript = true');
+
+    // 2. Eksekusi POST /api/records/purge-session-audio
+    const purgeRes = await fetch('http://localhost:4399/api/records/purge-session-audio', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-pin': '1234' },
+      body: JSON.stringify({ folderName: sessionFolderName })
+    });
+    assertEqual(purgeRes.status, 200, 'POST /api/records/purge-session-audio returns 200 OK');
+    const purgeData = await purgeRes.json();
+    assertEqual(purgeData.success, true, 'Purge result success is true');
+    assertEqual(purgeData.deletedFiles, 1, '1 audio file was deleted');
+    assertEqual(purgeData.preservedTranscripts, 1, '1 transcript file was preserved');
+    assert(purgeData.freedBytes >= 102400, 'Freed bytes calculated correctly');
+
+    // Verifikasi kondisi file sistem fisik
+    assert(!fs.existsSync(audioFilePath), 'Audio file (.webm) is deleted from disk');
+    assert(fs.existsSync(transcriptFilePath), 'Transcript file (.transcript.json) is still preserved on disk');
+    assert(fs.existsSync(path.join(sessionDir, '.audio_purged.json')), 'Marker .audio_purged.json was written');
+
+    // 3. Verifikasi GET /api/records setelah audio di-purge (transkrip tetap terbaca)
+    const getAfterPurgeRes = await fetch('http://localhost:4399/api/records');
+    assertEqual(getAfterPurgeRes.status, 200, 'GET /api/records returns 200 after purge');
+    const recordsAfterPurge = await getAfterPurgeRes.json();
+    assertEqual(recordsAfterPurge.length, 1, 'Session still listed in records after audio purge');
+    assertEqual(recordsAfterPurge[0].hasAudio, false, 'hasAudio is now false');
+    assertEqual(recordsAfterPurge[0].audioPurged, true, 'audioPurged is now true');
+    assertEqual(recordsAfterPurge[0].hasTranscript, true, 'hasTranscript is still true');
+    assertEqual(recordsAfterPurge[0].transcriptSnippet, 'Halo ini rekaman penting rapat kerja', 'Transcript text snippet preserved');
+    assertEqual(recordsAfterPurge[0].keywordsFound[0], 'rapat', 'Keywords found preserved');
+
+    // 4. Eksekusi DELETE /api/records/session (Hapus total sesi)
+    const deleteSessionRes = await fetch('http://localhost:4399/api/records/session', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json', 'x-pin': '1234' },
+      body: JSON.stringify({ folderName: sessionFolderName })
+    });
+    assertEqual(deleteSessionRes.status, 200, 'DELETE /api/records/session returns 200 OK');
+    const deleteData = await deleteSessionRes.json();
+    assertEqual(deleteData.success, true, 'Delete session returns success');
+    assert(!fs.existsSync(sessionDir), 'Entire session directory is removed');
+
+    // 5. Verifikasi GET /api/records setelah sesi dihapus total
+    const getFinalRes = await fetch('http://localhost:4399/api/records');
+    const recordsFinal = await getFinalRes.json();
+    assertEqual(recordsFinal.length, 0, 'No records remain after full session deletion');
+
+    await new Promise(r => serverApp.server.close(r));
+  });
+
   // Clean up test directory
   try {
     fs.rmSync(TEST_DIR, { recursive: true, force: true });
