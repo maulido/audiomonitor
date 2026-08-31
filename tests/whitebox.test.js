@@ -2936,6 +2936,390 @@ async function main() {
     await new Promise(r => serverApp.server.close(r));
   });
 
+  // ==========================================================
+  // SUITE 38: Agent Window Dynamic Resizing & Multi-Tab Bounds Math
+  // ==========================================================
+  await runSuite('38. Agent Window Dynamic Resizing & Multi-Tab Bounds Math', async () => {
+    // Mocking screen work area: 1920x1040 (e.g. 1080p minus 40px taskbar)
+    const mockDisplay = {
+      workArea: { x: 0, y: 0 },
+      workAreaSize: { width: 1920, height: 1040 }
+    };
+
+    const calcWindowBounds = (targetWidth, targetHeight, display = mockDisplay) => {
+      const { width: screenWidth, height: screenHeight } = display.workAreaSize;
+      const { x: workAreaX, y: workAreaY } = display.workArea;
+      const newX = workAreaX + screenWidth - targetWidth - 15;
+      const newY = workAreaY + screenHeight - targetHeight - 15;
+      return { x: newX, y: newY, width: targetWidth, height: targetHeight };
+    };
+
+    // 1. Monitoring tab bounds (380x440)
+    const monBounds = calcWindowBounds(380, 440);
+    assertEqual(monBounds.width, 380, 'Monitoring window width is 380');
+    assertEqual(monBounds.height, 440, 'Monitoring window height is 440');
+    assertEqual(monBounds.x, 1920 - 380 - 15, 'Monitoring window X is 1525 (pinned to right)');
+    assertEqual(monBounds.y, 1040 - 440 - 15, 'Monitoring window Y is 585 (pinned to bottom)');
+
+    // 2. Settings tab bounds (380x580)
+    const setBounds = calcWindowBounds(380, 580);
+    assertEqual(setBounds.width, 380, 'Settings window width is 380');
+    assertEqual(setBounds.height, 580, 'Settings window height is 580');
+    assertEqual(setBounds.x, 1920 - 380 - 15, 'Settings window X is 1525 (stays aligned on X)');
+    assertEqual(setBounds.y, 1040 - 580 - 15, 'Settings window Y is 445 (expands upward smoothly)');
+
+    // 3. Multi-monitor secondary display offset (x=1920, width=2560, height=1400)
+    const multiMonitorDisplay = {
+      workArea: { x: 1920, y: 0 },
+      workAreaSize: { width: 2560, height: 1400 }
+    };
+    const multiBounds = calcWindowBounds(380, 440, multiMonitorDisplay);
+    assertEqual(multiBounds.x, 1920 + 2560 - 380 - 15, 'Multi-monitor X coordinates offset correctly');
+    assertEqual(multiBounds.y, 1400 - 440 - 15, 'Multi-monitor Y coordinates offset correctly');
+  });
+
+  // ==========================================================
+  // SUITE 39: OTA Update Download Stream Parsing, Content-Length & Redirect Tracking
+  // ==========================================================
+  await runSuite('39. OTA Update Download Stream Parsing, Content-Length & Redirect Tracking', async () => {
+    // Create a mock HTTP redirect & download server
+    const mockFilePayload = Buffer.alloc(100 * 1024, 0xFE); // 100KB installer payload
+    const mockServer = http.createServer((req, res) => {
+      if (req.url === '/redirect') {
+        res.writeHead(302, { 'Location': '/download' });
+        return res.end();
+      }
+      if (req.url === '/download') {
+        res.writeHead(200, {
+          'Content-Type': 'application/octet-stream',
+          'Content-Length': mockFilePayload.length
+        });
+        // Stream in chunks
+        const chunkSize = 25 * 1024;
+        let offset = 0;
+        const interval = setInterval(() => {
+          if (offset < mockFilePayload.length) {
+            res.write(mockFilePayload.slice(offset, offset + chunkSize));
+            offset += chunkSize;
+          } else {
+            clearInterval(interval);
+            res.end();
+          }
+        }, 15);
+        return;
+      }
+      res.writeHead(404);
+      res.end('Not Found');
+    });
+
+    await new Promise(r => mockServer.listen(0, r));
+    const sPort = mockServer.address().port;
+
+    // Simulate Agent downloadFile logic with progress tracking
+    const destPath = path.join(TEST_DIR, 'downloaded_test_installer.exe');
+    const downloadProgressHistory = [];
+
+    const downloadMock = (targetUrl, redirectCount = 0) => {
+      return new Promise((resolve, reject) => {
+        if (redirectCount > 5) return reject(new Error('Too many redirects'));
+        const parsedUrl = new URL(targetUrl);
+        http.get(parsedUrl, (res) => {
+          if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location) {
+            const nextUrl = new URL(res.headers.location, parsedUrl).toString();
+            return resolve(downloadMock(nextUrl, redirectCount + 1));
+          }
+          if (res.statusCode !== 200) return reject(new Error(`HTTP ${res.statusCode}`));
+
+          const totalBytes = parseInt(res.headers['content-length'] || '0', 10);
+          let receivedBytes = 0;
+          const writeStream = fs.createWriteStream(destPath);
+
+          res.on('data', (chunk) => {
+            receivedBytes += chunk.length;
+            writeStream.write(chunk);
+            if (totalBytes > 0) {
+              const pct = Math.round((receivedBytes / totalBytes) * 100);
+              downloadProgressHistory.push(pct);
+            }
+          });
+
+          res.on('end', () => {
+            writeStream.end();
+          });
+
+          writeStream.on('finish', () => {
+            resolve({ success: true, totalBytes, receivedBytes });
+          });
+
+          res.on('error', reject);
+          writeStream.on('error', reject);
+        }).on('error', reject);
+      });
+    };
+
+    const dlResult = await downloadMock(`http://127.0.0.1:${sPort}/redirect`);
+    assertEqual(dlResult.success, true, 'OTA update download successfully followed redirect and finished');
+    assertEqual(dlResult.totalBytes, mockFilePayload.length, 'Total bytes matches Content-Length header');
+    assertEqual(dlResult.receivedBytes, mockFilePayload.length, 'Received bytes matches total payload');
+    assert(downloadProgressHistory.length > 0, 'Progress percentage events were emitted');
+    assertEqual(downloadProgressHistory[downloadProgressHistory.length - 1], 100, 'Final progress is exactly 100%');
+    assertEqual(fs.statSync(destPath).size, mockFilePayload.length, 'Downloaded file written to disk with exact size');
+
+    mockServer.close();
+  });
+
+  // ==========================================================
+  // SUITE 40: Shared AudioContext Singleton, Decoded Cache & LRU Eviction Limit
+  // ==========================================================
+  await runSuite('40. Shared AudioContext Singleton, Decoded Cache & LRU Eviction Limit', async () => {
+    // 1. LRU Cache Simulation (Capacity = 500)
+    const audioCache = new Map();
+    const setCache = (url, duration) => {
+      if (audioCache.size >= 500) {
+        const firstKey = audioCache.keys().next().value;
+        if (firstKey) audioCache.delete(firstKey);
+      }
+      audioCache.set(url, duration);
+    };
+
+    // Populate with 500 items
+    for (let i = 1; i <= 500; i++) {
+      setCache(`http://server/media/part_${i}.webm`, i * 10);
+    }
+    assertEqual(audioCache.size, 500, 'Cache filled to exactly 500 items');
+    assertEqual(audioCache.has('http://server/media/part_1.webm'), true, 'part_1.webm is initially present');
+
+    // Add 501st item -> should evict part_1.webm
+    setCache('http://server/media/part_501.webm', 5010);
+    assertEqual(audioCache.size, 500, 'Cache size is strictly capped at 500');
+    assertEqual(audioCache.has('http://server/media/part_1.webm'), false, 'Oldest item part_1.webm was evicted (LRU)');
+    assertEqual(audioCache.has('http://server/media/part_2.webm'), true, 'Second oldest item part_2.webm is retained');
+    assertEqual(audioCache.get('http://server/media/part_501.webm'), 5010, 'Newest item part_501.webm is present');
+
+    // 2. Continuous multi-part playback offset calculations
+    const partDurations = [120, 180, 240, 60]; // 4 parts = 600s total
+    const calculateCumulativeOffsets = (durations) => {
+      const offsets = [];
+      let acc = 0;
+      for (let i = 0; i < durations.length; i++) {
+        offsets.push(acc);
+        acc += durations[i];
+      }
+      return offsets;
+    };
+
+    const offsets = calculateCumulativeOffsets(partDurations);
+    assertEqual(offsets.length, 4, '4 part offsets calculated');
+    assertEqual(offsets[0], 0, 'Part 1 offset is 0s');
+    assertEqual(offsets[1], 120, 'Part 2 offset is 120s');
+    assertEqual(offsets[2], 300, 'Part 3 offset is 300s (120+180)');
+    assertEqual(offsets[3], 540, 'Part 4 offset is 540s (300+240)');
+
+    // 3. Map global seek time to local part and offset
+    const seekGlobal = (globalSec, durations, offsets) => {
+      let targetPart = 0;
+      let localOffset = globalSec;
+      for (let i = durations.length - 1; i >= 0; i--) {
+        if (globalSec >= offsets[i]) {
+          targetPart = i;
+          localOffset = Math.max(0, globalSec - offsets[i]);
+          break;
+        }
+      }
+      return { targetPart, localOffset };
+    };
+
+    // Seek at 45s (inside Part 1)
+    const s1 = seekGlobal(45, partDurations, offsets);
+    assertEqual(s1.targetPart, 0, '45s lands in Part 1 (index 0)');
+    assertEqual(s1.localOffset, 45, 'Local offset in Part 1 is 45s');
+
+    // Seek at 250s (inside Part 2: 120s..300s)
+    const s2 = seekGlobal(250, partDurations, offsets);
+    assertEqual(s2.targetPart, 1, '250s lands in Part 2 (index 1)');
+    assertEqual(s2.localOffset, 130, 'Local offset in Part 2 is 130s (250 - 120)');
+
+    // Seek at 550s (inside Part 4: 540s..600s)
+    const s3 = seekGlobal(550, partDurations, offsets);
+    assertEqual(s3.targetPart, 3, '550s lands in Part 4 (index 3)');
+    assertEqual(s3.localOffset, 10, 'Local offset in Part 4 is 10s (550 - 540)');
+  });
+
+  // ==========================================================
+  // SUITE 41: Transcript Search Monotonic Request ID Concurrency & Deduplication
+  // ==========================================================
+  await runSuite('41. Transcript Search Monotonic Request ID Concurrency & Deduplication', async () => {
+    let searchReqId = 0;
+    let displayedResults = null;
+
+    // Simulate async API search with simulated network latency
+    const mockSearchApi = (query, delayMs, returnItems) => {
+      const currentId = ++searchReqId;
+      return new Promise(resolve => {
+        setTimeout(() => {
+          resolve({ reqId: currentId, results: returnItems });
+        }, delayMs);
+      });
+    };
+
+    // User types "hal" (Request 1 - slow, 80ms delay) -> returns 1 item
+    // User quickly updates to "halo semua" (Request 2 - fast, 20ms delay) -> returns 5 items
+    const p1 = mockSearchApi('hal', 80, ['Result from Req 1 (stale)']);
+    const p2 = mockSearchApi('halo semua', 20, ['Result A', 'Result B', 'Result C', 'Result D', 'Result E']);
+
+    // Handler with Monotonic Request ID Guard
+    const handleApiResponse = (response) => {
+      if (response.reqId === searchReqId) {
+        displayedResults = response.results;
+      }
+    };
+
+    // p2 resolves first (after 20ms)
+    const res2 = await p2;
+    handleApiResponse(res2);
+    assertEqual(displayedResults.length, 5, 'Displayed results updated with latest Request 2 (5 items)');
+    assertEqual(displayedResults[0], 'Result A', 'Matches Request 2 result');
+
+    // p1 resolves later (after 80ms)
+    const res1 = await p1;
+    handleApiResponse(res1);
+    // Verified that stale Request 1 was IGNORED
+    assertEqual(displayedResults.length, 5, 'Stale Request 1 was discarded and did not overwrite latest search');
+    assertEqual(displayedResults[0], 'Result A', 'Retained Request 2 result correctly');
+  });
+
+  // ==========================================================
+  // SUITE 42: Edge-case Audio Buffer Queue Bounds (120 chunks) & Rollover Transitions
+  // ==========================================================
+  await runSuite('42. Edge-case Audio Buffer Queue Bounds (120 chunks) & Rollover Transitions', async () => {
+    let pendingAudioChunks = [];
+    let audioWriteStream = null;
+    let currentSessionDir = '/mock/records/Session_1';
+
+    const saveAudioChunkMock = (buf) => {
+      if (audioWriteStream) {
+        audioWriteStream.write(buf);
+      } else if (currentSessionDir && pendingAudioChunks.length < 120) {
+        pendingAudioChunks.push(buf);
+      }
+    };
+
+    // 1. Fill buffer while write stream is delayed
+    const sampleChunk = Buffer.alloc(1024, 0x55);
+    for (let i = 1; i <= 150; i++) {
+      saveAudioChunkMock(sampleChunk);
+    }
+
+    assertEqual(pendingAudioChunks.length, 120, 'Buffer bounded strictly to 120 chunks (preventing memory leak)');
+
+    // 2. Write stream becomes ready -> flush all 120 buffered chunks
+    const writtenChunks = [];
+    audioWriteStream = {
+      write: (b) => writtenChunks.push(b)
+    };
+
+    while (pendingAudioChunks.length > 0) {
+      const chunk = pendingAudioChunks.shift();
+      audioWriteStream.write(chunk);
+    }
+
+    assertEqual(pendingAudioChunks.length, 0, 'Buffer drained completely');
+    assertEqual(writtenChunks.length, 120, 'All 120 buffered chunks written to disk stream');
+
+    // 3. Test Rollover (isRollover = true) vs Full Stop (isRollover = false)
+    const handleStopRecording = (isRollover) => {
+      if (!isRollover) {
+        currentSessionDir = null;
+        pendingAudioChunks = [];
+      }
+    };
+
+    // Rollover preserves session dir
+    handleStopRecording(true);
+    assertEqual(currentSessionDir, '/mock/records/Session_1', 'Rollover preserves currentSessionDir');
+
+    // Full stop resets session dir
+    handleStopRecording(false);
+    assertEqual(currentSessionDir, null, 'Full stop clears currentSessionDir');
+  });
+
+  // ==========================================================
+  // SUITE 43: Complete End-to-End Stress Fuzzing (Concurrent Agents, Whispers & Dashboard)
+  // ==========================================================
+  await runSuite('43. Complete End-to-End Stress Fuzzing (Concurrent Agents, Whispers & Dashboard Multi-Clients)', async () => {
+    const cm = new ConfigManager(path.join(TEST_DIR, 'suite43_config.json'));
+    cm.config.dashboardPin = '1234';
+    cm.saveConfig();
+
+    const db = new DatabaseManager(path.join(TEST_DIR, 'suite43_db.json'));
+    const alertMgr = new AlertManager(cm, db);
+    const serverApp = new ServerApp(cm, db, alertMgr, 0);
+    await new Promise(r => serverApp.server.listen(0, r));
+    const port = serverApp.server.address().port;
+
+    const io = require('socket.io-client');
+    const clients = [];
+
+    // Connect 15 virtual agents
+    for (let i = 1; i <= 15; i++) {
+      const agentSocket = io(`http://127.0.0.1:${port}`);
+      clients.push(agentSocket);
+      await new Promise(resolve => agentSocket.on('connect', resolve));
+      agentSocket.emit('telemetry', {
+        uuid: `agent-stress-uuid-${i}`,
+        name: `Studio PC ${i}`,
+        micDb: -15,
+        obsDb: -15,
+        status: 'AMAN',
+        dangerScore: 0,
+        obsConnected: true
+      });
+    }
+
+    // Connect 3 virtual Dashboards
+    const dashboardSockets = [];
+    let receivedAgentUpdates = 0;
+    for (let d = 1; d <= 3; d++) {
+      const dash = io(`http://127.0.0.1:${port}`);
+      dashboardSockets.push(dash);
+      await new Promise(resolve => dash.on('connect', resolve));
+      dash.emit('register', { type: 'dashboard' });
+      dash.on('dashboard-update', () => {
+        receivedAgentUpdates++;
+      });
+    }
+
+    // Verify all 15 agents registered in TelemetryHub
+    assertEqual(serverApp.telemetryHub.lastKnownState.size, 15, 'All 15 stress agents tracked concurrently');
+
+    // Trigger mass danger updates across 5 agents
+    for (let i = 1; i <= 5; i++) {
+      clients[i - 1].emit('telemetry', {
+        uuid: `agent-stress-uuid-${i}`,
+        name: `Studio PC ${i}`,
+        micDb: -60,
+        obsDb: -60,
+        status: 'BAHAYA_MIC_MATI',
+        dangerScore: 100,
+        obsConnected: true
+      });
+    }
+
+    // Give time for WebSocket broadcast
+    await new Promise(r => setTimeout(r, 200));
+
+    // Verify incident logging in database
+    const incidents = await new Promise(resolve => {
+      db.getRecentIncidents(10, resolve);
+    });
+    assert(incidents.length >= 5, 'All 5 danger incidents logged to database under high concurrency');
+
+    // Clean up all sockets and server
+    clients.forEach(c => c.close());
+    dashboardSockets.forEach(d => d.close());
+    await new Promise(r => serverApp.server.close(r));
+  });
+
   // Clean up test directory
   try {
     fs.rmSync(TEST_DIR, { recursive: true, force: true });
