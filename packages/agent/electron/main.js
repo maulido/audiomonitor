@@ -271,7 +271,32 @@ ipcMain.handle('get-uuid', () => {
   return getOrCreateUUID();
 });
 
-ipcMain.handle('get-autostart', () => {
+let agentAutoLauncher = null;
+function getAgentAutoLauncher() {
+  if (!agentAutoLauncher) {
+    try {
+      const AutoLaunch = require('auto-launch');
+      agentAutoLauncher = new AutoLaunch({
+        name: 'AudioMonitor_Agent',
+        path: app.getPath('exe'),
+      });
+    } catch (e) {
+      writeAgentLog('WARN', `[Autostart] Gagal memuat auto-launch: ${e.message}`);
+    }
+  }
+  return agentAutoLauncher;
+}
+
+ipcMain.handle('get-autostart', async () => {
+  const launcher = getAgentAutoLauncher();
+  if (launcher) {
+    try {
+      const isEnabled = await launcher.isEnabled();
+      return Boolean(isEnabled);
+    } catch (err) {
+      writeAgentLog('WARN', `[Autostart] Error checking auto-launch: ${err.message}`);
+    }
+  }
   try {
     const settings = app.getLoginItemSettings();
     return typeof settings.openAtLogin === 'boolean' ? settings.openAtLogin : null;
@@ -282,8 +307,24 @@ ipcMain.handle('get-autostart', () => {
 });
 
 // Mengatur agar aplikasi menyala otomatis (Startup) ketika Windows boot
-ipcMain.handle('set-autostart', (event, enable) => {
+ipcMain.handle('set-autostart', async (event, enable) => {
   const isEnable = Boolean(enable);
+  const launcher = getAgentAutoLauncher();
+  if (launcher) {
+    try {
+      if (isEnable) {
+        await launcher.enable();
+      } else {
+        await launcher.disable();
+      }
+      const isEnabled = await launcher.isEnabled();
+      writeAgentLog('INFO', `[Autostart] auto-launch berhasil diubah ke: ${isEnabled}`);
+      return Boolean(isEnabled);
+    } catch (err) {
+      writeAgentLog('WARN', `[Autostart] auto-launch fallback to Electron API: ${err.message}`);
+    }
+  }
+
   try {
     if (app.isPackaged) {
       app.setLoginItemSettings({
