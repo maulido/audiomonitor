@@ -618,10 +618,16 @@ ipcMain.handle('install-update', async (event, downloadUrl) => {
           return cleanupAndFail(`HTTP ${res.statusCode}`);
         }
 
-        const totalBytes = parseInt(res.headers['content-length'] || '0', 10);
-        let receivedBytes = 0;
+        let activityTimeout = setTimeout(() => {
+          req.destroy(new Error('Timeout koneksi unduh update (120s)'));
+        }, 120000);
 
         res.on('data', (chunk) => {
+          clearTimeout(activityTimeout);
+          activityTimeout = setTimeout(() => {
+            req.destroy(new Error('Timeout unduh tidak ada respon data (60s)'));
+          }, 60000);
+
           receivedBytes += chunk.length;
           fileStream.write(chunk);
           if (totalBytes > 0 && event?.sender && !event.sender.isDestroyed()) {
@@ -631,17 +637,17 @@ ipcMain.handle('install-update', async (event, downloadUrl) => {
         });
 
         res.on('end', () => {
+          clearTimeout(activityTimeout);
           if (totalBytes > 0 && receivedBytes < totalBytes) {
             return cleanupAndFail(`Unduhan terputus: ${receivedBytes}/${totalBytes} byte`);
           }
           fileStream.end();
         });
 
-        res.on('error', (err) => cleanupAndFail(`Stream error: ${err.message}`));
-      });
-
-      req.setTimeout(30000, () => {
-        req.destroy(new Error('Timeout koneksi unduh update (30s)'));
+        res.on('error', (err) => {
+          clearTimeout(activityTimeout);
+          cleanupAndFail(`Stream error: ${err.message}`);
+        });
       });
 
       req.on('error', (err) => cleanupAndFail(`Koneksi gagal: ${err.message}`));

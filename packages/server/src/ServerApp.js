@@ -927,27 +927,39 @@ class ServerApp {
       const { targetUuid, downloadUrl } = req.body || {};
       if (!downloadUrl) return res.status(400).json({ success: false, error: 'URL unduhan diperlukan' });
 
-      // Jika URL relatif, ubah ke URL lengkap berbasis IP Server (resolve real LAN IP jika host adalah localhost)
+      // Temukan alamat IPv4 LAN server
+      const getLanIp = () => {
+        const ifaces = os.networkInterfaces();
+        for (const name of Object.keys(ifaces)) {
+          for (const net of ifaces[name]) {
+            if (net.family === 'IPv4' && !net.internal) {
+              return net.address;
+            }
+          }
+        }
+        return 'localhost';
+      };
+
+      // Jika URL relatif atau menggunakan localhost/127.0.0.1, ubah ke IP LAN server agar PC lain bisa mengunduh
       let fullDownloadUrl = downloadUrl;
       if (fullDownloadUrl.startsWith('/')) {
         let host = req.headers.host || `localhost:${this.port}`;
         if (host.includes('localhost') || host.includes('127.0.0.1')) {
-          const ifaces = os.networkInterfaces();
-          let lanIp = 'localhost';
-          for (const name of Object.keys(ifaces)) {
-            for (const net of ifaces[name]) {
-              if (net.family === 'IPv4' && !net.internal) {
-                lanIp = net.address;
-                break;
-              }
-            }
-            if (lanIp !== 'localhost') break;
-          }
+          const lanIp = getLanIp();
           const port = host.split(':')[1] || this.port;
           host = `${lanIp}:${port}`;
         }
         const protocol = req.protocol || 'http';
         fullDownloadUrl = `${protocol}://${host}${fullDownloadUrl}`;
+      } else {
+        try {
+          const parsed = new URL(fullDownloadUrl);
+          if (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1') {
+            const lanIp = getLanIp();
+            parsed.hostname = lanIp;
+            fullDownloadUrl = parsed.toString();
+          }
+        } catch (e) {}
       }
 
       this.telemetryHub.triggerAgentUpdate(targetUuid || 'all', fullDownloadUrl);
@@ -1057,9 +1069,20 @@ class ServerApp {
               return reject(new Error(`Gagal mengunduh file: HTTP ${response.statusCode}`));
             }
 
+            let activityTimeout = setTimeout(() => {
+              req.destroy(new Error('Timeout koneksi unduh update (120s)'));
+            }, 120000);
+
             const fileStream = fs.createWriteStream(tempDest);
+            response.on('data', (chunk) => {
+              clearTimeout(activityTimeout);
+              activityTimeout = setTimeout(() => {
+                req.destroy(new Error('Timeout tidak ada data diterima (60s)'));
+              }, 60000);
+            });
             response.pipe(fileStream);
             fileStream.on('finish', () => {
+              clearTimeout(activityTimeout);
               fileStream.close(() => {
                 try {
                   if (fs.existsSync(destPath)) {
@@ -1078,19 +1101,18 @@ class ServerApp {
               });
             });
             fileStream.on('error', (err) => {
+              clearTimeout(activityTimeout);
               try { fs.unlinkSync(tempDest); } catch (e) {}
               reject(err);
             });
             response.on('error', (err) => {
+              clearTimeout(activityTimeout);
               fileStream.destroy();
               try { fs.unlinkSync(tempDest); } catch (e) {}
               reject(err);
             });
           });
 
-          req.setTimeout(30000, () => {
-            req.destroy(new Error('Download timeout (30s)'));
-          });
           req.on('error', reject);
         });
       };
@@ -1221,9 +1243,20 @@ class ServerApp {
               response.resume();
               return reject(new Error(`HTTP ${response.statusCode}`));
             }
+            let activityTimeout = setTimeout(() => {
+              request.destroy(new Error('Timeout koneksi unduh update (120s)'));
+            }, 120000);
+
             const fileStream = fs.createWriteStream(tempDest);
+            response.on('data', (chunk) => {
+              clearTimeout(activityTimeout);
+              activityTimeout = setTimeout(() => {
+                request.destroy(new Error('Timeout tidak ada data diterima (60s)'));
+              }, 60000);
+            });
             response.pipe(fileStream);
             fileStream.on('finish', () => {
+              clearTimeout(activityTimeout);
               fileStream.close(() => {
                 try {
                   if (fs.existsSync(destPath)) {
@@ -1242,11 +1275,11 @@ class ServerApp {
               });
             });
             fileStream.on('error', (err) => {
+              clearTimeout(activityTimeout);
               try { fs.unlinkSync(tempDest); } catch (e) {}
               reject(err);
             });
           });
-          request.setTimeout(45000, () => request.destroy(new Error('Download timeout (45s)')));
           request.on('error', reject);
         });
       };
@@ -1254,8 +1287,14 @@ class ServerApp {
       try {
         logger.info(`[ServerUpdate] Mengunduh pembaruan server dari: ${downloadUrl}`);
         await downloadFile(downloadUrl);
-        logger.info(`[ServerUpdate] Unduhan server selesai. Menjalankan installer dan me-restart server...`);
+        
+        // Verifikasi integritas ukuran file installer sebelum dieksekusi
+        const stats = fs.statSync(destPath);
+        if (stats.size < 1024 * 1024) {
+          throw new Error(`File installer server terlalu kecil atau korup (${stats.size} bytes)`);
+        }
 
+        logger.info(`[ServerUpdate] Unduhan server selesai (${(stats.size / 1024 / 1024).toFixed(1)} MB). Menjalankan installer dan me-restart server...`);
         res.json({ success: true, message: 'Installer server berhasil diunduh. Server sedang memperbarui diri...' });
 
         setTimeout(() => {
@@ -1299,7 +1338,13 @@ class ServerApp {
             try { fs.unlinkSync(tempDest); } catch (e) {}
           }
 
-          logger.info(`[ServerUpdate] Installer server berhasil diunggah. Menjalankan silent install...`);
+          // Verifikasi integritas ukuran file installer sebelum dieksekusi
+          const stats = fs.statSync(destPath);
+          if (stats.size < 1024 * 1024) {
+            throw new Error(`File installer server yang diunggah terlalu kecil (${stats.size} bytes)`);
+          }
+
+          logger.info(`[ServerUpdate] Installer server berhasil diunggah (${(stats.size / 1024 / 1024).toFixed(1)} MB). Menjalankan silent install...`);
           res.json({ success: true, message: 'File installer server diterima. Server sedang memperbarui diri...' });
 
           setTimeout(() => {
@@ -1316,6 +1361,7 @@ class ServerApp {
           }, 1000);
         } catch (err) {
           logger.error(`[ServerUpdate] Gagal memproses file upload server: ${err.message}`);
+          try { if (fs.existsSync(tempDest)) fs.unlinkSync(tempDest); } catch (e) {}
           if (!res.headersSent) res.status(500).json({ success: false, error: err.message });
         }
       });
