@@ -340,6 +340,16 @@ function App() {
     }
   }, []);
 
+  useEffect(() => {
+    if (window.electronAPI && window.electronAPI.resizeWindow) {
+      if (activeTab === 'monitoring') {
+        window.electronAPI.resizeWindow(380, 370);
+      } else {
+        window.electronAPI.resizeWindow(380, 540);
+      }
+    }
+  }, [activeTab]);
+
   const handleToggleAutoStart = (newVal) => {
     setAutoStart(newVal);
     localStorage.setItem('autoStart', newVal ? 'true' : 'false');

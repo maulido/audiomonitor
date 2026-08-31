@@ -33,6 +33,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getWindowsAudioDevices: () => ipcRenderer.invoke('get-windows-audio-devices'),
   getObsGlobalDevice: (collectionName, deviceKey) => ipcRenderer.invoke('get-obs-global-device', { collectionName, deviceKey }),
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
+  resizeWindow: (width, height) => ipcRenderer.send('resize-window', { width, height }),
   installUpdate: (downloadUrl) => ipcRenderer.invoke('install-update', downloadUrl),
   onUpdateProgress: (callback) => {
     const handler = (event, data) => callback(data);

@@ -80,7 +80,7 @@ function createWindow() {
   const { x: workAreaX, y: workAreaY } = primaryDisplay.workArea;
 
   const windowWidth = 380;
-  const windowHeight = 520;
+  const windowHeight = 370;
 
   // Kalkulasi agar jendela melayang di ujung kanan bawah (15px padding)
   const x = workAreaX + screenWidth - windowWidth - 15;
@@ -265,6 +265,24 @@ ipcMain.on('open-logs-folder', () => { require('electron').shell.openPath(logsDi
 
 ipcMain.on('write-log', (event, { level, message }) => {
   writeAgentLog(level, message);
+});
+
+ipcMain.on('resize-window', (event, { width, height }) => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    try {
+      const primaryDisplay = screen.getPrimaryDisplay();
+      const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize;
+      const { x: workAreaX, y: workAreaY } = primaryDisplay.workArea;
+      const currentBounds = mainWindow.getBounds();
+      const newWidth = width || currentBounds.width;
+      const newHeight = height || currentBounds.height;
+      const newX = workAreaX + screenWidth - newWidth - 15;
+      const newY = workAreaY + screenHeight - newHeight - 15;
+      mainWindow.setBounds({ x: newX, y: newY, width: newWidth, height: newHeight });
+    } catch (err) {
+      writeAgentLog('WARN', `[Window] Error resizing window: ${err.message}`);
+    }
+  }
 });
 
 ipcMain.handle('get-uuid', () => {
