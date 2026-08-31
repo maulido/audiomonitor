@@ -216,9 +216,14 @@ class ServerApp {
     
     // Internal API: Menerima file rekaman audio dari Agent
     this.app.post('/internal/upload-record', (req, res) => {
-      const agentName = req.headers['x-agent-name'] || 'UnknownAgent';
-      const rawSessionFolder = req.headers['x-session-folder'] || 'UnknownSession';
-      const rawFileName = req.headers['x-file-name'] || 'UnknownFile.webm';
+      const getHeaderStr = (val, fallback) => {
+        if (Array.isArray(val)) return String(val[0] || fallback);
+        return String(val !== undefined && val !== null ? val : fallback);
+      };
+
+      const agentName = getHeaderStr(req.headers['x-agent-name'], 'UnknownAgent');
+      const rawSessionFolder = getHeaderStr(req.headers['x-session-folder'], 'UnknownSession');
+      const rawFileName = getHeaderStr(req.headers['x-file-name'], 'UnknownFile.webm');
       
       const fs = require('fs');
       const path = require('path');
@@ -511,7 +516,9 @@ class ServerApp {
     // API: Hapus file rekaman tunggal
     this.app.delete('/api/records', (req, res) => {
       const { pcName, fileName } = req.body || {};
-      if (!pcName || !fileName) return res.status(400).send({ success: false, error: 'Bad Request' });
+      if (typeof pcName !== 'string' || typeof fileName !== 'string' || !pcName.trim() || !fileName.trim()) {
+        return res.status(400).send({ success: false, error: 'Bad Request: pcName and fileName are required' });
+      }
       
       const fs = require('fs');
       const path = require('path');
@@ -764,16 +771,17 @@ class ServerApp {
 
     // API: Mengubah PIN akses Dashboard
     this.app.post('/api/config/pin', (req, res) => {
-      const { newPin } = req.body;
-      if (!newPin || newPin.length < 4) return res.status(400).json({ error: 'PIN minimal 4 karakter' });
-      this.configManager.config.dashboardPin = newPin;
+      const { newPin } = req.body || {};
+      const cleanPin = String(newPin !== undefined && newPin !== null ? newPin : '').trim();
+      if (!cleanPin || cleanPin.length < 4) return res.status(400).json({ error: 'PIN minimal 4 karakter' });
+      this.configManager.config.dashboardPin = cleanPin;
       this.configManager.saveConfig();
       res.send({ success: true });
     });
 
     // API: Mengubah batas retensi log lama (Auto-cleanup hari)
     this.app.post('/api/config/retention', (req, res) => {
-      const { days } = req.body;
+      const { days } = req.body || {};
       const retentionDays = Math.max(1, parseInt(days, 10) || 30);
       this.configManager.config.logRetentionDays = retentionDays;
       this.configManager.saveConfig();
@@ -791,12 +799,12 @@ class ServerApp {
     // API: Mematikan/Menyalakan pemantauan untuk satu PC secara spesifik
     this.app.post('/api/pc/:uuid/monitoring', (req, res) => {
       const { uuid } = req.params;
-      const { active } = req.body;
+      const { active } = req.body || {};
       
       // Mengubah status di memori pusat dan meneruskannya ke Agent dan Dashboard
       this.telemetryHub.setPcMonitoring(uuid, active);
       
-      res.send({ success: true, active });
+      res.send({ success: true, active: !!active });
     });
 
     // API: Mengubah pengaturan remote config PC tertentu

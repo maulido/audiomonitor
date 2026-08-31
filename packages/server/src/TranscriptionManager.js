@@ -178,7 +178,7 @@ class TranscriptionManager {
         if (attempts >= maxRetries) {
           try {
             fs.copyFileSync(tempPath, targetPath);
-            fs.unlinkSync(tempPath);
+            try { fs.unlinkSync(tempPath); } catch (uErr) {}
             return true;
           } catch (copyErr) {
             try { if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath); } catch (e) {}

@@ -142,7 +142,7 @@ class ConfigManager {
    * Menghapus sebuah PC dari ingatan Server (biasanya saat user menghapus manual dari Dashboard).
    */
   deletePcMapping(uuid) {
-    if (this.config.pcMapping && this.config.pcMapping[uuid]) {
+    if (this.config.pcMapping && Object.prototype.hasOwnProperty.call(this.config.pcMapping, uuid)) {
       delete this.config.pcMapping[uuid];
       this.saveConfig();
     }

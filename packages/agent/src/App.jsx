@@ -580,8 +580,7 @@ function App() {
     } else {
       if (dangerScore.current > 0) {
         dangerScore.current = Math.max(0, dangerScore.current - 500);
-      }
-      if (!isActuallyMuted && dangerScore.current >= 0) {
+      } else if (!isActuallyMuted) {
         dangerScore.current = 0;
       }
     }
@@ -851,7 +850,7 @@ REC
               <div className="meter-header">
                 <span title={micDriverName}>Hardware Mic ({micDriverName.length > 20 ? micDriverName.substring(0,20)+'...' : micDriverName})</span>
                 <span className="meter-val" style={{ color: micLevel === 0 ? '#888' : '#fff' }}>
-                  {rawMicLevel.toFixed(1).padStart(4, '0')} dB
+                  {rawMicLevel.toFixed(1).padStart(4, '0')}%
                 </span>
               </div>
               <div className="meter-bar" style={{ position: 'relative' }}>
@@ -868,7 +867,7 @@ REC
             <div className="meter-row">
               <div className="meter-header">
                 <span>OBS Output ({obsSourceName})</span>
-                <span className="meter-val">{obsLevel.toFixed(1).padStart(4, '0')} dB</span>
+                <span className="meter-val">{obsLevel.toFixed(1).padStart(4, '0')}%</span>
               </div>
               <div className="meter-bar">
                 <div className="meter-fill obs" style={{ width: `${Math.min(obsLevel, 100)}%` }}></div>

@@ -354,7 +354,7 @@ function uploadToServer(filePath, serverUrl, agentName, sessionFolder) {
       normalizedUrl = `http://${normalizedUrl}`;
     }
     const urlObj = new URL(normalizedUrl);
-    if (!urlObj.port) {
+    if (!urlObj.port && (urlObj.hostname === 'localhost' || /^\d+\.\d+\.\d+\.\d+$/.test(urlObj.hostname))) {
       urlObj.port = '4000';
     }
     
@@ -386,6 +386,10 @@ function uploadToServer(filePath, serverUrl, agentName, sessionFolder) {
           writeAgentLog('ERROR', `Gagal mengunggah ${fileName} ke Server. Status: ${res.statusCode}, Respon: ${data}`);
         }
       });
+    });
+
+    req.setTimeout(60000, () => {
+      req.destroy(new Error('Timeout upload rekaman ke Server (60s)'));
     });
     
     const readStream = fs.createReadStream(filePath);
@@ -649,6 +653,16 @@ ipcMain.handle('install-update', async (event, downloadUrl) => {
 
       fileStream.on('finish', () => {
         writeAgentLog('INFO', 'Unduhan installer update selesai. Menjalankan silent install...');
+        
+        try {
+          const stats = fs.statSync(destPath);
+          if (stats.size < 1024 * 1024) {
+            return cleanupAndFail(`File installer yang diunduh terlalu kecil atau korup (${stats.size} bytes)`);
+          }
+        } catch (sErr) {
+          return cleanupAndFail(`Gagal memverifikasi file installer: ${sErr.message}`);
+        }
+
         if (event?.sender && !event.sender.isDestroyed()) {
           event.sender.send('update-progress', { progress: 100, status: 'installing' });
         }

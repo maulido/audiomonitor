@@ -824,10 +824,11 @@ function App() {
     setUploadProgress(0);
 
     try {
+      const activePin = pin || sessionStorage.getItem('dashboardPin') || '';
       const res = await fetch(`${SERVER_URL}/api/updates/upload-agent`, {
         method: 'POST',
         headers: {
-          'x-pin': pin,
+          'x-pin': activePin,
           'x-file-name': encodeURIComponent(file.name)
         },
         body: file
@@ -915,10 +916,11 @@ function App() {
     setIsUploadingServerInstaller(true);
 
     try {
+      const activePin = pin || sessionStorage.getItem('dashboardPin') || '';
       const res = await fetch(`${SERVER_URL}/api/updates/upload-server`, {
         method: 'POST',
         headers: {
-          'x-pin': pin,
+          'x-pin': activePin,
           'x-file-name': encodeURIComponent(file.name)
         },
         body: file
@@ -2759,7 +2761,7 @@ function App() {
                     <select
                       className="incident-filter-input"
                       style={{ minWidth: '70px', padding: '4px 8px', fontSize: '0.8rem', height: '30px' }}
-                      value={sessionsPerPage}
+                      value={sessionsPerPage === 0 ? 'all' : String(sessionsPerPage)}
                       onChange={e => {
                         const val = e.target.value === 'all' ? 0 : parseInt(e.target.value, 10);
                         setSessionsPerPage(val);
@@ -4405,10 +4407,20 @@ function App() {
                             className="transcript-segment-row"
                             onClick={() => {
                               const targetFolder = activeTranscriptModal.folderName;
-                              if (!playingSession || playingSession.folderName !== targetFolder) {
-                                const baseKey = targetFolder ? targetFolder.replace(/_to_\d{2}-\d{2}-\d{2}$/i, '') : '';
-                                const matchingRecords = records.filter(r => r.folderName === targetFolder || r.baseSessionKey === baseKey);
-                                if (matchingRecords.length > 0) {
+                              const baseKey = targetFolder ? targetFolder.replace(/_to_\d{2}-\d{2}-\d{2}$/i, '') : '';
+                              const matchingRecords = records.filter(r => r.folderName === targetFolder || r.baseSessionKey === baseKey)
+                                .sort((a, b) => (a.fileName || '').localeCompare(b.fileName || ''));
+
+                              if (matchingRecords.length > 0) {
+                                let targetPartIdx = 0;
+                                let targetOffset = validSec;
+
+                                if (activeTranscriptModal.fileName) {
+                                  const foundIdx = matchingRecords.findIndex(p => p.fileName === activeTranscriptModal.fileName);
+                                  if (foundIdx >= 0) targetPartIdx = foundIdx;
+                                }
+
+                                if (!playingSession || playingSession.folderName !== targetFolder) {
                                   const first = matchingRecords[0];
                                   const newSession = {
                                     folderName: first.folderName,
@@ -4417,12 +4429,19 @@ function App() {
                                     dateStr: first.dateStr,
                                     timeStr: first.timeStr,
                                     createdAt: first.createdAt,
-                                    parts: [...matchingRecords].sort((a, b) => (a.fileName || '').localeCompare(b.fileName || ''))
+                                    parts: matchingRecords
                                   };
                                   setPlayingSession(newSession);
                                 }
+
+                                pendingSeekOffsetRef.current = targetOffset;
+                                setCurrentPartIndex(targetPartIdx);
+                                if (audioRef.current && playingSession?.folderName === targetFolder && currentPartIndex === targetPartIdx) {
+                                  audioRef.current.currentTime = targetOffset;
+                                }
+                                setLocalCurrentTime(targetOffset);
+                                setIsPlaying(true);
                               }
-                              handleGlobalSeek(validSec);
                             }}
                             title="Klik untuk mendengarkan bagian ini pada pemutar audio"
                           >

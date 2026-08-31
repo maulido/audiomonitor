@@ -47,6 +47,11 @@ class DatabaseManager {
         }
       } catch (err) {
         console.error('Error reading JSON DB:', err.message);
+        try {
+          const backupPath = `${this.dbPath}.corrupt_${Date.now()}`;
+          fs.copyFileSync(this.dbPath, backupPath);
+          console.warn(`Corrupted database backed up to: ${backupPath}`);
+        } catch (bErr) {}
         this.incidents = [];
       }
     }

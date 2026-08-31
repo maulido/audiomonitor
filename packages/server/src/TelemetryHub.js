@@ -109,12 +109,8 @@ class TelemetryHub {
           this.io.to('dashboards').emit('dashboard-update', existing);
         }
 
-        // Teruskan data setelan baru ini ke ruang khusus PC dan direct socket ID
+        // Teruskan data setelan baru ini ke ruang khusus PC
         this.io.to('agent-' + data.uuid).emit('update-config', data.config);
-        const agentSocketId = this.agentSockets.get(data.uuid);
-        if (agentSocketId) {
-          this.io.to(agentSocketId).emit('update-config', data.config);
-        }
       });
 
       // Event usang (Legacy) saat Dashboard sekadar mengubah nama PC
@@ -129,14 +125,10 @@ class TelemetryHub {
           }
       });
 
-      
-        socket.on('agent-record', (data) => {
-          if (!data || !data.uuid) return;
-          const agentSocketId = this.agentSockets.get(data.uuid);
-          if (agentSocketId) {
-            this.io.to(agentSocketId).emit('command-record', !!data.record);
-          }
-        });
+      socket.on('agent-record', (data) => {
+        if (!data || !data.uuid) return;
+        this.io.to('agent-' + data.uuid).emit('command-record', !!data.record);
+      });
 
         // Event saat Agent melaporkan progres pengunduhan/instalasi update
         socket.on('agent-update-progress', (data) => {
@@ -212,12 +204,8 @@ class TelemetryHub {
   setPcMonitoring(uuid, active) {
     this.pcMonitoringState[uuid] = active;
     
-    // Beri tahu Agent via room dan direct socket ID agar berhenti berkedip/menganalisa jika OFF
+    // Beri tahu Agent via room agar berhenti berkedip/menganalisa jika OFF
     this.io.to(`agent-${uuid}`).emit('set-monitoring', active);
-    const agentSocketId = this.agentSockets.get(uuid);
-    if (agentSocketId) {
-      this.io.to(agentSocketId).emit('set-monitoring', active);
-    }
     
     // Beri tahu Dashboard agar warna tombolnya berubah merah/hijau
     this.io.to('dashboards').emit('pc-monitoring-update', { uuid, active });
