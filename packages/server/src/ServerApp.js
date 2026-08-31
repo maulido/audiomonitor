@@ -261,6 +261,18 @@ class ServerApp {
   }
 
   /**
+   * Helper mendapatkan direktori absolut penyimpanan rekaman audio di server.
+   */
+  getRecordsDir() {
+    const os = require('os');
+    const path = require('path');
+    return path.resolve(
+      this.configManager?.config?.recordDir ||
+      path.join(os.homedir(), 'Documents', 'AudioMonitor-Recordings-Server')
+    );
+  }
+
+  /**
    * Mendaftarkan seluruh rute (endpoints) API HTTP.
    * Digunakan oleh Dashboard untuk mengubah pengaturan atau mengambil data riwayat.
    */
@@ -1029,43 +1041,71 @@ class ServerApp {
 
     // API: Status Smart Storage & Cloud Sync Automation
     this.app.get('/api/storage/automation-status', (req, res) => {
-      const recordsDir = this.getRecordsDir();
-      const status = this.storageAutomationManager.getStorageStatus(recordsDir);
-      res.json(status);
+      try {
+        const recordsDir = this.getRecordsDir();
+        const status = this.storageAutomationManager.getStorageStatus(recordsDir);
+        res.json(status);
+      } catch (err) {
+        logger.error(`[SmartStorage] Error get storage status: ${err.message}`);
+        res.status(500).json({ success: false, error: err.message });
+      }
     });
 
     // API: Konfigurasi Smart Storage & Cloud Sync Automation
     this.app.post('/api/storage/automation-config', (req, res) => {
-      const storageConfig = req.body || {};
-      this.configManager.setStorageAutomationConfig(storageConfig);
-      logger.info('[SmartStorage] Konfigurasi otomasi penyimpanan diperbarui');
-      res.json({ success: true, config: this.configManager.getStorageAutomationConfig() });
+      try {
+        const storageConfig = req.body || {};
+        this.configManager.setStorageAutomationConfig(storageConfig);
+        logger.info('[SmartStorage] Konfigurasi otomasi penyimpanan diperbarui');
+        res.json({ success: true, config: this.configManager.getStorageAutomationConfig() });
+      } catch (err) {
+        logger.error(`[SmartStorage] Error set storage config: ${err.message}`);
+        res.status(500).json({ success: false, error: err.message });
+      }
     });
 
     // API: Memicu Sinkronisasi Manual ke Backup / NAS / Cloud Webhook
     this.app.post('/api/storage/trigger-sync', async (req, res) => {
-      const recordsDir = this.getRecordsDir();
-      const result = await this.storageAutomationManager.runBackupSync(recordsDir);
-      res.json(result);
+      try {
+        const recordsDir = this.getRecordsDir();
+        const result = await this.storageAutomationManager.runBackupSync(recordsDir);
+        res.json(result);
+      } catch (err) {
+        logger.error(`[SmartStorage] Error trigger sync: ${err.message}`);
+        res.status(500).json({ success: false, error: err.message });
+      }
     });
 
     // API: Memicu Pengarsipan Manual Berkas Lawas
     this.app.post('/api/storage/trigger-archive', async (req, res) => {
-      const recordsDir = this.getRecordsDir();
-      const result = await this.storageAutomationManager.runAutoArchive(recordsDir);
-      res.json(result);
+      try {
+        const recordsDir = this.getRecordsDir();
+        const result = await this.storageAutomationManager.runAutoArchive(recordsDir);
+        res.json(result);
+      } catch (err) {
+        logger.error(`[SmartStorage] Error trigger archive: ${err.message}`);
+        res.status(500).json({ success: false, error: err.message });
+      }
     });
 
     // API: Konfigurasi Audio Engineering Diagnostics
     this.app.get('/api/config/audio-diagnostics', (req, res) => {
-      res.json({ success: true, config: this.configManager.getAudioDiagnosticsConfig() });
+      try {
+        res.json({ success: true, config: this.configManager.getAudioDiagnosticsConfig() });
+      } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+      }
     });
 
     this.app.post('/api/config/audio-diagnostics', (req, res) => {
-      const diagConfig = req.body || {};
-      this.configManager.setAudioDiagnosticsConfig(diagConfig);
-      logger.info('[AudioDiagnostics] Konfigurasi diagnostik audio diperbarui');
-      res.json({ success: true, config: this.configManager.getAudioDiagnosticsConfig() });
+      try {
+        const diagConfig = req.body || {};
+        this.configManager.setAudioDiagnosticsConfig(diagConfig);
+        logger.info('[AudioDiagnostics] Konfigurasi diagnostik audio diperbarui');
+        res.json({ success: true, config: this.configManager.getAudioDiagnosticsConfig() });
+      } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+      }
     });
 
     // API: Cek Rilis Terbaru di GitHub Releases
