@@ -1,12 +1,17 @@
 import { io } from 'socket.io-client';
 
 class TelemetryClient {
-  constructor(serverUrl, agentUuid = null) {
+  constructor(serverUrl, agentUuid = null, agentName = null) {
     this.serverUrl = serverUrl;
     this.agentUuid = agentUuid;
+    this.agentName = agentName;
     this.socket = null;
     this.lastSendTime = 0;
     this.THROTTLE_MS = 100;
+  }
+
+  setAgentName(name) {
+    this.agentName = name;
   }
 
   connect() {
@@ -23,7 +28,7 @@ class TelemetryClient {
 
       this.socket.on('connect', () => {
         if (this.agentUuid) {
-          this.socket.emit('register', { type: 'agent', uuid: this.agentUuid });
+          this.socket.emit('register', { type: 'agent', uuid: this.agentUuid, name: this.agentName });
         }
       });
 

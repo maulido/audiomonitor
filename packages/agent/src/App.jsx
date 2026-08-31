@@ -65,7 +65,12 @@ function App() {
   // Settings state (Persisted to localStorage)
   const [agentName, setAgentName] = useState(() => localStorage.getItem('agentName') || 'PC-Studio-1');
   const agentNameRef = useRef(agentName);
-  useEffect(() => { agentNameRef.current = agentName; }, [agentName]);
+  useEffect(() => { 
+    agentNameRef.current = agentName; 
+    if (telemetryClient.current && typeof telemetryClient.current.setAgentName === 'function') {
+      telemetryClient.current.setAgentName(agentName);
+    }
+  }, [agentName]);
 
   const [serverIp, setServerIp] = useState(() => localStorage.getItem('serverIp') || 'http://localhost:4000');
   const serverIpRef = useRef(serverIp);
@@ -382,7 +387,7 @@ function App() {
   // Initialize Telemetry Client when UUID is ready
   useEffect(() => {
     if (uuid !== 'Loading...') {
-      telemetryClient.current = new TelemetryClient(committedServerIp, uuid);
+      telemetryClient.current = new TelemetryClient(committedServerIp, uuid, agentName);
       telemetryClient.current.connect();
       
       const socket = telemetryClient.current.socket;

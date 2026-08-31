@@ -1955,7 +1955,7 @@ function App() {
                           ) : (
                             <>
                               <div className="pc-name-wrapper">
-                                <span className="pc-name-title" title={agent.pcName}>{agent.pcName}</span>
+                                <span className="pc-name-title" title={agent.pcName || agent.name || agent.uuid}>{agent.pcName || agent.name || agent.uuid}</span>
                                 <span className="badge-agent-version">v{agent.appVersion || '1.0.2'}</span>
                               </div>
                               <div className="card-actions">

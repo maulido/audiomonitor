@@ -63,9 +63,18 @@ class TelemetryHub {
           socket.join(`agent-${data.uuid}`);
           socket.join('agents'); // Ruangan gabungan semua Agent
           
+          const configuredName = this.configManager.config.pcMapping?.[data.uuid];
+          const candidateName = (data.name && typeof data.name === 'string' && data.name.trim() !== '' && data.name !== data.uuid) ? data.name.trim() : null;
+          const pcName = configuredName || candidateName || data.uuid;
+
           socket.agentUuid = data.uuid;
-          socket.agentName = data.name || data.uuid;
+          socket.agentName = pcName;
           this.agentSockets.set(data.uuid, socket.id);
+
+          // Jika PC belum memiliki mapping nama di server dan Agent mengirimkan nama yang valid, daftarkan otomatis
+          if (!configuredName && candidateName) {
+            this.configManager.setPcName(data.uuid, candidateName);
+          }
           
           // Jika PC ini sebelumnya berstatus OFF, beri tahu agar mematikan monitoringnya
           const stored = this.pcMonitoringState[data.uuid];
@@ -165,7 +174,8 @@ class TelemetryHub {
           // Hanya hapus jika socket ini memang koneksi aktif yang terbaru
           if (this.agentSockets.get(socket.agentUuid) === socket.id) {
             this.agentSockets.delete(socket.agentUuid);
-            const pcName = this.configManager.getPcName(socket.agentUuid) || socket.agentName || socket.agentUuid;
+            const configuredName = this.configManager.config.pcMapping?.[socket.agentUuid];
+            const pcName = configuredName || socket.agentName || socket.agentUuid;
             
             const existing = this.lastKnownState.get(socket.agentUuid) || {};
             const offlineData = { ...existing, uuid: socket.agentUuid, pcName, status: 'OFFLINE', lastSeen: Date.now() };
@@ -229,7 +239,14 @@ class TelemetryHub {
    */
   handleTelemetry(data) {
     if (!data || !data.uuid) return;
-    const pcName = this.configManager.getPcName(data.uuid) || data.name || data.uuid;
+    const configuredName = this.configManager.config.pcMapping?.[data.uuid];
+    const candidateName = (data.name && typeof data.name === 'string' && data.name.trim() !== '' && data.name !== data.uuid) ? data.name.trim() : null;
+    const pcName = configuredName || candidateName || data.uuid;
+
+    // Jika PC belum memiliki mapping nama di server dan Agent mengirimkan nama yang valid, daftarkan otomatis
+    if (!configuredName && candidateName) {
+      this.configManager.setPcName(data.uuid, candidateName);
+    }
     
     // Inisialisasi atau sinkronisasi status pengawasan per-PC
     if (this.pcMonitoringState[data.uuid] === undefined && data.isMonitoringActive !== undefined) {
