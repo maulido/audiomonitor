@@ -3231,11 +3231,20 @@ function App() {
                             </div>
                           </div>
 
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                             {pcData.uuid && (
-                              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontFamily: 'monospace' }}>
-                                ID: {pcData.uuid}
-                              </span>
+                              <button
+                                className="btn-filter secondary"
+                                style={{ color: '#f87171', borderColor: 'rgba(248, 113, 113, 0.4)', padding: '3px 9px', fontSize: '0.75rem', height: '28px', display: 'flex', alignItems: 'center', gap: '5px' }}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleCleanHostStorage(pcData.uuid, pc);
+                                }}
+                                title={`Hapus file audio lokal di PC Host "${pc}" yang sudah terupload ke Server`}
+                              >
+                                <i className="fa-solid fa-trash-can"></i>
+                                <span>Hapus Audio di Host</span>
+                              </button>
                             )}
                             <button 
                               className="pc-collapse-btn"
@@ -4117,6 +4126,9 @@ function App() {
                   <button className={`btn btn-secondary ${isTriggeringArchive ? 'is-loading' : ''}`} onClick={triggerManualArchive} disabled={isTriggeringArchive} style={{ background: 'rgba(245, 158, 11, 0.12)', borderColor: 'rgba(245, 158, 11, 0.3)', color: '#fbbf24' }}>
                     <i className={`fa-solid ${isTriggeringArchive ? 'fa-spinner fa-spin' : 'fa-box-archive'}`}></i>
                     {isTriggeringArchive ? 'Mengarsipkan...' : 'Arsipkan Berkas Lawas'}
+                  </button>
+                  <button className="btn btn-secondary" onClick={() => handleCleanHostStorage('all')} style={{ background: 'rgba(239, 68, 68, 0.12)', borderColor: 'rgba(239, 68, 68, 0.3)', color: '#f87171' }}>
+                    <i className="fa-solid fa-trash-can"></i> Hapus Audio di Semua PC Host
                   </button>
                 </div>
               </div>
