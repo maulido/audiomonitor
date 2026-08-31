@@ -62,11 +62,7 @@ if (!gotTheLock) {
           },
           { type: 'separator' },
           {
-            label: 'Lokasi Penyimpanan:',
-            enabled: false
-          },
-          {
-            label: `  ${currentStoragePath}`,
+            label: `Buka Folder Rekaman (${currentStoragePath.length > 28 ? '...' + currentStoragePath.slice(-24) : currentStoragePath})`,
             click: () => {
               if (!fs.existsSync(currentStoragePath)) {
                 try { fs.mkdirSync(currentStoragePath, { recursive: true }); } catch (e) {}
@@ -75,16 +71,7 @@ if (!gotTheLock) {
             }
           },
           {
-            label: 'Buka Folder Penyimpanan',
-            click: () => {
-              if (!fs.existsSync(currentStoragePath)) {
-                try { fs.mkdirSync(currentStoragePath, { recursive: true }); } catch (e) {}
-              }
-              shell.openPath(currentStoragePath);
-            }
-          },
-          {
-            label: 'Ubah Lokasi Penyimpanan Audio...',
+            label: 'Ubah Lokasi Penyimpanan...',
             click: () => {
                const result = dialog.showOpenDialogSync({
                  title: 'Pilih Folder Penyimpanan Rekaman (Server)',
