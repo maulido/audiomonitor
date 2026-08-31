@@ -2647,6 +2647,153 @@ async function main() {
     assertEqual(isWebMHeader(emptyBuffer), false, 'Empty buffer rejected safely');
   });
 
+  // =========================================================================
+  // SUITE 36: Agent Host Audio Storage Management, Selective Retention & Atomic Cleanup
+  // =========================================================================
+  await runSuite('36. Agent Host Audio Storage Management, Selective Retention & Atomic Cleanup', async () => {
+    const hostStorageDir = path.join(TEST_DIR, 'Host_Audio_Recordings');
+    fs.mkdirSync(hostStorageDir, { recursive: true });
+
+    // Mock storage calculation function
+    const getStorageInfoMock = (baseDir, activeDir = null) => {
+      if (!fs.existsSync(baseDir)) {
+        return { exists: false, totalBytes: 0, totalMb: '0.0', folderCount: 0, fileCount: 0, sessions: [] };
+      }
+      let totalBytes = 0;
+      let fileCount = 0;
+      const sessions = [];
+      const entries = fs.readdirSync(baseDir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (entry.isDirectory()) {
+          const sessionPath = path.join(baseDir, entry.name);
+          let sessionBytes = 0;
+          let sessionFiles = 0;
+          let mtime = null;
+          const files = fs.readdirSync(sessionPath);
+          for (const f of files) {
+            const stat = fs.statSync(path.join(sessionPath, f));
+            sessionBytes += stat.size;
+            sessionFiles++;
+            if (!mtime || stat.mtime > mtime) mtime = stat.mtime;
+          }
+          totalBytes += sessionBytes;
+          fileCount += sessionFiles;
+          sessions.push({
+            name: entry.name,
+            path: sessionPath,
+            bytes: sessionBytes,
+            mb: (sessionBytes / 1024 / 1024).toFixed(1),
+            fileCount: sessionFiles,
+            mtime: mtime ? mtime.toISOString() : null,
+            isCurrentActive: activeDir && path.resolve(activeDir).startsWith(path.resolve(sessionPath))
+          });
+        }
+      }
+      return {
+        exists: true,
+        baseDir,
+        totalBytes,
+        totalMb: (totalBytes / 1024 / 1024).toFixed(1),
+        totalGb: (totalBytes / 1024 / 1024 / 1024).toFixed(2),
+        folderCount: sessions.length,
+        fileCount,
+        sessions
+      };
+    };
+
+    // Mock deletion function
+    const deleteLocalRecordingsMock = (baseDir, { deleteMode = 'all', days = 0 } = {}, activeDir = null) => {
+      if (!fs.existsSync(baseDir)) return { success: true, deletedFolders: 0, freedBytes: 0, freedMb: '0.0' };
+      let deletedFolders = 0;
+      let freedBytes = 0;
+      const cutoffTime = days > 0 ? Date.now() - (days * 24 * 60 * 60 * 1000) : null;
+      const entries = fs.readdirSync(baseDir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue;
+        const sessionPath = path.join(baseDir, entry.name);
+        if (activeDir && (path.resolve(activeDir) === path.resolve(sessionPath) || path.resolve(activeDir).startsWith(path.resolve(sessionPath)))) {
+          continue; // Protect currently active recording
+        }
+        let shouldDelete = false;
+        let sessionBytes = 0;
+        let newestMtime = 0;
+        const files = fs.readdirSync(sessionPath);
+        for (const f of files) {
+          const stat = fs.statSync(path.join(sessionPath, f));
+          sessionBytes += stat.size;
+          if (stat.mtimeMs > newestMtime) newestMtime = stat.mtimeMs;
+        }
+        if (deleteMode === 'all') {
+          shouldDelete = true;
+        } else if (deleteMode === 'older_than_days' && cutoffTime) {
+          const dateMatch = entry.name.match(/(\d{4})-(\d{2})-(\d{2})/);
+          let folderTimestamp = newestMtime;
+          if (dateMatch) {
+            const parsedDate = new Date(`${dateMatch[1]}-${dateMatch[2]}-${dateMatch[3]}`).getTime();
+            if (!isNaN(parsedDate)) folderTimestamp = parsedDate;
+          }
+          if (folderTimestamp > 0 && folderTimestamp < cutoffTime) {
+            shouldDelete = true;
+          }
+        }
+        if (shouldDelete) {
+          fs.rmSync(sessionPath, { recursive: true, force: true });
+          deletedFolders++;
+          freedBytes += sessionBytes;
+        }
+      }
+      return {
+        success: true,
+        deletedFolders,
+        freedBytes,
+        freedMb: (freedBytes / 1024 / 1024).toFixed(1)
+      };
+    };
+
+    // 1. Create mock sessions: 1 old session (10 days ago), 1 recent session (yesterday), 1 active live session
+    const oldSessionDir = path.join(hostStorageDir, 'Studio1_uuid1_2026-08-15_10-00-00');
+    const recentSessionDir = path.join(hostStorageDir, 'Studio1_uuid1_2026-08-30_14-00-00');
+    const activeLiveSessionDir = path.join(hostStorageDir, 'Studio1_uuid1_2026-08-31_22-00-00');
+
+    fs.mkdirSync(oldSessionDir, { recursive: true });
+    fs.mkdirSync(recentSessionDir, { recursive: true });
+    fs.mkdirSync(activeLiveSessionDir, { recursive: true });
+
+    // Populate with dummy audio files (5MB each)
+    const dummyAudio5Mb = Buffer.alloc(5 * 1024 * 1024, 0xAA);
+    fs.writeFileSync(path.join(oldSessionDir, 'Part_001.webm'), dummyAudio5Mb);
+    fs.writeFileSync(path.join(oldSessionDir, 'Part_002.webm'), dummyAudio5Mb); // 10MB old
+    fs.writeFileSync(path.join(recentSessionDir, 'Part_001.webm'), dummyAudio5Mb); // 5MB recent
+    fs.writeFileSync(path.join(activeLiveSessionDir, 'Part_001.webm'), dummyAudio5Mb); // 5MB active
+
+    // 2. Test getStorageInfo
+    const info1 = getStorageInfoMock(hostStorageDir, activeLiveSessionDir);
+    assertEqual(info1.folderCount, 3, 'Initial storage has 3 session folders');
+    assertEqual(info1.fileCount, 4, 'Initial storage has 4 audio files');
+    assertEqual(info1.totalBytes, 20 * 1024 * 1024, 'Total storage is exactly 20 MB (20,971,520 bytes)');
+    assertEqual(info1.totalMb, '20.0', 'Total MB formatted to 20.0');
+
+    // 3. Test Selective Retention: Delete older than 7 days
+    const delRes1 = deleteLocalRecordingsMock(hostStorageDir, { deleteMode: 'older_than_days', days: 7 }, activeLiveSessionDir);
+    assertEqual(delRes1.success, true, 'Selective delete returned success: true');
+    assertEqual(delRes1.deletedFolders, 1, 'Only 1 old session deleted (older than 7 days)');
+    assertEqual(delRes1.freedBytes, 10 * 1024 * 1024, 'Freed exactly 10 MB (10,485,760 bytes)');
+    assert(!fs.existsSync(oldSessionDir), 'Old session folder is removed from disk');
+    assert(fs.existsSync(recentSessionDir), 'Recent session folder is preserved');
+
+    // 4. Test Delete ALL with active session protection
+    const delRes2 = deleteLocalRecordingsMock(hostStorageDir, { deleteMode: 'all' }, activeLiveSessionDir);
+    assertEqual(delRes2.deletedFolders, 1, 'Deleted 1 non-active session folder');
+    assertEqual(delRes2.freedBytes, 5 * 1024 * 1024, 'Freed exactly 5 MB from recent session');
+    assert(!fs.existsSync(recentSessionDir), 'Recent session folder is now removed');
+    assert(fs.existsSync(activeLiveSessionDir), 'Active recording session is protected from deletion');
+
+    // 5. Verify final storage info
+    const info2 = getStorageInfoMock(hostStorageDir, activeLiveSessionDir);
+    assertEqual(info2.folderCount, 1, 'Only active session remains');
+    assertEqual(info2.totalMb, '5.0', 'Remaining storage is 5.0 MB');
+  });
+
   // Clean up test directory
   try {
     fs.rmSync(TEST_DIR, { recursive: true, force: true });

@@ -425,6 +425,173 @@ ipcMain.handle('select-folder', async () => {
   return null;
 });
 
+// Mengambil ringkasan penggunaan penyimpanan rekaman audio lokal di PC Host
+ipcMain.handle('get-storage-info', async (event, customRecordDir) => {
+  const baseDir = customRecordDir && customRecordDir.trim() !== '' 
+    ? customRecordDir 
+    : path.join(app.getPath('documents'), 'AudioMonitor-Recordings');
+
+  if (!fs.existsSync(baseDir)) {
+    return {
+      exists: false,
+      baseDir,
+      totalBytes: 0,
+      totalMb: '0.0',
+      totalGb: '0.00',
+      folderCount: 0,
+      fileCount: 0,
+      sessions: []
+    };
+  }
+
+  let totalBytes = 0;
+  let fileCount = 0;
+  const sessions = [];
+
+  try {
+    const entries = fs.readdirSync(baseDir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        const sessionPath = path.join(baseDir, entry.name);
+        let sessionBytes = 0;
+        let sessionFiles = 0;
+        let mtime = null;
+
+        try {
+          const files = fs.readdirSync(sessionPath);
+          for (const f of files) {
+            const filePath = path.join(sessionPath, f);
+            try {
+              const stat = fs.statSync(filePath);
+              sessionBytes += stat.size;
+              sessionFiles++;
+              if (!mtime || stat.mtime > mtime) mtime = stat.mtime;
+            } catch (e) {}
+          }
+        } catch (e) {}
+
+        totalBytes += sessionBytes;
+        fileCount += sessionFiles;
+        sessions.push({
+          name: entry.name,
+          path: sessionPath,
+          bytes: sessionBytes,
+          mb: (sessionBytes / 1024 / 1024).toFixed(1),
+          fileCount: sessionFiles,
+          mtime: mtime ? mtime.toISOString() : null,
+          isCurrentActive: currentSessionDir && path.resolve(currentSessionDir).startsWith(path.resolve(sessionPath))
+        });
+      }
+    }
+  } catch (err) {
+    writeAgentLog('ERROR', `Gagal membaca storage info: ${err.message}`);
+  }
+
+  return {
+    exists: true,
+    baseDir,
+    totalBytes,
+    totalMb: (totalBytes / 1024 / 1024).toFixed(1),
+    totalGb: (totalBytes / 1024 / 1024 / 1024).toFixed(2),
+    folderCount: sessions.length,
+    fileCount,
+    sessions
+  };
+});
+
+// Menghapus file rekaman lokal di PC Host untuk membebaskan ruang disk
+ipcMain.handle('delete-local-recordings', async (event, { recordDir, deleteMode = 'all', days = 0 } = {}) => {
+  const baseDir = recordDir && recordDir.trim() !== '' 
+    ? recordDir 
+    : path.join(app.getPath('documents'), 'AudioMonitor-Recordings');
+
+  if (!fs.existsSync(baseDir)) {
+    return { success: true, deletedFolders: 0, freedBytes: 0, freedMb: '0.0' };
+  }
+
+  let deletedFolders = 0;
+  let freedBytes = 0;
+  const cutoffTime = days > 0 ? Date.now() - (days * 24 * 60 * 60 * 1000) : null;
+
+  try {
+    const entries = fs.readdirSync(baseDir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+
+      const sessionPath = path.join(baseDir, entry.name);
+
+      // Jangan hapus sesi yang sedang aktif merekam saat ini
+      if (currentSessionDir && (path.resolve(currentSessionDir) === path.resolve(sessionPath) || path.resolve(currentSessionDir).startsWith(path.resolve(sessionPath)))) {
+        continue;
+      }
+
+      let shouldDelete = false;
+      let sessionBytes = 0;
+      let newestMtime = 0;
+
+      try {
+        const files = fs.readdirSync(sessionPath);
+        for (const f of files) {
+          try {
+            const stat = fs.statSync(path.join(sessionPath, f));
+            sessionBytes += stat.size;
+            if (stat.mtimeMs > newestMtime) newestMtime = stat.mtimeMs;
+          } catch (e) {}
+        }
+      } catch (e) {}
+
+      if (deleteMode === 'all') {
+        shouldDelete = true;
+      } else if (deleteMode === 'older_than_days' && cutoffTime) {
+        const dateMatch = entry.name.match(/(\d{4})-(\d{2})-(\d{2})/);
+        let folderTimestamp = newestMtime;
+        if (dateMatch) {
+          const parsedDate = new Date(`${dateMatch[1]}-${dateMatch[2]}-${dateMatch[3]}`).getTime();
+          if (!isNaN(parsedDate)) folderTimestamp = parsedDate;
+        }
+        if (folderTimestamp > 0 && folderTimestamp < cutoffTime) {
+          shouldDelete = true;
+        }
+      }
+
+      if (shouldDelete) {
+        try {
+          fs.rmSync(sessionPath, { recursive: true, force: true });
+          deletedFolders++;
+          freedBytes += sessionBytes;
+        } catch (rmErr) {
+          writeAgentLog('WARN', `Gagal menghapus folder ${entry.name}: ${rmErr.message}`);
+        }
+      }
+    }
+  } catch (err) {
+    writeAgentLog('ERROR', `Gagal mengeksekusi penghapusan rekaman lokal: ${err.message}`);
+    return { success: false, error: err.message };
+  }
+
+  writeAgentLog('INFO', `Pembersihan storage lokal PC Host: ${deletedFolders} folder dihapus, membebaskan ${(freedBytes / 1024 / 1024).toFixed(1)} MB.`);
+
+  return {
+    success: true,
+    deletedFolders,
+    freedBytes,
+    freedMb: (freedBytes / 1024 / 1024).toFixed(1)
+  };
+});
+
+// Membuka folder rekaman di Windows File Explorer
+ipcMain.handle('open-recordings-folder', async (event, recordDir) => {
+  const { shell } = require('electron');
+  const baseDir = recordDir && recordDir.trim() !== '' 
+    ? recordDir 
+    : path.join(app.getPath('documents'), 'AudioMonitor-Recordings');
+  if (!fs.existsSync(baseDir)) {
+    fs.mkdirSync(baseDir, { recursive: true });
+  }
+  await shell.openPath(baseDir);
+  return true;
+});
+
 
 
 ipcMain.on('start-recording', (event, { sessionFolderName, partNumber, recordDir, agentName, serverIp }) => {

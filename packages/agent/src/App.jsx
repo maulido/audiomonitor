@@ -219,9 +219,90 @@ function App() {
   const enableWindowsNotifRef = useRef(enableWindowsNotif);
   useEffect(() => { enableWindowsNotifRef.current = enableWindowsNotif; localStorage.setItem('enableWindowsNotif', enableWindowsNotif); }, [enableWindowsNotif]);
 
-  const [telegramConfig, setTelegramConfig] = useState(() => {
+    const [telegramConfig, setTelegramConfig] = useState(() => {
     try { return JSON.parse(localStorage.getItem('telegramConfig')) || null; } catch(e){ return null; }
   });
+
+  const [localStorageInfo, setLocalStorageInfo] = useState({ exists: false, totalMb: '0.0', totalGb: '0.00', folderCount: 0, fileCount: 0, sessions: [] });
+  const [isCleaningStorage, setIsCleaningStorage] = useState(false);
+  const [cleanupFeedback, setCleanupFeedback] = useState('');
+  const [localRetentionDays, setLocalRetentionDays] = useState(() => {
+    const saved = localStorage.getItem('localRetentionDays');
+    return saved !== null ? parseInt(saved, 10) : 0;
+  });
+
+  const fetchLocalStorageInfo = async () => {
+    if (window.electronAPI && window.electronAPI.getStorageInfo) {
+      try {
+        const info = await window.electronAPI.getStorageInfo(recordDirRef.current);
+        if (info) setLocalStorageInfo(info);
+      } catch (e) {}
+    }
+  };
+
+  const handleDeleteAudioFiles = async (deleteMode = 'all', days = 0) => {
+    if (isCleaningStorage) return;
+
+    let confirmMsg = '';
+    if (deleteMode === 'all') {
+      confirmMsg = `Apakah Anda yakin ingin MENGHAPUS SEMUA file rekaman audio lokal pada PC ini?\n\nTotal kapasitas: ${localStorageInfo.totalMb} MB (${localStorageInfo.folderCount} folder rekaman).\nFile yang dihapus tidak dapat dipulihkan.`;
+    } else if (deleteMode === 'older_than_days') {
+      confirmMsg = `Hapus semua file rekaman lokal yang usianya lebih dari ${days} hari?`;
+    }
+
+    const confirmed = window.confirm(confirmMsg);
+    if (!confirmed) return;
+
+    setIsCleaningStorage(true);
+    setCleanupFeedback('Sedang menghapus file audio...');
+    try {
+      if (window.electronAPI && window.electronAPI.deleteLocalRecordings) {
+        const res = await window.electronAPI.deleteLocalRecordings({
+          recordDir: recordDirRef.current,
+          deleteMode,
+          days
+        });
+        if (res?.success) {
+          setCleanupFeedback(`Berhasil membebaskan ${res.freedMb} MB (${res.deletedFolders} folder dihapus)`);
+          await fetchLocalStorageInfo();
+          setTimeout(() => setCleanupFeedback(''), 6000);
+        } else {
+          setCleanupFeedback(`Gagal: ${res?.error || 'Terjadi kesalahan'}`);
+        }
+      }
+    } catch (err) {
+      setCleanupFeedback(`Error: ${err.message}`);
+    } finally {
+      setIsCleaningStorage(false);
+    }
+  };
+
+  const handleOpenRecordingsFolder = async () => {
+    if (window.electronAPI && window.electronAPI.openRecordingsFolder) {
+      await window.electronAPI.openRecordingsFolder(recordDirRef.current);
+    }
+  };
+
+  useEffect(() => {
+    fetchLocalStorageInfo();
+    const interval = setInterval(fetchLocalStorageInfo, 10000);
+    return () => clearInterval(interval);
+  }, [recordDir]);
+
+  // Auto-retention check on mount
+  useEffect(() => {
+    if (localRetentionDays > 0 && window.electronAPI && window.electronAPI.deleteLocalRecordings) {
+      window.electronAPI.deleteLocalRecordings({
+        recordDir: recordDirRef.current,
+        deleteMode: 'older_than_days',
+        days: localRetentionDays
+      }).then(res => {
+        if (res && res.deletedFolders > 0) {
+          fetchLocalStorageInfo();
+        }
+      }).catch(console.error);
+    }
+  }, []);
 
   useEffect(() => {
     window.electronAPI.getAutostart().then(val => setAutoStart(val)).catch(console.error);
@@ -909,8 +990,14 @@ REC
             
             
               <div className="setting-group full" style={{ marginTop: '5px', paddingTop: '10px', borderTop: '1px dashed #333' }}>
-                <label>Lokasi Simpan Rekaman</label>
-                <div style={{ display: 'flex', gap: '5px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                  <label style={{ margin: 0, fontWeight: 'bold', color: '#fff' }}>Penyimpanan Rekaman Audio Host</label>
+                  <span style={{ fontSize: '11px', color: '#4caf50', fontWeight: 'bold' }}>
+                    {localStorageInfo.totalMb} MB ({localStorageInfo.folderCount} Sesi)
+                  </span>
+                </div>
+
+                <div style={{ display: 'flex', gap: '5px', marginBottom: '8px' }}>
                   <input 
                     type="text" 
                     value={recordDir} 
@@ -925,10 +1012,94 @@ REC
                         if (folder) setRecordDir(folder);
                       }
                     }}
-                    style={{ background: '#555', color: '#fff', border: 'none', padding: '5px 10px', borderRadius: '3px', cursor: 'pointer' }}
+                    style={{ background: '#444', color: '#fff', border: '1px solid #555', padding: '5px 10px', borderRadius: '3px', cursor: 'pointer' }}
+                    title="Pilih folder kustom"
                   >
                     Pilih
                   </button>
+                  <button 
+                    onClick={handleOpenRecordingsFolder}
+                    style={{ background: '#2c3e50', color: '#ecf0f1', border: '1px solid #34495e', padding: '5px 10px', borderRadius: '3px', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                    title="Buka folder rekaman di Windows File Explorer"
+                  >
+                    Buka Folder
+                  </button>
+                </div>
+
+                {/* Tombol Aksi Hapus Audio & Pembersihan Storage */}
+                <div style={{ background: '#1a1a1a', border: '1px solid #333', borderRadius: '4px', padding: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '6px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span style={{ fontSize: '11px', color: '#aaa' }}>Bersihkan Audio:</span>
+                      <select 
+                        disabled={isCleaningStorage || localStorageInfo.folderCount === 0}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (!val) return;
+                          if (val === 'all') handleDeleteAudioFiles('all');
+                          else handleDeleteAudioFiles('older_than_days', parseInt(val, 10));
+                          e.target.value = '';
+                        }}
+                        defaultValue=""
+                        style={{ background: '#262626', color: '#e0e0e0', border: '1px solid #444', borderRadius: '3px', padding: '4px 6px', fontSize: '11px', cursor: 'pointer' }}
+                      >
+                        <option value="" disabled>Pilih Opsi Hapus...</option>
+                        <option value="1">Hapus Rekaman &gt; 1 Hari</option>
+                        <option value="3">Hapus Rekaman &gt; 3 Hari</option>
+                        <option value="7">Hapus Rekaman &gt; 7 Hari</option>
+                        <option value="14">Hapus Rekaman &gt; 14 Hari</option>
+                        <option value="30">Hapus Rekaman &gt; 30 Hari</option>
+                      </select>
+                    </div>
+
+                    <button 
+                      onClick={() => handleDeleteAudioFiles('all')}
+                      disabled={isCleaningStorage || localStorageInfo.folderCount === 0}
+                      style={{
+                        background: localStorageInfo.folderCount > 0 && !isCleaningStorage ? '#c0392b' : '#555',
+                        color: '#fff',
+                        border: 'none',
+                        padding: '4px 10px',
+                        borderRadius: '3px',
+                        fontSize: '11px',
+                        fontWeight: 'bold',
+                        cursor: localStorageInfo.folderCount > 0 && !isCleaningStorage ? 'pointer' : 'not-allowed',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px'
+                      }}
+                      title="Hapus seluruh file rekaman audio di PC host"
+                    >
+                      Hapus SEMUA File Audio
+                    </button>
+                  </div>
+
+                  {/* Konfigurasi Auto-Retention */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px', color: '#888', borderTop: '1px solid #282828', paddingTop: '6px' }}>
+                    <span>Pembersihan Otomatis (Auto-Retention):</span>
+                    <select 
+                      value={localRetentionDays}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value, 10);
+                        setLocalRetentionDays(val);
+                        localStorage.setItem('localRetentionDays', val.toString());
+                      }}
+                      style={{ background: '#222', color: '#aaa', border: '1px solid #333', borderRadius: '3px', padding: '2px 6px', fontSize: '11px' }}
+                    >
+                      <option value="0">Tidak Pernah (Manual)</option>
+                      <option value="1">Otomatis Hapus &gt; 1 Hari</option>
+                      <option value="3">Otomatis Hapus &gt; 3 Hari</option>
+                      <option value="7">Otomatis Hapus &gt; 7 Hari</option>
+                      <option value="14">Otomatis Hapus &gt; 14 Hari</option>
+                      <option value="30">Otomatis Hapus &gt; 30 Hari</option>
+                    </select>
+                  </div>
+
+                  {cleanupFeedback && (
+                    <div style={{ fontSize: '11px', color: cleanupFeedback.startsWith('Gagal') || cleanupFeedback.startsWith('Error') ? '#e74c3c' : '#2ecc71', fontWeight: 'bold' }}>
+                      {cleanupFeedback}
+                    </div>
+                  )}
                 </div>
               </div>
 

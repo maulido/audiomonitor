@@ -24,6 +24,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openLogsFolder: () => ipcRenderer.send('open-logs-folder'),
   
   selectFolder: () => ipcRenderer.invoke('select-folder'),
+  getStorageInfo: (recordDir) => ipcRenderer.invoke('get-storage-info', recordDir),
+  deleteLocalRecordings: (options) => ipcRenderer.invoke('delete-local-recordings', options),
+  openRecordingsFolder: (recordDir) => ipcRenderer.invoke('open-recordings-folder', recordDir),
   startRecording: (sessionFolderName, partNumber, recordDir, agentName, serverIp) => ipcRenderer.send('start-recording', { sessionFolderName, partNumber, recordDir, agentName, serverIp }),
   stopRecording: (isRollover) => ipcRenderer.send('stop-recording', isRollover),
   saveAudioChunk: (arrayBuffer) => ipcRenderer.send('save-audio-chunk', arrayBuffer),
