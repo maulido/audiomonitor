@@ -436,9 +436,11 @@ function App() {
     try {
       const res = await apiFetch('/api/storage/automation-status');
       if (res.ok) {
-        const data = await res.json();
-        setStorageStatus(data);
-        if (data.config) setStorageConfig(data.config);
+        const data = await res.json().catch(() => null);
+        if (data && data.success) {
+          setStorageStatus(data);
+          if (data.config) setStorageConfig(data.config);
+        }
       }
     } catch (err) {
       console.error('Failed to fetch storage status:', err);
@@ -446,19 +448,25 @@ function App() {
   };
 
   const saveStorageAutomationConfig = async () => {
-    if (!ensurePin()) return;
+    const authPin = await ensurePin();
+    if (!authPin) return;
     setIsSavingStorageConfig(true);
     try {
       const res = await apiFetch('/api/storage/automation-config', {
         method: 'POST',
         body: JSON.stringify(storageConfig)
       });
-      const data = await res.json();
+      let data = {};
+      try {
+        data = await res.json();
+      } catch (parseErr) {
+        throw new Error(`Server tidak merespons JSON (Status: ${res.status}). Pastikan aplikasi Server backend telah dimulai ulang.`);
+      }
       if (res.ok && data.success) {
         await customAlert('Konfigurasi Smart Storage & Cloud Sync berhasil disimpan.', 'Tersimpan');
         fetchStorageAutomationStatus();
       } else {
-        await customAlert(data.error || 'Gagal menyimpan konfigurasi.', 'Error');
+        await customAlert(data.error || data.message || 'Gagal menyimpan konfigurasi.', 'Error');
       }
     } catch (err) {
       await customAlert(err.message, 'Error');
@@ -468,12 +476,18 @@ function App() {
   };
 
   const triggerManualBackupSync = async () => {
-    if (!ensurePin()) return;
+    const authPin = await ensurePin();
+    if (!authPin) return;
     setIsTriggeringSync(true);
     setSyncStatusMsg(null);
     try {
       const res = await apiFetch('/api/storage/trigger-sync', { method: 'POST' });
-      const data = await res.json();
+      let data = {};
+      try {
+        data = await res.json();
+      } catch (parseErr) {
+        throw new Error(`Server tidak merespons JSON (Status: ${res.status}). Pastikan aplikasi Server backend telah dimulai ulang.`);
+      }
       if (res.ok && data.success) {
         setSyncStatusMsg({ type: 'success', text: `Sinkronisasi selesai: ${data.syncedCount} sesi rekaman berhasil dicadangkan.` });
         fetchStorageAutomationStatus();
@@ -488,16 +502,22 @@ function App() {
   };
 
   const triggerManualArchive = async () => {
-    if (!ensurePin()) return;
+    const authPin = await ensurePin();
+    if (!authPin) return;
     setIsTriggeringArchive(true);
     try {
       const res = await apiFetch('/api/storage/trigger-archive', { method: 'POST' });
-      const data = await res.json();
+      let data = {};
+      try {
+        data = await res.json();
+      } catch (parseErr) {
+        throw new Error(`Server tidak merespons JSON (Status: ${res.status}). Pastikan aplikasi Server backend telah dimulai ulang.`);
+      }
       if (res.ok && data.success) {
         await customAlert(`${data.archivedCount} sesi rekaman lawas berhasil diarsipkan.`, 'Pengarsipan Selesai');
         fetchStorageAutomationStatus();
       } else {
-        await customAlert(data.error || 'Gagal menjalankan pengarsipan.', 'Error');
+        await customAlert(data.error || data.message || 'Gagal menjalankan pengarsipan.', 'Error');
       }
     } catch (err) {
       await customAlert(err.message, 'Error');
