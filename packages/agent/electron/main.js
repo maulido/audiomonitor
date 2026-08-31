@@ -382,6 +382,18 @@ function uploadToServer(filePath, serverUrl, agentName, sessionFolder) {
       res.on('end', () => {
         if (res.statusCode >= 200 && res.statusCode < 300) {
           writeAgentLog('INFO', `Sukses mengunggah ${fileName} ke Server.`);
+          // Tulis marker bahwa file audio ini telah berhasil terunggah ke Server
+          try {
+            const markerPath = `${filePath}.uploaded`;
+            fs.writeFileSync(markerPath, JSON.stringify({
+              uploadedAt: new Date().toISOString(),
+              size: stats.size,
+              fileName,
+              serverUrl: urlObj.origin
+            }), 'utf8');
+          } catch (mErr) {
+            writeAgentLog('WARN', `Gagal menulis marker uploaded: ${mErr.message}`);
+          }
         } else {
           writeAgentLog('ERROR', `Gagal mengunggah ${fileName} ke Server. Status: ${res.statusCode}, Respon: ${data}`);
         }
@@ -438,14 +450,22 @@ ipcMain.handle('get-storage-info', async (event, customRecordDir) => {
       totalBytes: 0,
       totalMb: '0.0',
       totalGb: '0.00',
+      uploadedBytes: 0,
+      uploadedMb: '0.0',
+      pendingBytes: 0,
+      pendingMb: '0.0',
       folderCount: 0,
+      uploadedFolderCount: 0,
+      pendingFolderCount: 0,
       fileCount: 0,
       sessions: []
     };
   }
 
   let totalBytes = 0;
+  let uploadedBytes = 0;
   let fileCount = 0;
+  let uploadedFolderCount = 0;
   const sessions = [];
 
   try {
@@ -456,6 +476,8 @@ ipcMain.handle('get-storage-info', async (event, customRecordDir) => {
         let sessionBytes = 0;
         let sessionFiles = 0;
         let mtime = null;
+        let audioFilesCount = 0;
+        let uploadedFilesCount = 0;
 
         try {
           const files = fs.readdirSync(sessionPath);
@@ -466,9 +488,22 @@ ipcMain.handle('get-storage-info', async (event, customRecordDir) => {
               sessionBytes += stat.size;
               sessionFiles++;
               if (!mtime || stat.mtime > mtime) mtime = stat.mtime;
+
+              if (f.toLowerCase().endsWith('.webm') || f.toLowerCase().endsWith('.wav') || f.toLowerCase().endsWith('.mp3')) {
+                audioFilesCount++;
+                if (fs.existsSync(`${filePath}.uploaded`)) {
+                  uploadedFilesCount++;
+                }
+              }
             } catch (e) {}
           }
         } catch (e) {}
+
+        const isFullyUploaded = audioFilesCount > 0 && uploadedFilesCount >= audioFilesCount;
+        if (isFullyUploaded) {
+          uploadedBytes += sessionBytes;
+          uploadedFolderCount++;
+        }
 
         totalBytes += sessionBytes;
         fileCount += sessionFiles;
@@ -478,6 +513,9 @@ ipcMain.handle('get-storage-info', async (event, customRecordDir) => {
           bytes: sessionBytes,
           mb: (sessionBytes / 1024 / 1024).toFixed(1),
           fileCount: sessionFiles,
+          audioFilesCount,
+          uploadedFilesCount,
+          isFullyUploaded,
           mtime: mtime ? mtime.toISOString() : null,
           isCurrentActive: currentSessionDir && path.resolve(currentSessionDir).startsWith(path.resolve(sessionPath))
         });
@@ -487,30 +525,39 @@ ipcMain.handle('get-storage-info', async (event, customRecordDir) => {
     writeAgentLog('ERROR', `Gagal membaca storage info: ${err.message}`);
   }
 
+  const pendingBytes = Math.max(0, totalBytes - uploadedBytes);
+
   return {
     exists: true,
     baseDir,
     totalBytes,
     totalMb: (totalBytes / 1024 / 1024).toFixed(1),
     totalGb: (totalBytes / 1024 / 1024 / 1024).toFixed(2),
+    uploadedBytes,
+    uploadedMb: (uploadedBytes / 1024 / 1024).toFixed(1),
+    pendingBytes,
+    pendingMb: (pendingBytes / 1024 / 1024).toFixed(1),
     folderCount: sessions.length,
+    uploadedFolderCount,
+    pendingFolderCount: sessions.length - uploadedFolderCount,
     fileCount,
     sessions
   };
 });
 
-// Menghapus file rekaman lokal di PC Host untuk membebaskan ruang disk
-ipcMain.handle('delete-local-recordings', async (event, { recordDir, deleteMode = 'all', days = 0 } = {}) => {
+// Menghapus file rekaman lokal di PC Host (HANYA yang sudah terupload ke Server)
+ipcMain.handle('delete-local-recordings', async (event, { recordDir, deleteMode = 'all', days = 0, onlyUploaded = true } = {}) => {
   const baseDir = recordDir && recordDir.trim() !== '' 
     ? recordDir 
     : path.join(app.getPath('documents'), 'AudioMonitor-Recordings');
 
   if (!fs.existsSync(baseDir)) {
-    return { success: true, deletedFolders: 0, freedBytes: 0, freedMb: '0.0' };
+    return { success: true, deletedFolders: 0, freedBytes: 0, freedMb: '0.0', skippedUnuploaded: 0 };
   }
 
   let deletedFolders = 0;
   let freedBytes = 0;
+  let skippedUnuploaded = 0;
   const cutoffTime = days > 0 ? Date.now() - (days * 24 * 60 * 60 * 1000) : null;
 
   try {
@@ -525,21 +572,39 @@ ipcMain.handle('delete-local-recordings', async (event, { recordDir, deleteMode 
         continue;
       }
 
-      let shouldDelete = false;
       let sessionBytes = 0;
       let newestMtime = 0;
+      let audioFiles = [];
+      let allAudioUploaded = true;
 
       try {
         const files = fs.readdirSync(sessionPath);
         for (const f of files) {
           try {
-            const stat = fs.statSync(path.join(sessionPath, f));
+            const filePath = path.join(sessionPath, f);
+            const stat = fs.statSync(filePath);
             sessionBytes += stat.size;
             if (stat.mtimeMs > newestMtime) newestMtime = stat.mtimeMs;
+
+            if (f.toLowerCase().endsWith('.webm') || f.toLowerCase().endsWith('.wav') || f.toLowerCase().endsWith('.mp3')) {
+              audioFiles.push(f);
+              if (!fs.existsSync(`${filePath}.uploaded`)) {
+                allAudioUploaded = false;
+              }
+            }
           } catch (e) {}
         }
       } catch (e) {}
 
+      // KEBIJAKAN KEAMANAN DATA: Jika onlyUploaded aktif, jangan hapus jika ada file audio yang belum terupload!
+      if (onlyUploaded !== false) {
+        if (audioFiles.length === 0 || !allAudioUploaded) {
+          skippedUnuploaded++;
+          continue; // Lewati folder ini untuk mencegah kehilangan rekaman yang belum tersimpan di server
+        }
+      }
+
+      let shouldDelete = false;
       if (deleteMode === 'all') {
         shouldDelete = true;
       } else if (deleteMode === 'older_than_days' && cutoffTime) {
@@ -566,16 +631,17 @@ ipcMain.handle('delete-local-recordings', async (event, { recordDir, deleteMode 
     }
   } catch (err) {
     writeAgentLog('ERROR', `Gagal mengeksekusi penghapusan rekaman lokal: ${err.message}`);
-    return { success: false, error: err.message };
+    return { success: false, error: err.message, skippedUnuploaded };
   }
 
-  writeAgentLog('INFO', `Pembersihan storage lokal PC Host: ${deletedFolders} folder dihapus, membebaskan ${(freedBytes / 1024 / 1024).toFixed(1)} MB.`);
+  writeAgentLog('INFO', `Pembersihan storage lokal PC Host (Khusus Terupload): ${deletedFolders} folder dihapus, membebaskan ${(freedBytes / 1024 / 1024).toFixed(1)} MB (${skippedUnuploaded} folder belum terupload dilindungi).`);
 
   return {
     success: true,
     deletedFolders,
     freedBytes,
-    freedMb: (freedBytes / 1024 / 1024).toFixed(1)
+    freedMb: (freedBytes / 1024 / 1024).toFixed(1),
+    skippedUnuploaded
   };
 });
 

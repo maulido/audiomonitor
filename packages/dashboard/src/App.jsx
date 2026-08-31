@@ -977,6 +977,37 @@ function App() {
     }
   };
 
+  const handleCleanHostStorage = async (targetUuid = 'all', pcName = null) => {
+    const activePin = await ensurePin();
+    if (!activePin) return;
+
+    const targetDesc = targetUuid === 'all' 
+      ? 'seluruh PC Host Agent yang terhubung' 
+      : `PC Host "${pcName || targetUuid}"`;
+
+    const confirmed = await customConfirm(
+      `Hapus file rekaman audio lokal di ${targetDesc} yang SUDAH BERHASIL TERUPLOAD ke Server?\n\nFile rekaman yang belum terupload akan tetap dilindungi dan tidak akan dihapus.`,
+      'Konfirmasi Pembersihan Audio Host'
+    );
+    if (!confirmed) return;
+
+    try {
+      const res = await apiFetch('/api/agents/clean-storage', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targetUuid, onlyUploaded: true, deleteMode: 'all' })
+      });
+      if (res.ok) {
+        await customAlert(`Perintah pembersihan storage telah dikirim ke ${targetDesc}. Hanya file yang sudah sukses terupload ke Server yang akan dihapus.`, 'Perintah Terkirim');
+      } else {
+        const err = await res.json().catch(() => ({}));
+        await customAlert(`Gagal mengirim perintah: ${err.error || 'Server error'}`, 'Gagal');
+      }
+    } catch (e) {
+      await customAlert(`Koneksi error: ${e.message}`, 'Error');
+    }
+  };
+
   useEffect(() => {
     fetchConfig();
     checkServerUpdates();
@@ -1344,6 +1375,14 @@ function App() {
           }
           setKeywordAlertToast(alertData);
           toastTimerRef.current = setTimeout(() => setKeywordAlertToast(null), 8000);
+        }
+      },
+      (storageData) => {
+        if (storageData && storageData.success) {
+          customAlert(
+            `Pembersihan audio lokal di PC Host "${storageData.pcName || storageData.uuid}" selesai.\n\nMembebaskan ${storageData.freedMb} MB (${storageData.deletedFolders} folder rekaman dihapus, ${storageData.skippedUnuploaded || 0} folder yang belum terupload tetap aman).`,
+            'Pembersihan Host Selesai'
+          );
         }
       }
     );
@@ -1952,6 +1991,15 @@ function App() {
                                   <i className="fa-solid fa-circle"></i>
                                 </button>
 
+                                <button 
+                                  className="icon-btn" 
+                                  title="Bersihkan file audio lokal di PC Host ini (yang sudah terupload ke Server)" 
+                                  style={{ color: '#f87171' }}
+                                  onClick={() => handleCleanHostStorage(agent.uuid, agent.pcName || agent.uuid)}
+                                >
+                                  <i className="fa-solid fa-broom"></i>
+                                </button>
+
                                 <button className="icon-btn" title="Hapus PC" onClick={() => handleDeletePC(agent.uuid)}>
                                   <i className="fa-solid fa-trash"></i>
                                 </button>
@@ -2449,11 +2497,21 @@ function App() {
           return (
             <div className="settings-layout" style={{ maxWidth: '1050px' }}>
               <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
                   <h1 className="settings-header" style={{ marginBottom: 0 }}>File Rekaman</h1>
-                  <button className="btn-filter secondary" onClick={fetchRecords} disabled={loadingRecords}>
-                    <i className={`fa-solid fa-rotate ${loadingRecords ? 'fa-spin' : ''}`}></i> Muat Ulang
-                  </button>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button 
+                      className="btn-filter secondary" 
+                      onClick={() => handleCleanHostStorage('all')} 
+                      style={{ color: '#f87171', borderColor: 'rgba(248, 113, 113, 0.4)' }}
+                      title="Hapus file audio lokal di PC Host Agent yang SUDAH BERHASIL TERUPLOAD ke Server"
+                    >
+                      <i className="fa-solid fa-broom"></i> Bersihkan Audio di PC Host
+                    </button>
+                    <button className="btn-filter secondary" onClick={fetchRecords} disabled={loadingRecords}>
+                      <i className={`fa-solid fa-rotate ${loadingRecords ? 'fa-spin' : ''}`}></i> Muat Ulang
+                    </button>
+                  </div>
                 </div>
                 <p className="settings-desc">Daftar rekaman insiden suara berdasarkan sesi kejadian. Potongan audio (part) dapat diputar berurutan secara otomatis.</p>
               </div>
@@ -4245,6 +4303,23 @@ function App() {
                           </button>
                         );
                       })()}
+                    </div>
+                  </div>
+
+                  <div className="form-group" style={{ background: 'var(--bg-primary)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-color)', marginTop: '12px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                      <div>
+                        <div style={{ fontWeight: 600, fontSize: '13px' }}>Penyimpanan Audio Lokal di PC Host</div>
+                        <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Hapus file rekaman lokal di PC ini yang SUDAH BERHASIL TERUPLOAD ke Server</div>
+                      </div>
+                      <button 
+                        type="button" 
+                        className="btn-filter secondary" 
+                        style={{ color: '#f87171', borderColor: 'rgba(248, 113, 113, 0.4)', padding: '6px 12px', fontSize: '0.8rem' }}
+                        onClick={() => handleCleanHostStorage(configModalAgent.uuid, configModalAgent.pcName || configModalAgent.uuid)}
+                      >
+                        <i className="fa-solid fa-broom"></i> Bersihkan Audio Host
+                      </button>
                     </div>
                   </div>
 

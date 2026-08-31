@@ -967,6 +967,18 @@ class ServerApp {
       res.json({ success: true, message: 'Perintah pembaruan disiarkan ke Agent', downloadUrl: fullDownloadUrl });
     });
 
+    // API: Memicu pembersihan file audio lokal pada PC Host lewat Agent
+    this.app.post('/api/agents/clean-storage', (req, res) => {
+      const { targetUuid, deleteMode, days, onlyUploaded } = req.body || {};
+      this.telemetryHub.triggerAgentStorageClean(targetUuid || 'all', {
+        deleteMode: deleteMode || 'all',
+        days: typeof days === 'number' ? days : 0,
+        onlyUploaded: onlyUploaded !== false
+      });
+      logger.info(`[StorageHub] Memicu pembersihan file audio lokal ke target: ${targetUuid || 'all'} (Mode: ${deleteMode || 'all'}, Hanya Terupload: ${onlyUploaded !== false})`);
+      res.json({ success: true, message: 'Perintah pembersihan storage audio lokal telah dikirim ke PC Host' });
+    });
+
     // API: Cek Rilis Terbaru di GitHub Releases
     this.app.get('/api/updates/check-github', async (req, res) => {
       const https = require('https');

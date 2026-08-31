@@ -137,6 +137,18 @@ class TelemetryHub {
           this.io.to('dashboards').emit('agent-update-progress', enriched);
         });
 
+        // Event saat Agent selesai mengeksekusi pembersihan file audio lokal
+        socket.on('agent-storage-cleaned', (data) => {
+          if (!data) return;
+          const pcName = this.configManager.getPcName(data.uuid || socket.agentUuid) || socket.agentName || 'PC Host';
+          logger.info(`[StorageHub] PC Host ${pcName} (${data.uuid || socket.agentUuid}) membersihkan ${data.freedMb} MB storage lokal (${data.deletedFolders} folder dihapus, ${data.skippedUnuploaded || 0} dilindungi).`);
+          this.io.to('dashboards').emit('agent-storage-cleaned-result', {
+            uuid: data.uuid || socket.agentUuid,
+            pcName,
+            ...data
+          });
+        });
+
         // Event usang (Legacy) via socket untuk toggle monitoring PC
       socket.on('agent-monitoring', (data) => { if (!data) return;
         if (data.uuid && data.active !== undefined) {
@@ -212,7 +224,8 @@ class TelemetryHub {
   }
 
   /**
-   * Jantung pemrosesan data real-time. Memperkaya data Agent dengan nama aslinya, lalu meneruskannya.
+   * Menangani data telemetri yang baru masuk dari Agent.
+   * Melakukan validasi, pencatatan insiden ke DB, dan penyebaran ke Dashboard & Telegram.
    */
   handleTelemetry(data) {
     if (!data || !data.uuid) return;
@@ -227,17 +240,19 @@ class TelemetryHub {
       ? this.pcMonitoringState[data.uuid] 
       : (data.isMonitoringActive !== undefined ? data.isMonitoringActive : true);
     
-    const enrichedData = { ...data, pcName, isMonitoringActive, lastSeen: Date.now() };
+    const enrichedData = {
+      ...data,
+      pcName,
+      name: pcName,
+      isMonitoringActive,
+      lastSeen: Date.now()
+    };
     
     // Simpan untuk Dashboard yang baru dibuka nanti
-          this.lastKnownState.set(data.uuid, enrichedData);
-      
-      if (enrichedData.obsSources) {
-         
-      }
+    this.lastKnownState.set(data.uuid, enrichedData);
 
-      // Pancarkan data terkini ini ke seluruh Dashboard agar bar Volume bergerak
-      this.io.to('dashboards').emit('dashboard-update', enrichedData);
+    // Kirimkan data ke seluruh Dashboard yang sedang terbuka
+    this.io.to('dashboards').emit('dashboard-update', enrichedData);
 
     // Proses Peringatan Telegram (Hanya jika sistem pengawasan sedang ON)
     const globalActive = this.configManager.config.monitoringActive !== false;
@@ -255,6 +270,22 @@ class TelemetryHub {
       this.io.to('agents').emit('execute-update', { downloadUrl });
     } else {
       this.io.to(`agent-${targetUuid}`).emit('execute-update', { downloadUrl });
+    }
+  }
+
+  /**
+   * Memicu pembersihan file audio lokal pada PC Host lewat Agent.
+   */
+  triggerAgentStorageClean(targetUuid = 'all', options = {}) {
+    const payload = {
+      deleteMode: options.deleteMode || 'all',
+      days: typeof options.days === 'number' ? options.days : 0,
+      onlyUploaded: options.onlyUploaded !== false
+    };
+    if (targetUuid === 'all') {
+      this.io.to('agents').emit('clean-local-storage', payload);
+    } else {
+      this.io.to(`agent-${targetUuid}`).emit('clean-local-storage', payload);
     }
   }
 }

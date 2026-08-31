@@ -1,7 +1,7 @@
 import { io } from 'socket.io-client';
 
 class DashboardClient {
-  constructor(serverUrl, onConnectChange, onDataUpdate, onMonitoringStatus, onPcMonitoringUpdate, onPcMonitoringStates, onAllAgents, onAgentDeleted, onUpdateProgress, onTranscriptionStatus, onKeywordAlert) {
+  constructor(serverUrl, onConnectChange, onDataUpdate, onMonitoringStatus, onPcMonitoringUpdate, onPcMonitoringStates, onAllAgents, onAgentDeleted, onUpdateProgress, onTranscriptionStatus, onKeywordAlert, onStorageCleaned) {
     this.serverUrl = serverUrl;
     this.socket = null;
     this.onConnectChange = onConnectChange;
@@ -14,6 +14,7 @@ class DashboardClient {
     this.onUpdateProgress = onUpdateProgress;
     this.onTranscriptionStatus = onTranscriptionStatus;
     this.onKeywordAlert = onKeywordAlert;
+    this.onStorageCleaned = onStorageCleaned;
   }
 
   connect() {
@@ -39,6 +40,10 @@ class DashboardClient {
 
       this.socket.on('agent-update-progress', (data) => {
         if (this.onUpdateProgress) this.onUpdateProgress(data);
+      });
+
+      this.socket.on('agent-storage-cleaned-result', (data) => {
+        if (this.onStorageCleaned) this.onStorageCleaned(data);
       });
 
       this.socket.on('transcription-status', (data) => {

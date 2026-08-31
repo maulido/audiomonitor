@@ -245,25 +245,27 @@ function App() {
 
     let confirmMsg = '';
     if (deleteMode === 'all') {
-      confirmMsg = `Apakah Anda yakin ingin MENGHAPUS SEMUA file rekaman audio lokal pada PC ini?\n\nTotal kapasitas: ${localStorageInfo.totalMb} MB (${localStorageInfo.folderCount} folder rekaman).\nFile yang dihapus tidak dapat dipulihkan.`;
+      confirmMsg = `Hapus file rekaman audio lokal di PC ini yang SUDAH BERHASIL TERUPLOAD ke Server?\n\nTotal saat ini: ${localStorageInfo.uploadedMb || localStorageInfo.totalMb} MB siap dibersihkan.\nFile yang belum terupload akan tetap aman dan tidak akan dihapus.`;
     } else if (deleteMode === 'older_than_days') {
-      confirmMsg = `Hapus semua file rekaman lokal yang usianya lebih dari ${days} hari?`;
+      confirmMsg = `Hapus file rekaman lokal (yang sudah terupload) yang usianya lebih dari ${days} hari?`;
     }
 
     const confirmed = window.confirm(confirmMsg);
     if (!confirmed) return;
 
     setIsCleaningStorage(true);
-    setCleanupFeedback('Sedang menghapus file audio...');
+    setCleanupFeedback('Sedang menghapus file audio yang sudah terupload...');
     try {
       if (window.electronAPI && window.electronAPI.deleteLocalRecordings) {
         const res = await window.electronAPI.deleteLocalRecordings({
           recordDir: recordDirRef.current,
           deleteMode,
-          days
+          days,
+          onlyUploaded: true
         });
         if (res?.success) {
-          setCleanupFeedback(`Berhasil membebaskan ${res.freedMb} MB (${res.deletedFolders} folder dihapus)`);
+          const protectMsg = res.skippedUnuploaded > 0 ? ` (${res.skippedUnuploaded} sesi belum terupload dilindungi)` : '';
+          setCleanupFeedback(`Berhasil membebaskan ${res.freedMb} MB (${res.deletedFolders} folder dihapus)${protectMsg}`);
           await fetchLocalStorageInfo();
           setTimeout(() => setCleanupFeedback(''), 6000);
         } else {
@@ -454,8 +456,30 @@ function App() {
 
         socket.on('execute-update', handleExecuteUpdate);
 
+        // Listener Perintah Pembersihan Storage Audio Lokal dari Dashboard
+        const handleCleanLocalStorage = async (data) => {
+          if (window.electronAPI && window.electronAPI.deleteLocalRecordings) {
+            const { deleteMode = 'all', days = 0, onlyUploaded = true } = data || {};
+            try {
+              const res = await window.electronAPI.deleteLocalRecordings({
+                recordDir: recordDirRef.current,
+                deleteMode,
+                days,
+                onlyUploaded
+              });
+              fetchLocalStorageInfo();
+              socket.emit('agent-storage-cleaned', { uuid: uuidRef.current, ...res });
+            } catch (err) {
+              socket.emit('agent-storage-cleaned', { uuid: uuidRef.current, success: false, error: err.message });
+            }
+          }
+        };
+
+        socket.on('clean-local-storage', handleCleanLocalStorage);
+
       return () => {
         socket.off('execute-update', handleExecuteUpdate);
+        socket.off('clean-local-storage', handleCleanLocalStorage);
         telemetryClient.current.disconnect();
       };
     }
@@ -991,9 +1015,9 @@ REC
             
               <div className="setting-group full" style={{ marginTop: '5px', paddingTop: '10px', borderTop: '1px dashed #333' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                  <label style={{ margin: 0, fontWeight: 'bold', color: '#fff' }}>Penyimpanan Rekaman Audio Host</label>
+                  <label style={{ margin: 0, fontWeight: 'bold', color: '#fff' }}>Penyimpanan Audio Lokal di PC Host</label>
                   <span style={{ fontSize: '11px', color: '#4caf50', fontWeight: 'bold' }}>
-                    {localStorageInfo.totalMb} MB ({localStorageInfo.folderCount} Sesi)
+                    {localStorageInfo.uploadedMb || '0.0'} MB Terupload / {localStorageInfo.totalMb} MB Total
                   </span>
                 </div>
 
@@ -1032,7 +1056,7 @@ REC
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                       <span style={{ fontSize: '11px', color: '#aaa' }}>Bersihkan Audio:</span>
                       <select 
-                        disabled={isCleaningStorage || localStorageInfo.folderCount === 0}
+                        disabled={isCleaningStorage || localStorageInfo.uploadedFolderCount === 0}
                         onChange={(e) => {
                           const val = e.target.value;
                           if (!val) return;
@@ -1043,35 +1067,39 @@ REC
                         defaultValue=""
                         style={{ background: '#262626', color: '#e0e0e0', border: '1px solid #444', borderRadius: '3px', padding: '4px 6px', fontSize: '11px', cursor: 'pointer' }}
                       >
-                        <option value="" disabled>Pilih Opsi Hapus...</option>
-                        <option value="1">Hapus Rekaman &gt; 1 Hari</option>
-                        <option value="3">Hapus Rekaman &gt; 3 Hari</option>
-                        <option value="7">Hapus Rekaman &gt; 7 Hari</option>
-                        <option value="14">Hapus Rekaman &gt; 14 Hari</option>
-                        <option value="30">Hapus Rekaman &gt; 30 Hari</option>
+                        <option value="" disabled>Pilih Opsi Hapus (Hanya Terupload)...</option>
+                        <option value="1">Hapus Terupload &gt; 1 Hari</option>
+                        <option value="3">Hapus Terupload &gt; 3 Hari</option>
+                        <option value="7">Hapus Terupload &gt; 7 Hari</option>
+                        <option value="14">Hapus Terupload &gt; 14 Hari</option>
+                        <option value="30">Hapus Terupload &gt; 30 Hari</option>
                       </select>
                     </div>
 
                     <button 
                       onClick={() => handleDeleteAudioFiles('all')}
-                      disabled={isCleaningStorage || localStorageInfo.folderCount === 0}
+                      disabled={isCleaningStorage || localStorageInfo.uploadedFolderCount === 0}
                       style={{
-                        background: localStorageInfo.folderCount > 0 && !isCleaningStorage ? '#c0392b' : '#555',
+                        background: localStorageInfo.uploadedFolderCount > 0 && !isCleaningStorage ? '#c0392b' : '#555',
                         color: '#fff',
                         border: 'none',
                         padding: '4px 10px',
                         borderRadius: '3px',
                         fontSize: '11px',
                         fontWeight: 'bold',
-                        cursor: localStorageInfo.folderCount > 0 && !isCleaningStorage ? 'pointer' : 'not-allowed',
+                        cursor: localStorageInfo.uploadedFolderCount > 0 && !isCleaningStorage ? 'pointer' : 'not-allowed',
                         display: 'flex',
                         alignItems: 'center',
                         gap: '4px'
                       }}
-                      title="Hapus seluruh file rekaman audio di PC host"
+                      title="Hapus file rekaman lokal yang SUDAH TERUPLOAD ke Server"
                     >
-                      Hapus SEMUA File Audio
+                      Hapus Audio Yang Terupload
                     </button>
+                  </div>
+
+                  <div style={{ fontSize: '10px', color: '#777', fontStyle: 'italic' }}>
+                    * Aman: Hanya file yang telah terverifikasi sukses terunggah ke Server yang dapat dihapus. Rekaman yang belum terupload otomatis dilindungi.
                   </div>
 
                   {/* Konfigurasi Auto-Retention */}
