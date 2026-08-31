@@ -589,37 +589,73 @@ class ServerApp {
       }
     });
 
-    // API: Pemicu manual transkripsi file audio
+    // API: Pemicu manual transkripsi file audio atau seluruh sesi
     this.app.post('/api/records/transcribe', async (req, res) => {
       const { folder, file, pcName } = req.body || {};
-      if (!folder || !file || typeof folder !== 'string' || typeof file !== 'string') {
-        return res.status(400).json({ success: false, error: 'folder and file parameters are required' });
+      if (!folder || typeof folder !== 'string') {
+        return res.status(400).json({ success: false, error: 'folder parameter is required' });
       }
 
       const baseDir = path.resolve(this.configManager.config.recordDir || path.join(os.homedir(), 'Documents', 'AudioMonitor-Recordings-Server'));
       const safeFolder = path.basename(folder).replace(/[^a-zA-Z0-9_\-\. ]/g, '').trim();
-      const safeFile = path.basename(file).replace(/[^a-zA-Z0-9_\-\.]/g, '').trim();
 
-      if (!safeFolder || safeFolder === '.' || safeFolder === '..' || safeFolder.startsWith('..') ||
-          !safeFile || safeFile === '.' || safeFile === '..' || safeFile.startsWith('..')) {
+      if (!safeFolder || safeFolder === '.' || safeFolder === '..' || safeFolder.startsWith('..')) {
         return res.status(400).json({ success: false, error: 'Invalid path parameters' });
       }
 
-      const filePath = path.resolve(baseDir, safeFolder, safeFile);
-      const relFile = path.relative(baseDir, filePath);
-      if (relFile.startsWith('..') || path.isAbsolute(relFile)) {
+      const folderPath = path.resolve(baseDir, safeFolder);
+      const relFolder = path.relative(baseDir, folderPath);
+      if (relFolder.startsWith('..') || path.isAbsolute(relFolder)) {
         return res.status(403).json({ success: false, error: 'Forbidden' });
       }
 
-      if (!fs.existsSync(filePath)) {
-        return res.status(404).json({ success: false, error: 'Audio file not found' });
+      if (!fs.existsSync(folderPath)) {
+        return res.status(404).json({ success: false, error: 'Session folder not found' });
       }
 
-      try {
-        const result = await this.transcriptionManager.transcribeFile(filePath, safeFolder, safeFile, pcName);
-        res.json({ success: true, transcript: result });
-      } catch (err) {
-        res.status(500).json({ success: false, error: err.message });
+      // Jika file ditentukan secara spesifik
+      if (file && typeof file === 'string' && file !== 'all') {
+        const safeFile = path.basename(file).replace(/[^a-zA-Z0-9_\-\.]/g, '').trim();
+        if (!safeFile || safeFile === '.' || safeFile === '..' || safeFile.startsWith('..')) {
+          return res.status(400).json({ success: false, error: 'Invalid file name' });
+        }
+
+        const filePath = path.resolve(folderPath, safeFile);
+        if (!fs.existsSync(filePath)) {
+          return res.status(404).json({ success: false, error: 'Audio file not found' });
+        }
+
+        try {
+          const result = await this.transcriptionManager.transcribeFile(filePath, safeFolder, safeFile, pcName);
+          return res.json({ success: true, transcript: result });
+        } catch (err) {
+          return res.status(500).json({ success: false, error: err.message });
+        }
+      } else {
+        // Transkripsi SELURUH part audio dalam folder sesi
+        try {
+          const files = fs.readdirSync(folderPath).filter(f => f.endsWith('.webm') || f.endsWith('.wav') || f.endsWith('.mp3'));
+          if (files.length === 0) {
+            return res.status(404).json({ success: false, error: 'No audio files found in session folder' });
+          }
+
+          // Urutkan file part (Part_001, Part_002, ...)
+          files.sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+
+          for (const f of files) {
+            const fPath = path.join(folderPath, f);
+            try {
+              await this.transcriptionManager.transcribeFile(fPath, safeFolder, f, pcName);
+            } catch (pErr) {
+              logger.warn(`Gagal transkripsi ${f}: ${pErr.message}`);
+            }
+          }
+
+          const combinedTranscript = this.transcriptionManager.getTranscriptForSession(folderPath);
+          return res.json({ success: true, transcript: combinedTranscript });
+        } catch (err) {
+          return res.status(500).json({ success: false, error: err.message });
+        }
       }
     });
 

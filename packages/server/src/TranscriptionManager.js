@@ -185,9 +185,10 @@ class TranscriptionManager {
     }
   }
 
-  normalizeResponse(raw, fileName, sessionFolder, pcName, language) {
+  normalizeResponse(raw, fileName, sessionFolder, pcName, language, fileDuration = 0) {
     let fullText = '';
     let segments = [];
+    let duration = 0;
 
     if (typeof raw === 'string') {
       fullText = raw.trim();
@@ -196,6 +197,9 @@ class TranscriptionManager {
         throw new Error(`Worker Whisper error: ${typeof raw.error === 'string' ? raw.error : JSON.stringify(raw.error)}`);
       }
       fullText = raw.text || raw.transcription || raw.result || '';
+      if (typeof raw.duration === 'number' && raw.duration > 0) {
+        duration = raw.duration;
+      }
       
       if (Array.isArray(raw.segments)) {
         segments = raw.segments.map((seg, idx) => ({
@@ -204,6 +208,13 @@ class TranscriptionManager {
           end: typeof seg.end === 'number' ? seg.end : 0,
           text: String(seg.text || '').trim()
         }));
+
+        if (!duration && segments.length > 0) {
+          const lastSeg = segments[segments.length - 1];
+          if (lastSeg && typeof lastSeg.end === 'number' && lastSeg.end > 0) {
+            duration = lastSeg.end;
+          }
+        }
       }
     }
 
@@ -211,7 +222,7 @@ class TranscriptionManager {
       segments.push({
         id: 0,
         start: 0,
-        end: 0,
+        end: duration || 0,
         text: fullText
       });
     }
@@ -222,6 +233,7 @@ class TranscriptionManager {
       pcName: pcName || 'Unknown PC',
       transcribedAt: new Date().toISOString().replace('T', ' ').substring(0, 19),
       language: language || 'id',
+      duration: duration || fileDuration || 0,
       text: fullText,
       segments,
       keywordsFound: []
@@ -301,6 +313,8 @@ class TranscriptionManager {
       let fullText = '';
       let allKeywords = new Set();
       let lastTranscribedAt = '';
+      let cumulativeOffsetSec = 0;
+      let totalSessionDuration = 0;
 
       for (const tf of transcriptFiles) {
         try {
@@ -310,9 +324,32 @@ class TranscriptionManager {
           if (data.text) {
             fullText += (fullText ? '\n' : '') + data.text;
           }
+
+          let partDuration = (typeof data.duration === 'number' && data.duration > 0) ? data.duration : 0;
+
           if (Array.isArray(data.segments)) {
-            combinedSegments.push(...data.segments);
+            for (const seg of data.segments) {
+              const segStart = (typeof seg.start === 'number' ? seg.start : 0) + cumulativeOffsetSec;
+              const segEnd = (typeof seg.end === 'number' ? seg.end : 0) + cumulativeOffsetSec;
+              combinedSegments.push({
+                ...seg,
+                id: combinedSegments.length,
+                start: segStart,
+                end: segEnd,
+                partFile: data.fileName || tf.replace('.transcript.json', '')
+              });
+              if (!partDuration && seg.end > 0) {
+                partDuration = Math.max(partDuration, seg.end);
+              }
+            }
           }
+          if (!partDuration) {
+            partDuration = 600; // Default chunk 10m
+          }
+
+          cumulativeOffsetSec += partDuration;
+          totalSessionDuration += partDuration;
+
           if (Array.isArray(data.keywordsFound)) {
             data.keywordsFound.forEach(k => allKeywords.add(k));
           }
@@ -324,6 +361,7 @@ class TranscriptionManager {
         sessionFolder: path.basename(sessionDir),
         transcribedAt: lastTranscribedAt,
         partsCount: transcriptFiles.length,
+        duration: totalSessionDuration,
         text: fullText,
         segments: combinedSegments,
         keywordsFound: Array.from(allKeywords)

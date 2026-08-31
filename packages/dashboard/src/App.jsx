@@ -453,19 +453,22 @@ function App() {
     }
   };
 
-  const handleManualTranscribe = async (folderName, fileName, pcName) => {
+  const handleManualTranscribe = async (folderName, fileName = null, pcName = '') => {
     try {
       setActiveTranscriptModal(prev => prev ? { ...prev, loading: true, error: null } : null);
+      const payload = { folder: folderName, pcName };
+      if (fileName) payload.file = fileName;
+
       const res = await apiFetch('/api/records/transcribe', {
         method: 'POST',
-        body: JSON.stringify({ folder: folderName, file: fileName, pcName })
+        body: JSON.stringify(payload)
       });
       const data = await res.json();
       if (res.ok && data.success) {
         setActiveTranscriptModal(prev => prev ? { ...prev, transcript: data.transcript, loading: false } : null);
         fetchRecords();
       } else {
-        setActiveTranscriptModal(prev => prev ? { ...prev, loading: false, error: data.error || 'Gagal mentranskripsi file.' } : null);
+        setActiveTranscriptModal(prev => prev ? { ...prev, loading: false, error: data.error || 'Gagal mentranskripsi audio.' } : null);
       }
     } catch (err) {
       setActiveTranscriptModal(prev => prev ? { ...prev, loading: false, error: err.message } : null);
@@ -4227,14 +4230,11 @@ function App() {
                     <button 
                       className="btn btn-primary"
                       onClick={() => {
-                        const fallbackFile = activeTranscriptModal.fileName || 
-                          records.find(r => r.folderName === activeTranscriptModal.folderName)?.fileName || 
-                          'Part_001.webm';
-                        handleManualTranscribe(activeTranscriptModal.folderName, fallbackFile, activeTranscriptModal.pcName);
+                        handleManualTranscribe(activeTranscriptModal.folderName, activeTranscriptModal.fileName, activeTranscriptModal.pcName);
                       }}
                     >
                       <i className="fa-solid fa-wand-magic-sparkles" style={{ marginRight: '6px' }}></i>
-                      Transkrip Audio Sekarang
+                      {activeTranscriptModal.fileName ? 'Transkrip Potongan Ini Sekarang' : 'Transkrip Seluruh Sesi Sekarang'}
                     </button>
                   )}
                 </div>
