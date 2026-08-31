@@ -1066,10 +1066,10 @@ REC
             
             
               <div className="setting-group full" style={{ marginTop: '5px', paddingTop: '10px', borderTop: '1px dashed #333' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                  <label style={{ margin: 0, fontWeight: 'bold', color: '#fff' }}>Penyimpanan Audio Lokal PC Host</label>
-                  <span style={{ fontSize: '11px', color: '#4caf50', fontWeight: 'bold' }}>
-                    {localStorageInfo.uploadedMb || '0.0'} MB Terupload / {localStorageInfo.totalMb} MB Total
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px', gap: '8px' }}>
+                  <label style={{ margin: 0, fontWeight: 'bold', color: '#fff', fontSize: '12px', whiteSpace: 'nowrap' }}>Penyimpanan Audio Host</label>
+                  <span style={{ fontSize: '10px', color: '#4caf50', fontWeight: 'bold', background: '#132817', padding: '2px 6px', borderRadius: '3px', border: '1px solid #23522b', whiteSpace: 'nowrap' }}>
+                    {localStorageInfo.uploadedMb || '0.0'} / {localStorageInfo.totalMb || '0.0'} MB Terupload
                   </span>
                 </div>
 
