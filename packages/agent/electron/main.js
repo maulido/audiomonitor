@@ -80,7 +80,7 @@ function createWindow() {
   const { x: workAreaX, y: workAreaY } = primaryDisplay.workArea;
 
   const windowWidth = 380;
-  const windowHeight = 370;
+  const windowHeight = 440;
 
   // Kalkulasi agar jendela melayang di ujung kanan bawah (15px padding)
   const x = workAreaX + screenWidth - windowWidth - 15;
