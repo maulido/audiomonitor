@@ -52,6 +52,18 @@ const getMediaUrl = (url) => {
   return `${SERVER_URL}${url.startsWith('/') ? '' : '/'}${url}`;
 };
 
+let sharedAudioContext = null;
+function getSharedAudioContext() {
+  if (!sharedAudioContext || sharedAudioContext.state === 'closed') {
+    try {
+      sharedAudioContext = new (window.AudioContext || window.webkitAudioContext)();
+    } catch (e) {
+      console.warn('AudioContext not available:', e);
+    }
+  }
+  return sharedAudioContext;
+}
+
 function App() {
   const [agents, setAgents] = useState({});
   const [isConnected, setIsConnected] = useState(false);
@@ -286,6 +298,7 @@ function App() {
 
   const searchDebounceRef = useRef(null);
   const latestSearchQueryRef = useRef('');
+  const searchReqIdRef = useRef(0);
   const toastTimerRef = useRef(null);
 
   const fetchQueueStatus = async () => {
@@ -510,6 +523,7 @@ function App() {
 
   const handleSearchTranscripts = (query, customFilters = null) => {
     setTranscriptSearchQuery(query);
+    const reqId = ++searchReqIdRef.current;
     latestSearchQueryRef.current = query;
 
     if (searchDebounceRef.current) {
@@ -539,14 +553,14 @@ function App() {
         const res = await apiFetch(`/api/records/search-transcript?${params.toString()}`);
         if (res.ok) {
           const data = await res.json();
-          if (latestSearchQueryRef.current === query) {
+          if (searchReqIdRef.current === reqId) {
             setTranscriptSearchResults(data.results || []);
           }
         }
       } catch (err) {
         console.error('Failed to search transcripts:', err);
       } finally {
-        if (latestSearchQueryRef.current === query) {
+        if (searchReqIdRef.current === reqId) {
           setIsSearchingTranscript(false);
         }
       }
@@ -1058,46 +1072,44 @@ function App() {
     setIsPlaying(true);
 
     const abortController = new AbortController();
-    let ctx = null;
 
-    // Decode exact sample-accurate durations with single reusable AudioContext
+    // Decode exact sample-accurate durations with singleton shared AudioContext
     const probeExactDurations = async () => {
       try {
-        ctx = new (window.AudioContext || window.webkitAudioContext)();
-        const results = await Promise.all(
-          playingSession.parts.map(async (p, idx) => {
-            const mediaUrl = getMediaUrl(p.url);
-            if (audioDurationCache.has(mediaUrl)) {
-              return audioDurationCache.get(mediaUrl);
+        const audioCtx = getSharedAudioContext();
+        if (!audioCtx) return;
+
+        const promises = playingSession.parts.map(async (p, idx) => {
+          const mediaUrl = getMediaUrl(p.url);
+          if (audioDurationCache.has(mediaUrl)) {
+            return audioDurationCache.get(mediaUrl);
+          }
+          try {
+            const res = await fetch(mediaUrl, { signal: abortController.signal });
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const buf = await res.arrayBuffer();
+            if (abortController.signal.aborted) return initialEstimated[idx] || 0;
+            const decoded = await audioCtx.decodeAudioData(buf);
+            const d = decoded.duration;
+            if (d && isFinite(d) && !isNaN(d) && d > 0) {
+              setAudioDurationCache(mediaUrl, d);
+              return d;
             }
-            try {
-              const res = await fetch(mediaUrl, { signal: abortController.signal });
-              if (!res.ok) throw new Error(`HTTP ${res.status}`);
-              const buf = await res.arrayBuffer();
-              const decoded = await ctx.decodeAudioData(buf);
-              const d = decoded.duration;
-              if (d && isFinite(d) && !isNaN(d) && d > 0) {
-                setAudioDurationCache(mediaUrl, d);
-                return d;
-              }
-            } catch (err) {
-              if (err.name !== 'AbortError') {
-                console.warn(`Duration probe failed for ${p.fileName}:`, err.message);
-              }
+          } catch (err) {
+            if (err.name !== 'AbortError') {
+              console.warn(`Duration probe failed for ${p.fileName}:`, err.message);
             }
-            return initialEstimated[idx] || 0;
-          })
-        );
+          }
+          return initialEstimated[idx] || 0;
+        });
+
+        const results = await Promise.all(promises);
 
         if (!abortController.signal.aborted) {
           setPartDurations(results);
         }
       } catch (e) {
         // ignore abort
-      } finally {
-        if (ctx && ctx.state !== 'closed') {
-          ctx.close().catch(() => {});
-        }
       }
     };
 
@@ -1818,7 +1830,7 @@ function App() {
                     autoFocus
                     type={dialogParams.isPassword ? 'password' : 'text'}
                     className="form-input"
-                    value={dialogInputValue}
+                    value={dialogInputValue || ''}
                     onChange={(e) => setDialogInputValue(e.target.value)}
                     placeholder={dialogParams.isPassword ? 'Masukkan PIN Dashboard...' : ''}
                     style={{ width: '100%', padding: '10px 14px' }}
@@ -1948,7 +1960,7 @@ function App() {
                         <div className="pc-name-row">
                           {editingId === agent.uuid ? (
                             <form onSubmit={(e) => submitInlineRename(e, agent.uuid)} style={{display: 'flex', gap: '5px', width: '100%'}}>
-                              <input autoFocus value={editingName} onChange={e => setEditingName(e.target.value)} className="form-input" style={{padding: '4px 8px'}} />
+                              <input autoFocus value={editingName || ''} onChange={e => setEditingName(e.target.value)} className="form-input" style={{padding: '4px 8px'}} />
                               <button type="submit" className="icon-btn" style={{background: 'var(--accent)', color: '#fff'}}><i className="fa-solid fa-check"></i></button>
                               <button type="button" onClick={() => setEditingId(null)} className="icon-btn"><i className="fa-solid fa-times"></i></button>
                             </form>

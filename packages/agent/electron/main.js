@@ -838,7 +838,7 @@ ipcMain.on('save-audio-chunk', (event, arrayBuffer) => {
     const buf = Buffer.from(arrayBuffer);
     if (audioWriteStream) {
       audioWriteStream.write(buf);
-    } else if (currentSessionDir && pendingAudioChunks.length < 10) {
+    } else if (currentSessionDir && pendingAudioChunks.length < 120) {
       pendingAudioChunks.push(buf);
     }
   } catch (err) {
@@ -1024,6 +1024,9 @@ ipcMain.handle('install-update', async (event, downloadUrl) => {
         if (res.statusCode !== 200) {
           return cleanupAndFail(`HTTP ${res.statusCode}`);
         }
+
+        const totalBytes = parseInt(res.headers['content-length'] || '0', 10);
+        let receivedBytes = 0;
 
         let activityTimeout = setTimeout(() => {
           req.destroy(new Error('Timeout koneksi unduh update (120s)'));
