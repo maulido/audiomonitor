@@ -296,6 +296,21 @@ function App() {
   const [whisperQueueStatus, setWhisperQueueStatus] = useState({ isProcessing: false, currentTask: null, queue: [], queueLength: 0 });
   const [keywordAlertToast, setKeywordAlertToast] = useState(null);
 
+  // Smart Storage & Cloud Sync State
+  const [storageStatus, setStorageStatus] = useState(null);
+  const [storageConfig, setStorageConfig] = useState({
+    autoArchiveDays: 14,
+    minFreeDiskGb: 5,
+    cloudSyncEnabled: false,
+    cloudSyncUrl: '',
+    backupDirectory: '',
+    archiveQuality: 'low_opus'
+  });
+  const [isSavingStorageConfig, setIsSavingStorageConfig] = useState(false);
+  const [isTriggeringSync, setIsTriggeringSync] = useState(false);
+  const [isTriggeringArchive, setIsTriggeringArchive] = useState(false);
+  const [syncStatusMsg, setSyncStatusMsg] = useState(null);
+
   const searchDebounceRef = useRef(null);
   const latestSearchQueryRef = useRef('');
   const searchReqIdRef = useRef(0);
@@ -383,6 +398,10 @@ function App() {
       setTranscriptionConfig(data.transcription);
       setAlertKeywordsInput(Array.isArray(data.transcription.alertKeywords) ? data.transcription.alertKeywords.join(', ') : '');
     }
+    if (data.storageAutomation) {
+      setStorageConfig(data.storageAutomation);
+    }
+    fetchStorageAutomationStatus();
   };
 
   const fetchConfig = async () => {
@@ -410,6 +429,80 @@ function App() {
       }
     } catch (err) {
       console.error('Failed to fetch transcription config:', err);
+    }
+  };
+
+  const fetchStorageAutomationStatus = async () => {
+    try {
+      const res = await apiFetch('/api/storage/automation-status');
+      if (res.ok) {
+        const data = await res.json();
+        setStorageStatus(data);
+        if (data.config) setStorageConfig(data.config);
+      }
+    } catch (err) {
+      console.error('Failed to fetch storage status:', err);
+    }
+  };
+
+  const saveStorageAutomationConfig = async () => {
+    if (!ensurePin()) return;
+    setIsSavingStorageConfig(true);
+    try {
+      const res = await apiFetch('/api/storage/automation-config', {
+        method: 'POST',
+        body: JSON.stringify(storageConfig)
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        await customAlert('Konfigurasi Smart Storage & Cloud Sync berhasil disimpan.', 'Tersimpan');
+        fetchStorageAutomationStatus();
+      } else {
+        await customAlert(data.error || 'Gagal menyimpan konfigurasi.', 'Error');
+      }
+    } catch (err) {
+      await customAlert(err.message, 'Error');
+    } finally {
+      setIsSavingStorageConfig(false);
+    }
+  };
+
+  const triggerManualBackupSync = async () => {
+    if (!ensurePin()) return;
+    setIsTriggeringSync(true);
+    setSyncStatusMsg(null);
+    try {
+      const res = await apiFetch('/api/storage/trigger-sync', { method: 'POST' });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setSyncStatusMsg({ type: 'success', text: `Sinkronisasi selesai: ${data.syncedCount} sesi rekaman berhasil dicadangkan.` });
+        fetchStorageAutomationStatus();
+      } else {
+        setSyncStatusMsg({ type: 'error', text: data.message || data.error || 'Gagal menjalankan sinkronisasi.' });
+      }
+    } catch (err) {
+      setSyncStatusMsg({ type: 'error', text: err.message });
+    } finally {
+      setIsTriggeringSync(false);
+    }
+  };
+
+  const triggerManualArchive = async () => {
+    if (!ensurePin()) return;
+    setIsTriggeringArchive(true);
+    try {
+      const res = await apiFetch('/api/storage/trigger-archive', { method: 'POST' });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        await customAlert(`${data.archivedCount} sesi rekaman lawas berhasil diarsipkan.`, 'Pengarsipan Selesai');
+        fetchStorageAutomationStatus();
+      } else {
+        await customAlert(data.error || 'Gagal menjalankan pengarsipan.', 'Error');
+      }
+    } catch (err) {
+      await customAlert(err.message, 'Error');
+    } finally {
+      setIsTriggeringArchive(false);
     }
   };
 
@@ -2193,11 +2286,46 @@ function App() {
                       </div>
                     </div>
 
+                    {/* Audio Engineering & Spectrum Visualizer */}
+                    <div style={{ padding: '6px 14px 10px 14px', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '5px' }}>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                          <i className="fa-solid fa-wave-square" style={{ color: '#38bdf8' }}></i>
+                          <span>Loudness: <strong style={{ color: agent.lufs !== undefined && agent.lufs >= -18 && agent.lufs <= -10 ? '#4ade80' : (agent.lufs > -10 ? '#f87171' : '#fbbf24') }}>{agent.lufs !== undefined && agent.lufs > -70 ? `${agent.lufs.toFixed(1)} LUFS` : 'Hening'}</strong></span>
+                        </span>
+                        <span>Peak: <strong style={{ color: agent.truePeak !== undefined && agent.truePeak >= -1 ? '#f87171' : 'var(--text-main)' }}>{agent.truePeak !== undefined && agent.truePeak > -90 ? `${agent.truePeak.toFixed(1)} dBFS` : '-'}</strong></span>
+                        {agent.humDetected && (
+                          <span style={{ background: 'rgba(239, 68, 68, 0.2)', border: '1px solid rgba(239, 68, 68, 0.4)', color: '#f87171', padding: '1px 5px', borderRadius: '4px', fontWeight: 'bold' }}>
+                            HUM {agent.humDetected}!
+                          </span>
+                        )}
+                      </div>
+
+                      {/* 8-Band Equalizer Spectrum */}
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(8, 1fr)', gap: '3px', height: '18px', alignItems: 'flex-end', background: 'rgba(0,0,0,0.25)', padding: '2px', borderRadius: '4px' }}>
+                        {((agent.spectrum8Band && agent.spectrum8Band.length === 8) ? agent.spectrum8Band : [0,0,0,0,0,0,0,0]).map((bandVal, bIdx) => {
+                          const heightPct = Math.max(8, Math.min(100, isOffline ? 8 : bandVal));
+                          const bandColors = ['#6366f1', '#3b82f6', '#0ea5e9', '#10b981', '#84cc16', '#eab308', '#f97316', '#ef4444'];
+                          return (
+                            <div 
+                              key={bIdx} 
+                              style={{ 
+                                height: `${heightPct}%`, 
+                                background: isOffline ? 'rgba(255,255,255,0.1)' : bandColors[bIdx], 
+                                borderRadius: '1px',
+                                transition: 'height 0.1s ease'
+                              }}
+                              title={`Band ${bIdx + 1}: ${bandVal}%`}
+                            />
+                          );
+                        })}
+                      </div>
+                    </div>
+
                     <div className="card-footer">
                       <span>{isOffline ? 'Terputus' : 'Tersambung via WebSocket'}</span>
                       <span>Update: {agent.timestamp ? new Date(agent.timestamp).toLocaleTimeString() : '-'}</span>
-
-      </div>
+                    </div>
     </div>
   );
 })}
@@ -3512,6 +3640,9 @@ function App() {
               <button type="button" className="settings-nav-pill" onClick={() => document.getElementById('sec-retention')?.scrollIntoView({ behavior: 'smooth' })}>
                 <i className="fa-solid fa-clock-rotate-left"></i> Retensi Log
               </button>
+              <button type="button" className="settings-nav-pill" onClick={() => document.getElementById('sec-smart-storage')?.scrollIntoView({ behavior: 'smooth' })}>
+                <i className="fa-solid fa-hard-drive"></i> Smart Storage
+              </button>
               <button type="button" className="settings-nav-pill" onClick={() => document.getElementById('sec-audio')?.scrollIntoView({ behavior: 'smooth' })}>
                 <i className="fa-solid fa-volume-high"></i> Audio Alarm
               </button>
@@ -3865,6 +3996,127 @@ function App() {
                   <button className="btn btn-secondary" onClick={handleManualCleanupNow} style={{ background: 'rgba(239, 68, 68, 0.12)', borderColor: 'rgba(239, 68, 68, 0.3)', color: '#f87171' }}>
                     <i className="fa-solid fa-broom"></i>
                     Bersihkan Log Lama Sekarang
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* 5B. Otomasi Penyimpanan & Sinkronisasi Cloud / NAS */}
+            <div className="settings-card" id="sec-smart-storage">
+              <div className="settings-card-accent orange"></div>
+              <div className="settings-card-content">
+                <h2 className="settings-card-title">
+                  <i className="fa-solid fa-hard-drive" style={{ color: '#f59e0b' }}></i>
+                  Otomasi Penyimpanan & Cloud / NAS Sync (Smart Storage)
+                </h2>
+                <p className="settings-card-subtitle">
+                  Kelola otomatisasi pengarsipan file rekaman lawas, pencadangan ke folder jaringan (NAS), dan webhook cloud sync.
+                </p>
+
+                {/* Storage Metric Grid */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '12px', marginBottom: '20px' }}>
+                  <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px', padding: '12px', textAlign: 'center' }}>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Total Ukuran</div>
+                    <div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: '#f59e0b', marginTop: '2px' }}>{storageStatus?.totalMb || 0} MB</div>
+                    <div style={{ fontSize: '0.7rem', color: '#888' }}>({storageStatus?.totalGb || 0} GB)</div>
+                  </div>
+                  <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px', padding: '12px', textAlign: 'center' }}>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Total Sesi</div>
+                    <div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: 'var(--text-main)', marginTop: '2px' }}>{storageStatus?.totalSessions || 0}</div>
+                    <div style={{ fontSize: '0.7rem', color: '#888' }}>{storageStatus?.totalFiles || 0} files</div>
+                  </div>
+                  <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px', padding: '12px', textAlign: 'center' }}>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Terarsip</div>
+                    <div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: '#10b981', marginTop: '2px' }}>{storageStatus?.archivedSessions || 0}</div>
+                    <div style={{ fontSize: '0.7rem', color: '#888' }}>Sesi Lama</div>
+                  </div>
+                  <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px', padding: '12px', textAlign: 'center' }}>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Tersinkron NAS/Cloud</div>
+                    <div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: '#38bdf8', marginTop: '2px' }}>{storageStatus?.syncedSessions || 0}</div>
+                    <div style={{ fontSize: '0.7rem', color: '#888' }}>Tercadangkan</div>
+                  </div>
+                </div>
+
+                {syncStatusMsg && (
+                  <div style={{
+                    padding: '10px 14px',
+                    borderRadius: '8px',
+                    marginBottom: '16px',
+                    fontSize: '0.85rem',
+                    background: syncStatusMsg.type === 'success' ? 'rgba(34, 197, 94, 0.12)' : 'rgba(239, 68, 68, 0.12)',
+                    border: `1px solid ${syncStatusMsg.type === 'success' ? 'rgba(34, 197, 94, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
+                    color: syncStatusMsg.type === 'success' ? '#4ade80' : '#f87171',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px'
+                  }}>
+                    <i className={`fa-solid ${syncStatusMsg.type === 'success' ? 'fa-circle-check' : 'fa-circle-exclamation'}`}></i>
+                    {syncStatusMsg.text}
+                  </div>
+                )}
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label className="form-label">Direktori Cadangan Sekunder (NAS / External Drive)</label>
+                    <input 
+                      type="text" 
+                      className="form-input" 
+                      placeholder="Contoh: D:\BackupRekaman atau \\NAS\Audio" 
+                      value={storageConfig.backupDirectory || ''} 
+                      onChange={(e) => setStorageConfig(prev => ({ ...prev, backupDirectory: e.target.value }))}
+                    />
+                    <span className="form-help">Jika diisi, server akan mencadangkan file rekaman ke folder ini.</span>
+                  </div>
+
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label className="form-label">Otomatis Arsipkan Rekaman Lama (Hari)</label>
+                    <input 
+                      type="number" 
+                      min="1" 
+                      max="365" 
+                      className="form-input" 
+                      value={storageConfig.autoArchiveDays || 14} 
+                      onChange={(e) => setStorageConfig(prev => ({ ...prev, autoArchiveDays: parseInt(e.target.value, 10) || 14 }))}
+                    />
+                    <span className="form-help">Rekaman yang lebih lama dari hari ini akan ditandai arsip dan dioptimalkan.</span>
+                  </div>
+                </div>
+
+                <div className="form-group" style={{ marginBottom: '16px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                    <label className="form-label" style={{ margin: 0 }}>Cloud Webhook Sync</label>
+                    <label className="toggle-switch">
+                      <input 
+                        type="checkbox" 
+                        checked={storageConfig.cloudSyncEnabled || false} 
+                        onChange={(e) => setStorageConfig(prev => ({ ...prev, cloudSyncEnabled: e.target.checked }))} 
+                      />
+                      <span className="slider"></span>
+                    </label>
+                  </div>
+                  <input 
+                    type="text" 
+                    className="form-input" 
+                    placeholder="https://api.perusahaan.com/audio-backup-webhook" 
+                    value={storageConfig.cloudSyncUrl || ''} 
+                    onChange={(e) => setStorageConfig(prev => ({ ...prev, cloudSyncUrl: e.target.value }))}
+                    disabled={!storageConfig.cloudSyncEnabled}
+                  />
+                  <span className="form-help">Mengirim sinyal webhook dan metadata rekaman ke endpoint cloud saat sesi selesai.</span>
+                </div>
+
+                <div className="button-group">
+                  <button className={`btn btn-primary ${isSavingStorageConfig ? 'is-loading' : ''}`} onClick={saveStorageAutomationConfig} disabled={isSavingStorageConfig}>
+                    <i className={`fa-solid ${isSavingStorageConfig ? 'fa-spinner fa-spin' : 'fa-floppy-disk'}`}></i>
+                    {isSavingStorageConfig ? 'Menyimpan...' : 'Simpan Konfigurasi Storage'}
+                  </button>
+                  <button className={`btn btn-secondary ${isTriggeringSync ? 'is-loading' : ''}`} onClick={triggerManualBackupSync} disabled={isTriggeringSync}>
+                    <i className={`fa-solid ${isTriggeringSync ? 'fa-spinner fa-spin' : 'fa-arrows-rotate'}`}></i>
+                    {isTriggeringSync ? 'Menyinkronkan...' : 'Sinkronkan Cadangan Sekarang'}
+                  </button>
+                  <button className={`btn btn-secondary ${isTriggeringArchive ? 'is-loading' : ''}`} onClick={triggerManualArchive} disabled={isTriggeringArchive} style={{ background: 'rgba(245, 158, 11, 0.12)', borderColor: 'rgba(245, 158, 11, 0.3)', color: '#fbbf24' }}>
+                    <i className={`fa-solid ${isTriggeringArchive ? 'fa-spinner fa-spin' : 'fa-box-archive'}`}></i>
+                    {isTriggeringArchive ? 'Mengarsipkan...' : 'Arsipkan Berkas Lawas'}
                   </button>
                 </div>
               </div>

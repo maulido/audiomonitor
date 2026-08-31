@@ -43,6 +43,11 @@ function App() {
   const [rawMicLevel, setRawMicLevel] = useState(0);
   const [micDb, setMicDb] = useState(-100);
   const [micClipping, setMicClipping] = useState(false);
+  const [micLufs, setMicLufs] = useState(-70);
+  const [micTruePeak, setMicTruePeak] = useState(-100);
+  const [micNoiseFloor, setMicNoiseFloor] = useState(-90);
+  const [micHum, setMicHum] = useState(null);
+  const [micSpectrum, setMicSpectrum] = useState([0, 0, 0, 0, 0, 0, 0, 0]);
   const [obsSources, setObsSources] = useState([]);
   const [micLevel, setMicLevel] = useState(0);
   const [obsLevel, setObsLevel] = useState(0);
@@ -343,7 +348,7 @@ function App() {
   useEffect(() => {
     if (window.electronAPI && window.electronAPI.resizeWindow) {
       if (activeTab === 'monitoring') {
-        window.electronAPI.resizeWindow(380, 440);
+        window.electronAPI.resizeWindow(380, 480);
       } else {
         window.electronAPI.resizeWindow(380, 580);
       }
@@ -537,12 +542,17 @@ function App() {
 
   // Initialize Audio & OBS Clients
   useEffect(() => {
-    audioProcessor.current = new AudioProcessor(({ level, db, isClipping }) => {
+    audioProcessor.current = new AudioProcessor(({ level, db, isClipping, lufs, truePeak, noiseFloorDb, humDetected, spectrum8Band }) => {
       setMicDb(db);
       setMicClipping(isClipping);
       setRawMicLevel(level);
       const gate = noiseGateRef.current;
       setMicLevel(level < gate ? 0 : level);
+      if (lufs !== undefined) setMicLufs(lufs);
+      if (truePeak !== undefined) setMicTruePeak(truePeak);
+      if (noiseFloorDb !== undefined) setMicNoiseFloor(noiseFloorDb);
+      setMicHum(humDetected || null);
+      if (spectrum8Band) setMicSpectrum(spectrum8Band);
     });
 
     // Fetch Devices
@@ -853,6 +863,11 @@ function App() {
       obsConnected,
       isObsMutedBtn,
       status,
+      lufs: micLufs,
+      truePeak: micTruePeak,
+      noiseFloorDb: micNoiseFloor,
+      humDetected: micHum,
+      spectrum8Band: micSpectrum,
       cpuUsage: hardwareUsage.cpuUsage,
       ramUsage: hardwareUsage.ramUsage,
       localIp: hardwareUsage.localIp,
@@ -877,7 +892,7 @@ function App() {
       appVersion,
       audioDevices: audioDevicesRef.current.map(d => d.label || 'Default Microphone')
     };
-  }, [micLevel, rawMicLevel, micDb, micClipping, obsSources, noiseGate, obsLevel, obsDb, status, hardwareUsage, uuid, agentName, micDriverName, obsSourceName, isMonitoringActive, isStreaming, streamTimecode, streamBitrate, streamDroppedFrames, streamTotalFrames, currentScene, silenceTimeoutSec, deadMicTimeoutSec, clippingThreshold, clippingDurationSec, speakingThreshold, obsMuteTimeoutSec, autoRecoveryUnmute, obsSyncRecording, obsSyncStreaming, telemetryInterval, obsConnected, isObsMutedBtn, isRecording, appVersion]);
+  }, [micLevel, rawMicLevel, micDb, micClipping, micLufs, micTruePeak, micNoiseFloor, micHum, micSpectrum, obsSources, noiseGate, obsLevel, obsDb, status, hardwareUsage, uuid, agentName, micDriverName, obsSourceName, isMonitoringActive, isStreaming, streamTimecode, streamBitrate, streamDroppedFrames, streamTotalFrames, currentScene, silenceTimeoutSec, deadMicTimeoutSec, clippingThreshold, clippingDurationSec, speakingThreshold, obsMuteTimeoutSec, autoRecoveryUnmute, obsSyncRecording, obsSyncStreaming, telemetryInterval, obsConnected, isObsMutedBtn, isRecording, appVersion]);
 
   // Telemetry Sender (Dynamic Interval)
   useEffect(() => {
@@ -1045,6 +1060,17 @@ function App() {
               <div className="meter-bar">
                 <div className="meter-fill obs" style={{ width: `${Math.min(obsLevel, 100)}%` }}></div>
               </div>
+            </div>
+
+            {/* Audio Engineering Mini Diagnostics */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.03)', padding: '6px 10px', borderRadius: '4px', fontSize: '0.72rem', color: '#999', border: '1px solid rgba(255,255,255,0.05)' }}>
+              <span>Loudness: <strong style={{ color: micLufs >= -18 && micLufs <= -10 ? '#4caf50' : (micLufs > -10 ? '#ef4444' : '#ff9800') }}>{micLufs > -70 ? `${micLufs.toFixed(1)} LUFS` : 'Hening'}</strong></span>
+              <span>Peak: <strong style={{ color: micTruePeak >= -1 ? '#ef4444' : '#ccc' }}>{micTruePeak > -90 ? `${micTruePeak.toFixed(1)} dBFS` : '-'}</strong></span>
+              {micHum ? (
+                <span style={{ color: '#ef4444', fontWeight: 'bold' }}>Hum {micHum}!</span>
+              ) : (
+                <span>Noise: <strong style={{ color: '#aaa' }}>{micNoiseFloor > -90 ? `${micNoiseFloor.toFixed(0)}dB` : '-'}</strong></span>
+              )}
             </div>
 
             <button

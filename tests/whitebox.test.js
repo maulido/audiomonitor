@@ -3320,6 +3320,162 @@ async function main() {
     await new Promise(r => serverApp.server.close(r));
   });
 
+  await runSuite('44. Audio Engineering Diagnostics (LUFS, True Peak, Spectrum & Ground Loop Hum)', async () => {
+    // 1. Test LUFS momentary calculation formula
+    const sampleRate = 48000;
+    const fftSize = 2048;
+    const binWidth = sampleRate / fftSize; // 23.4375 Hz
+
+    // Generate pure -14 dBFS sine wave buffer (amplitudo ~0.1995)
+    const targetAmp = Math.pow(10, -14 / 20);
+    const pcmData = new Float32Array(fftSize);
+    for (let i = 0; i < fftSize; i++) {
+      pcmData[i] = targetAmp * Math.sin((2 * Math.PI * 1000 * i) / sampleRate);
+    }
+
+    let sum = 0;
+    let maxAbs = 0;
+    for (let i = 0; i < fftSize; i++) {
+      const val = pcmData[i];
+      const absVal = Math.abs(val);
+      sum += val * val;
+      if (absVal > maxAbs) maxAbs = absVal;
+    }
+    const rms = Math.sqrt(sum / fftSize);
+    const db = 20 * Math.log10(rms);
+    const truePeak = 20 * Math.log10(maxAbs);
+    const lufs = -0.691 + 10 * Math.log10(rms * rms);
+
+    assertEqual(Math.round(truePeak), -14, 'True peak calculates exact peak amplitude (-14 dBFS)');
+    assertEqual(Math.round(lufs), -18, 'LUFS calculates standardized momentary loudness');
+
+    // 2. Test 8-Band Equalizer Spectrum Breakdown
+    const freqData = new Uint8Array(fftSize / 2);
+    // Inject energy in Mid band (500 - 2000 Hz)
+    const startMidBin = Math.floor(500 / binWidth);
+    const endMidBin = Math.ceil(2000 / binWidth);
+    for (let b = startMidBin; b <= endMidBin; b++) {
+      freqData[b] = 200; // ~78% energy
+    }
+
+    const getBandEnergy = (minHz, maxHz) => {
+      const startBin = Math.max(0, Math.floor(minHz / binWidth));
+      const endBin = Math.min(freqData.length - 1, Math.ceil(maxHz / binWidth));
+      if (startBin >= endBin) return 0;
+      let bSum = 0;
+      for (let b = startBin; b <= endBin; b++) {
+        bSum += freqData[b];
+      }
+      const avg = bSum / (endBin - startBin + 1);
+      return Math.round((avg / 255) * 100);
+    };
+
+    const spectrum = [
+      getBandEnergy(20, 60),      // Sub-bass
+      getBandEnergy(60, 250),     // Bass
+      getBandEnergy(250, 500),    // Low-mid
+      getBandEnergy(500, 2000),   // Mid
+      getBandEnergy(2000, 4000),  // High-mid
+      getBandEnergy(4000, 6000),  // Presence
+      getBandEnergy(6000, 12000), // Brilliance
+      getBandEnergy(12000, 20000) // Air
+    ];
+
+    assertEqual(spectrum[0], 0, 'Sub-bass band is 0% when no sub energy exists');
+    assert(spectrum[3] > 70, 'Mid band detects > 70% energy properly');
+    assertEqual(spectrum.length, 8, 'Spectrum breakdown produces exactly 8 frequency bands');
+
+    // 3. Test Ground Loop Hum Detection (50Hz electrical spike)
+    const bin50 = Math.round(50 / binWidth);
+    freqData[bin50] = 180; // High 50Hz hum spike
+    freqData[bin50 - 1] = 10;
+    freqData[bin50 + 1] = 10;
+
+    const energy50 = freqData[bin50];
+    const avgNeighbor = ((freqData[bin50 - 1] || 0) + (freqData[bin50 + 1] || 0)) / 2;
+    let humDetected = null;
+    if (energy50 > 80 && energy50 > avgNeighbor + 35) {
+      humDetected = '50Hz';
+    }
+    assertEqual(humDetected, '50Hz', '50Hz ground loop power hum detected accurately');
+  });
+
+  await runSuite('45. Storage Automation Engine, NAS Mirroring & Webhook Sync Verification', async () => {
+    const storageTestDir = path.join(TEST_DIR, 'smart_storage_test');
+    const nasBackupDir = path.join(TEST_DIR, 'nas_backup_dest');
+    fs.mkdirSync(storageTestDir, { recursive: true });
+    fs.mkdirSync(nasBackupDir, { recursive: true });
+
+    // Create mock recording sessions
+    const session1 = path.join(storageTestDir, 'Session_Old_1');
+    const session2 = path.join(storageTestDir, 'Session_Recent_2');
+    fs.mkdirSync(session1, { recursive: true });
+    fs.mkdirSync(session2, { recursive: true });
+
+    fs.writeFileSync(path.join(session1, 'part_1.webm'), Buffer.alloc(50000));
+    fs.writeFileSync(path.join(session1, 'part_1.transcript.json'), JSON.stringify({ text: 'Halo selamat pagi' }));
+    fs.writeFileSync(path.join(session2, 'part_1.webm'), Buffer.alloc(30000));
+    fs.writeFileSync(path.join(session2, 'part_1.transcript.json'), JSON.stringify({ text: 'Siaran langsung studio 2' }));
+
+    const configManager = new ConfigManager(path.join(TEST_DIR, 'storage_test_config.json'));
+    configManager.setStorageAutomationConfig({
+      autoArchiveDays: 7,
+      backupDirectory: nasBackupDir,
+      cloudSyncEnabled: false,
+      cloudSyncUrl: ''
+    });
+
+    const dbManager = new DatabaseManager(path.join(TEST_DIR, 'storage_test_db.json'));
+    const StorageAutomationManager = require('../packages/server/src/StorageAutomationManager');
+    const storageManager = new StorageAutomationManager(configManager, dbManager);
+
+    // 1. Test getStorageStatus
+    const status = storageManager.getStorageStatus(storageTestDir);
+    assertEqual(status.totalSessions, 2, 'Found 2 recording sessions');
+    assertEqual(status.totalFiles, 4, 'Found 4 total files');
+    assert(parseFloat(status.totalMb) > 0, 'Total storage size calculated in MB');
+
+    // 2. Test runBackupSync (NAS Mirroring)
+    const syncRes = await storageManager.runBackupSync(storageTestDir);
+    assertEqual(syncRes.success, true, 'Backup sync returns success');
+    assertEqual(syncRes.syncedCount, 2, '2 sessions mirrored to backup destination');
+    assert(fs.existsSync(path.join(nasBackupDir, 'Session_Old_1', 'part_1.webm')), 'Session 1 audio mirrored to NAS');
+    assert(fs.existsSync(path.join(nasBackupDir, 'Session_Old_1', 'part_1.transcript.json')), 'Session 1 transcript mirrored to NAS');
+    assert(fs.existsSync(path.join(session1, '.synced.json')), 'Session 1 marked as synced');
+
+    // 3. Test runAutoArchive (Set Session 1 mtime to 15 days ago)
+    const oldTime = (Date.now() - (15 * 24 * 60 * 60 * 1000)) / 1000;
+    fs.utimesSync(session1, oldTime, oldTime);
+
+    const archiveRes = await storageManager.runAutoArchive(storageTestDir);
+    assertEqual(archiveRes.success, true, 'Auto-archive returns success');
+    assertEqual(archiveRes.archivedCount, 1, 'Only session 1 (> 7 days) was archived');
+    assert(fs.existsSync(path.join(session1, '.archived.json')), 'Session 1 contains .archived.json marker');
+    assert(!fs.existsSync(path.join(session2, '.archived.json')), 'Session 2 remains active and unarchived');
+
+    // 4. Test ServerApp REST API Endpoints for Smart Storage
+    const serverApp = new ServerApp(configManager, dbManager, null, 4299);
+    serverApp.getRecordsDir = () => storageTestDir;
+    await new Promise(r => serverApp.server.listen(4299, r));
+
+    const statusRes = await fetch('http://localhost:4299/api/storage/automation-status');
+    assertEqual(statusRes.status, 200, 'GET /api/storage/automation-status returns 200 OK');
+    const statusData = await statusRes.json();
+    assertEqual(statusData.archivedSessions, 1, '1 archived session reported via REST API');
+    assertEqual(statusData.syncedSessions, 2, '2 synced sessions reported via REST API');
+
+    const configUpdateRes = await fetch('http://localhost:4299/api/storage/automation-config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-pin': '1234' },
+      body: JSON.stringify({ autoArchiveDays: 30 })
+    });
+    assertEqual(configUpdateRes.status, 200, 'POST /api/storage/automation-config returns 200 OK');
+    const configUpdateData = await configUpdateRes.json();
+    assertEqual(configUpdateData.config.autoArchiveDays, 30, 'autoArchiveDays updated to 30');
+
+    await new Promise(r => serverApp.server.close(r));
+  });
+
   // Clean up test directory
   try {
     fs.rmSync(TEST_DIR, { recursive: true, force: true });

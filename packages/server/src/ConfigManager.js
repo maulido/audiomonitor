@@ -41,6 +41,20 @@ class ConfigManager {
         language: 'id',
         autoTranscribe: true,
         alertKeywords: []
+      },
+      storageAutomation: {
+        autoArchiveDays: 14,
+        minFreeDiskGb: 5,
+        cloudSyncEnabled: false,
+        cloudSyncUrl: '',
+        backupDirectory: '',
+        archiveQuality: 'low_opus'
+      },
+      audioDiagnostics: {
+        lufsTarget: -14,
+        lufsTolerance: 2,
+        humDetectionEnabled: true,
+        noiseFloorThreshold: -45
       }
     };
     
@@ -58,7 +72,7 @@ class ConfigManager {
         const fileContent = fs.readFileSync(this.configPath, 'utf8');
         const parsed = JSON.parse(fileContent);
         
-        // Deep merge untuk mencegah error jika objek 'telegram' kosong/hilang dari file JSON lama
+        // Deep merge untuk mencegah error jika objek kosong/hilang dari file JSON lama
         this.config = {
           pcMapping: parsed.pcMapping || {},
           telegram: {
@@ -79,6 +93,22 @@ class ConfigManager {
             autoTranscribe: true,
             alertKeywords: [],
             ...(parsed.transcription || {})
+          },
+          storageAutomation: {
+            autoArchiveDays: 14,
+            minFreeDiskGb: 5,
+            cloudSyncEnabled: false,
+            cloudSyncUrl: '',
+            backupDirectory: '',
+            archiveQuality: 'low_opus',
+            ...(parsed.storageAutomation || {})
+          },
+          audioDiagnostics: {
+            lufsTarget: -14,
+            lufsTolerance: 2,
+            humDetectionEnabled: true,
+            noiseFloorThreshold: -45,
+            ...(parsed.audioDiagnostics || {})
           }
         };
       } catch (err) {
@@ -91,7 +121,9 @@ class ConfigManager {
         this.config = { 
           ...this.defaultConfig, 
           telegram: { ...this.defaultConfig.telegram },
-          transcription: { ...this.defaultConfig.transcription }
+          transcription: { ...this.defaultConfig.transcription },
+          storageAutomation: { ...this.defaultConfig.storageAutomation },
+          audioDiagnostics: { ...this.defaultConfig.audioDiagnostics }
         };
       }
     } else {
@@ -176,6 +208,42 @@ class ConfigManager {
     this.config.transcription = {
       ...this.getTranscriptionConfig(),
       ...transcriptionData
+    };
+    this.saveConfig();
+  }
+
+  /**
+   * Mengambil konfigurasi Smart Storage & Cloud Sync Automation.
+   */
+  getStorageAutomationConfig() {
+    return this.config.storageAutomation || { ...this.defaultConfig.storageAutomation };
+  }
+
+  /**
+   * Memperbarui konfigurasi Smart Storage & Cloud Sync Automation.
+   */
+  setStorageAutomationConfig(storageData = {}) {
+    this.config.storageAutomation = {
+      ...this.getStorageAutomationConfig(),
+      ...storageData
+    };
+    this.saveConfig();
+  }
+
+  /**
+   * Mengambil konfigurasi Diagnostik Audio Engineering.
+   */
+  getAudioDiagnosticsConfig() {
+    return this.config.audioDiagnostics || { ...this.defaultConfig.audioDiagnostics };
+  }
+
+  /**
+   * Memperbarui konfigurasi Diagnostik Audio Engineering.
+   */
+  setAudioDiagnosticsConfig(diagnosticsData = {}) {
+    this.config.audioDiagnostics = {
+      ...this.getAudioDiagnosticsConfig(),
+      ...diagnosticsData
     };
     this.saveConfig();
   }

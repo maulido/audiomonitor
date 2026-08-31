@@ -10,6 +10,7 @@ const DatabaseManager = require('./DatabaseManager');
 const AlertManager = require('./AlertManager');
 const TelemetryHub = require('./TelemetryHub');
 const TranscriptionManager = require('./TranscriptionManager');
+const StorageAutomationManager = require('./StorageAutomationManager');
 const logger = require('./utils/logger');
 
 /**
@@ -44,6 +45,9 @@ class ServerApp {
 
     // TranscriptionManager mengelola integrasi Speech-to-Text Whisper
     this.transcriptionManager = new TranscriptionManager(this.configManager, this.dbManager, this.alertManager, this.telemetryHub);
+
+    // StorageAutomationManager mengelola Smart Storage, Archiving, dan Cloud / NAS Sync
+    this.storageAutomationManager = new StorageAutomationManager(this.configManager, this.dbManager);
 
     this.setupMiddleware();
     this.setupRoutes();
@@ -1021,6 +1025,47 @@ class ServerApp {
       });
       logger.info(`[StorageHub] Memicu pembersihan file audio lokal ke target: ${targetUuid || 'all'} (Mode: ${deleteMode || 'all'}, Hanya Terupload: ${onlyUploaded !== false})`);
       res.json({ success: true, message: 'Perintah pembersihan storage audio lokal telah dikirim ke PC Host' });
+    });
+
+    // API: Status Smart Storage & Cloud Sync Automation
+    this.app.get('/api/storage/automation-status', (req, res) => {
+      const recordsDir = this.getRecordsDir();
+      const status = this.storageAutomationManager.getStorageStatus(recordsDir);
+      res.json(status);
+    });
+
+    // API: Konfigurasi Smart Storage & Cloud Sync Automation
+    this.app.post('/api/storage/automation-config', (req, res) => {
+      const storageConfig = req.body || {};
+      this.configManager.setStorageAutomationConfig(storageConfig);
+      logger.info('[SmartStorage] Konfigurasi otomasi penyimpanan diperbarui');
+      res.json({ success: true, config: this.configManager.getStorageAutomationConfig() });
+    });
+
+    // API: Memicu Sinkronisasi Manual ke Backup / NAS / Cloud Webhook
+    this.app.post('/api/storage/trigger-sync', async (req, res) => {
+      const recordsDir = this.getRecordsDir();
+      const result = await this.storageAutomationManager.runBackupSync(recordsDir);
+      res.json(result);
+    });
+
+    // API: Memicu Pengarsipan Manual Berkas Lawas
+    this.app.post('/api/storage/trigger-archive', async (req, res) => {
+      const recordsDir = this.getRecordsDir();
+      const result = await this.storageAutomationManager.runAutoArchive(recordsDir);
+      res.json(result);
+    });
+
+    // API: Konfigurasi Audio Engineering Diagnostics
+    this.app.get('/api/config/audio-diagnostics', (req, res) => {
+      res.json({ success: true, config: this.configManager.getAudioDiagnosticsConfig() });
+    });
+
+    this.app.post('/api/config/audio-diagnostics', (req, res) => {
+      const diagConfig = req.body || {};
+      this.configManager.setAudioDiagnosticsConfig(diagConfig);
+      logger.info('[AudioDiagnostics] Konfigurasi diagnostik audio diperbarui');
+      res.json({ success: true, config: this.configManager.getAudioDiagnosticsConfig() });
     });
 
     // API: Cek Rilis Terbaru di GitHub Releases

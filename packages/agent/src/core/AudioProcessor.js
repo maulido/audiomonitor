@@ -48,16 +48,21 @@ class AudioProcessor {
       this.analyser = this.audioContext.createAnalyser();
       this.microphone = this.audioContext.createMediaStreamSource(this.stream);
       
-      // Mengatur seberapa mulus pergerakan nilai audio dan ukuran sampel FFT
+      // Mengatur seberapa mulus pergerakan nilai audio dan ukuran sampel FFT (2048 untuk resolusi frekuensi tinggi)
       this.analyser.smoothingTimeConstant = 0.8;
-      this.analyser.fftSize = 1024;
+      this.analyser.fftSize = 2048;
       this.microphone.connect(this.analyser);
 
-      // Buffer array untuk menampung gelombang data audio mentah
+      // Buffer array untuk menampung gelombang data audio mentah dan data frekuensi
       const pcmData = new Float32Array(this.analyser.fftSize);
-      
+      const freqData = new Uint8Array(this.analyser.frequencyBinCount);
+      const sampleRate = this.audioContext.sampleRate || 48000;
+      const binWidth = sampleRate / this.analyser.fftSize; // ~23.4 Hz per bin
+
       let isRunning = true;
       this.isRunning = isRunning;
+      let minRmsEnergy = 1.0;
+      let energySmoothed = 0.0001;
       
       /**
        * Fungsi loop internal untuk terus membaca data mikrofon secara real-time.
@@ -65,29 +70,98 @@ class AudioProcessor {
       const updateLevel = () => {
         if (!this.isRunning) return;
         
-        // Memasukkan data gelombang suara (time-domain) ke dalam pcmData
+        // Memasukkan data gelombang suara (time-domain) dan spektrum frekuensi
         this.analyser.getFloatTimeDomainData(pcmData);
+        this.analyser.getByteFrequencyData(freqData);
+
         let sum = 0;
+        let maxAbs = 0;
         let clipCount = 0;
         
-        // Mengkalkulasi jumlah kuadrat amplitudo (RMS) dan mengecek apakah gelombang mencapai puncak (clipping)
+        // Mengkalkulasi RMS, True Peak, dan clipping
         for (let i = 0; i < pcmData.length; i++) {
-          sum += pcmData[i] * pcmData[i];
-          if (Math.abs(pcmData[i]) >= 0.99) clipCount++;
+          const val = pcmData[i];
+          const absVal = Math.abs(val);
+          sum += val * val;
+          if (absVal > maxAbs) maxAbs = absVal;
+          if (absVal >= 0.99) clipCount++;
         }
         
         // Menghitung nilai Root Mean Square (RMS) dan mengkonversinya ke Decibel (dB)
-        let rms = Math.sqrt(sum / pcmData.length);
-        let db = rms > 0 ? 20 * Math.log10(rms) : -100;
+        const rms = Math.sqrt(sum / pcmData.length);
+        const db = rms > 0 ? 20 * Math.log10(rms) : -100;
+        const truePeak = maxAbs > 0 ? 20 * Math.log10(maxAbs) : -100;
+
+        // BS.1770 / EBU R128 Momentary LUFS Approximation (-60 to 0 LUFS)
+        energySmoothed = 0.85 * energySmoothed + 0.15 * (rms * rms);
+        let lufs = energySmoothed > 0 ? -0.691 + 10 * Math.log10(energySmoothed) : -70;
+        if (!isFinite(lufs) || isNaN(lufs) || lufs < -70) lufs = -70;
+        if (lufs > 0) lufs = 0;
+
+        // Dynamic Noise Floor estimation
+        if (rms > 0.00001 && rms < minRmsEnergy) {
+          minRmsEnergy = 0.98 * minRmsEnergy + 0.02 * rms;
+        } else {
+          minRmsEnergy = minRmsEnergy * 1.002; // slow drift recovery
+        }
+        const noiseFloorDb = minRmsEnergy > 0 ? Math.max(-90, 20 * Math.log10(minRmsEnergy)) : -90;
         
         // Memetakan nilai dB (-60 sampai 0) menjadi nilai presentase (0% sampai 100%)
-        let level = Math.max(0, Math.min(100, (db + 60) * (100 / 60)));
+        const level = Math.max(0, Math.min(100, (db + 60) * (100 / 60)));
+
+        // 8-Band Equalizer Spectrum Breakdown (0 - 100% per band)
+        // Band 1: 20-60Hz, Band 2: 60-250Hz, Band 3: 250-500Hz, Band 4: 500-2kHz,
+        // Band 5: 2k-4kHz, Band 6: 4k-6kHz, Band 7: 6k-12kHz, Band 8: 12k-20kHz
+        const getBandEnergy = (minHz, maxHz) => {
+          const startBin = Math.max(0, Math.floor(minHz / binWidth));
+          const endBin = Math.min(freqData.length - 1, Math.ceil(maxHz / binWidth));
+          if (startBin >= endBin) return 0;
+          let bSum = 0;
+          for (let b = startBin; b <= endBin; b++) {
+            bSum += freqData[b];
+          }
+          const avg = bSum / (endBin - startBin + 1);
+          return Math.round((avg / 255) * 100);
+        };
+
+        const spectrum8Band = [
+          getBandEnergy(20, 60),      // Sub-bass
+          getBandEnergy(60, 250),     // Bass
+          getBandEnergy(250, 500),    // Low-mid
+          getBandEnergy(500, 2000),   // Mid
+          getBandEnergy(2000, 4000),  // High-mid
+          getBandEnergy(4000, 6000),  // Presence
+          getBandEnergy(6000, 12000), // Brilliance
+          getBandEnergy(12000, 20000) // Air
+        ];
+
+        // Ground Loop Hum Detection (50Hz / 60Hz electrical noise)
+        const bin50 = Math.round(50 / binWidth);
+        const bin60 = Math.round(60 / binWidth);
+        const energy50 = freqData[bin50] || 0;
+        const energy60 = freqData[bin60] || 0;
+        const avgNeighbor = ((freqData[bin50 - 1] || 0) + (freqData[bin50 + 1] || 0) + (freqData[bin60 - 1] || 0) + (freqData[bin60 + 1] || 0)) / 4;
+        let humDetected = null;
+        if (energy50 > 80 && energy50 > avgNeighbor + 35) {
+          humDetected = '50Hz';
+        } else if (energy60 > 80 && energy60 > avgNeighbor + 35) {
+          humDetected = '60Hz';
+        }
         
         if (this.onLevelChange) {
           // Menentukan apakah audio "pecah" (clipping) jika lebih dari 5 sampel menyentuh puncak
           const isClipping = clipCount > 5;
-          // Mengirim hasil kembali ke callback UI
-          this.onLevelChange({ level, db: parseFloat(db.toFixed(1)), isClipping });
+          // Mengirim hasil lengkap audio engineering ke callback UI
+          this.onLevelChange({
+            level,
+            db: parseFloat(db.toFixed(1)),
+            isClipping,
+            lufs: parseFloat(lufs.toFixed(1)),
+            truePeak: parseFloat(truePeak.toFixed(1)),
+            noiseFloorDb: parseFloat(noiseFloorDb.toFixed(1)),
+            humDetected,
+            spectrum8Band
+          });
         }
         
         this.animationFrame = setTimeout(updateLevel, 50); // ~20fps polling
