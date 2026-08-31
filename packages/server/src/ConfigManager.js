@@ -247,6 +247,16 @@ class ConfigManager {
     };
     this.saveConfig();
   }
+
+  /**
+   * Mengatur PIN keamanan Dashboard.
+   */
+  setDashboardPin(pin) {
+    this.config.dashboardPin = String(pin || '1234');
+    this.saveConfig();
+  }
 }
+
+module.exports = ConfigManager;
 
 module.exports = ConfigManager;

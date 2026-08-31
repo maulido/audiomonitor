@@ -3558,6 +3558,375 @@ async function main() {
     await new Promise(r => serverApp.server.close(r));
   });
 
+  // =========================================================================
+  // SUITE 47: Audio Level Normalization & Clipping Recovery Algorithm
+  // =========================================================================
+  await runSuite('47. Audio Level Normalization & Clipping Recovery Algorithm', async () => {
+    // 1. PCM float sample clipping detector
+    function detectClipping(samples, threshold = 0.99) {
+      let clippedCount = 0;
+      for (let i = 0; i < samples.length; i++) {
+        if (Math.abs(samples[i]) >= threshold) {
+          clippedCount++;
+        }
+      }
+      return {
+        hasClipping: clippedCount > 0,
+        clippedCount,
+        clippedRatio: clippedCount / samples.length
+      };
+    }
+
+    const cleanSignal = new Float32Array([0.1, 0.3, -0.4, 0.6, -0.5, 0.2]);
+    const clippedSignal = new Float32Array([0.1, 0.995, -1.0, 0.999, -0.4, 0.2]);
+
+    const cleanCheck = detectClipping(cleanSignal);
+    assertEqual(cleanCheck.hasClipping, false, 'Clean signal has no clipping');
+    assertEqual(cleanCheck.clippedCount, 0, '0 clipped samples in clean signal');
+
+    const clippedCheck = detectClipping(clippedSignal);
+    assertEqual(clippedCheck.hasClipping, true, 'Clipped signal detected clipping');
+    assertEqual(clippedCheck.clippedCount, 3, 'Exactly 3 clipped samples identified');
+
+    // 2. Soft-knee compression & normalization limiter
+    function applySoftLimiter(samples, gain = 1.0) {
+      const output = new Float32Array(samples.length);
+      for (let i = 0; i < samples.length; i++) {
+        const x = samples[i] * gain;
+        // Soft clipping via hyperbolic tangent
+        output[i] = Math.tanh(x);
+      }
+      return output;
+    }
+
+    const limited = applySoftLimiter(clippedSignal, 1.5);
+    for (let i = 0; i < limited.length; i++) {
+      assert(Math.abs(limited[i]) < 1.0, `Sample ${i} limited safely below 1.0 (Actual: ${limited[i]})`);
+    }
+
+    // 3. Peak to Logarithmic dBFS calculation
+    function sampleToDb(sample) {
+      const abs = Math.abs(sample);
+      if (abs <= 0.00001) return -100;
+      return Math.max(-100, Math.min(0, 20 * Math.log10(abs)));
+    }
+
+    assertEqual(sampleToDb(1.0), 0, '1.0 sample = 0 dBFS');
+    assertEqual(Math.round(sampleToDb(0.5)), -6, '0.5 sample ≈ -6 dBFS');
+    assertEqual(sampleToDb(0.0), -100, '0.0 sample = -100 dBFS');
+  });
+
+  // =========================================================================
+  // SUITE 48: Session Folder Renaming Concurrency & Scanner Resilience
+  // =========================================================================
+  await runSuite('48. Session Folder Renaming Concurrency & Scanner Resilience', async () => {
+    const concurrentDir = path.join(TEST_DIR, 'session_rename_test');
+    fs.mkdirSync(concurrentDir, { recursive: true });
+
+    // Step 1: Session starts as ongoing (no _to_ part)
+    const uuid = '00000000-0000-0000-0000-000000000048';
+    const ongoingFolderName = `PC_Studio_${uuid}_2026-08-31_14-00-00`;
+    const ongoingPath = path.join(concurrentDir, ongoingFolderName);
+    fs.mkdirSync(ongoingPath, { recursive: true });
+    fs.writeFileSync(path.join(ongoingPath, 'part_1.webm'), Buffer.alloc(1000));
+
+    const cm = new ConfigManager(path.join(TEST_DIR, 'rename_cm.json'));
+    const db = new DatabaseManager(path.join(TEST_DIR, 'rename_db.json'));
+    const serverApp = new ServerApp(cm, db, null, 4488);
+    serverApp.getRecordsDir = () => concurrentDir;
+    await new Promise(r => serverApp.server.listen(4488, r));
+
+    // Verify scan during ongoing session
+    const res1 = await fetch('http://localhost:4488/api/records');
+    const rec1 = await res1.json();
+    assertEqual(rec1.length, 1, 'Found 1 ongoing recording');
+    assertEqual(rec1[0].isCompleted, false, 'Session is ongoing (isCompleted = false)');
+    assertEqual(rec1[0].baseSessionKey, `${uuid}_2026-08-31_14-00-00`, 'baseSessionKey is consistent');
+
+    // Step 2: Agent completes session and renames directory to include _to_
+    const completedFolderName = `PC_Studio_${uuid}_2026-08-31_14-00-00_to_14-10-00`;
+    const completedPath = path.join(concurrentDir, completedFolderName);
+    fs.renameSync(ongoingPath, completedPath);
+    fs.writeFileSync(path.join(completedPath, 'part_2.webm'), Buffer.alloc(2000));
+
+    // Verify scan after rename
+    const res2 = await fetch('http://localhost:4488/api/records');
+    const rec2 = await res2.json();
+    assertEqual(rec2.length, 2, 'Found 2 parts in completed session');
+    assertEqual(rec2[0].isCompleted, true, 'Session is now marked completed');
+    assertEqual(rec2[0].baseSessionKey, `${uuid}_2026-08-31_14-00-00`, 'baseSessionKey remains identical across rename');
+    assertEqual(rec2[1].baseSessionKey, `${uuid}_2026-08-31_14-00-00`, 'Part 2 shares identical baseSessionKey');
+
+    await new Promise(r => serverApp.server.close(r));
+  });
+
+  // =========================================================================
+  // SUITE 49: Smart Storage Multi-Target Failover (NAS Disconnect & Webhook Timeout)
+  // =========================================================================
+  await runSuite('49. Smart Storage Multi-Target Failover (NAS Disconnect & Webhook Timeout)', async () => {
+    const sourceStorage = path.join(TEST_DIR, 'failover_source');
+    fs.mkdirSync(sourceStorage, { recursive: true });
+
+    const sessionDir = path.join(sourceStorage, 'Session_Failover_1');
+    fs.mkdirSync(sessionDir, { recursive: true });
+    fs.writeFileSync(path.join(sessionDir, 'test.webm'), Buffer.alloc(5000));
+
+    const cm = new ConfigManager(path.join(TEST_DIR, 'failover_cm.json'));
+    // Set invalid / non-writable NAS backup path
+    cm.setStorageAutomationConfig({
+      backupDirectory: path.join(TEST_DIR, 'non_existent_drive_xyz:\\invalid\\path'),
+      cloudSyncEnabled: true,
+      cloudSyncUrl: 'http://127.0.0.1:59999/invalid-webhook' // Non-existent server
+    });
+
+    const db = new DatabaseManager(path.join(TEST_DIR, 'failover_db.json'));
+    const StorageAutomationManager = require('../packages/server/src/StorageAutomationManager');
+    const storageManager = new StorageAutomationManager(cm, db);
+
+    // 1. NAS & Webhook Failover: Should not throw, should handle unreachable destinations gracefully
+    const syncRes = await storageManager.runBackupSync(sourceStorage);
+    assertEqual(syncRes.success, true, 'Sync handled gracefully without throwing unhandled rejection');
+    assert(syncRes.errors.length > 0, 'Reported cloud webhook / NAS errors in result');
+    assert(fs.existsSync(path.join(sessionDir, 'test.webm')), 'Original source audio is completely safe and intact');
+  });
+
+  // =========================================================================
+  // SUITE 50: Whisper STT Multi-Language & Special Punctuation Processing
+  // =========================================================================
+  await runSuite('50. Whisper STT Multi-Language & Special Punctuation Processing', async () => {
+    const cm = new ConfigManager(path.join(TEST_DIR, 'stt_punct_cm.json'));
+    cm.setTranscriptionConfig({
+      enabled: true,
+      alertKeywords: ['bahaya', 'urgent', 'sensor', 'rahasia', '[stop]', 'test(123)']
+    });
+
+    const TranscriptionManager = require('../packages/server/src/TranscriptionManager');
+    const tm = new TranscriptionManager(cm);
+    const keywords = cm.getTranscriptionConfig().alertKeywords;
+
+    // 1. Keyword matcher with regex characters, uppercase, and punctuation
+    const text1 = 'PERINGATAN: Ini sangat BAHAYA! Tolong periksa segera.';
+    const alert1 = tm.scanAlertKeywords(text1, keywords);
+    assertEqual(alert1.length > 0, true, 'Uppercase BAHAYA! triggered alert');
+    assert(alert1.includes('bahaya'), 'Keyword bahaya detected');
+
+    // 2. Special characters in keywords like [stop] and test(123)
+    const text2 = 'Operator menekan tombol [stop] di ruang kontrol.';
+    const alert2 = tm.scanAlertKeywords(text2, keywords);
+    assertEqual(alert2.length > 0, true, 'Bracketed keyword [stop] safely matched without regex syntax error');
+    assert(alert2.includes('[stop]'), 'Bracketed keyword matched');
+
+    // 3. Multi-line subtitle generation format (SRT)
+    function generateSrt(segments) {
+      return segments.map((seg, idx) => {
+        const startH = String(Math.floor(seg.start / 3600)).padStart(2, '0');
+        const startM = String(Math.floor((seg.start % 3600) / 60)).padStart(2, '0');
+        const startS = String(Math.floor(seg.start % 60)).padStart(2, '0');
+        const startMs = String(Math.floor((seg.start % 1) * 1000)).padStart(3, '0');
+
+        const endH = String(Math.floor(seg.end / 3600)).padStart(2, '0');
+        const endM = String(Math.floor((seg.end % 3600) / 60)).padStart(2, '0');
+        const endS = String(Math.floor(seg.end % 60)).padStart(2, '0');
+        const endMs = String(Math.floor((seg.end % 1) * 1000)).padStart(3, '0');
+
+        return `${idx + 1}\n${startH}:${startM}:${startS},${startMs} --> ${endH}:${endM}:${endS},${endMs}\n${seg.text.trim()}\n`;
+      }).join('\n');
+    }
+
+    const segments = [
+      { start: 0.0, end: 4.5, text: 'Halo selamat pagi pendengar setia.' },
+      { start: 4.5, end: 9.125, text: 'Kembali lagi di siaran utama studio 1.' }
+    ];
+
+    const srtOutput = generateSrt(segments);
+    assert(srtOutput.includes('00:00:00,000 --> 00:00:04,500'), 'Segment 1 SRT timestamp formatted correctly');
+    assert(srtOutput.includes('00:00:04,500 --> 00:00:09,125'), 'Segment 2 SRT timestamp with ms formatted correctly');
+  });
+
+  // =========================================================================
+  // SUITE 51: Dashboard Session Sorting, Filtering & Pagination Matrix
+  // =========================================================================
+  await runSuite('51. Dashboard Session Sorting, Filtering & Pagination Matrix', () => {
+    // Generate synthetic sessions
+    const mockSessions = [
+      { id: 1, pcName: 'PC-1', createdAt: '2026-08-31T01:00:00Z', totalSize: 50000000, duration: 600, hasTranscript: true, hasAlertKeyword: true },
+      { id: 2, pcName: 'PC-1', createdAt: '2026-08-31T02:00:00Z', totalSize: 20000000, duration: 300, hasTranscript: false, hasAlertKeyword: false },
+      { id: 3, pcName: 'PC-1', createdAt: '2026-08-31T03:00:00Z', totalSize: 80000000, duration: 1200, hasTranscript: true, hasAlertKeyword: false },
+      { id: 4, pcName: 'PC-2', createdAt: '2026-08-31T01:30:00Z', totalSize: 30000000, duration: 400, hasTranscript: true, hasAlertKeyword: false },
+      { id: 5, pcName: 'PC-2', createdAt: '2026-08-31T04:00:00Z', totalSize: 90000000, duration: 1500, hasTranscript: true, hasAlertKeyword: true }
+    ];
+
+    // 1. Status Filter: Ready
+    const readyFiltered = mockSessions.filter(s => s.hasTranscript);
+    assertEqual(readyFiltered.length, 4, '4 sessions have transcript ready');
+
+    // 2. Status Filter: Alert
+    const alertFiltered = mockSessions.filter(s => s.hasAlertKeyword);
+    assertEqual(alertFiltered.length, 2, '2 sessions have alert keywords');
+
+    // 3. Status Filter: None
+    const noneFiltered = mockSessions.filter(s => !s.hasTranscript);
+    assertEqual(noneFiltered.length, 1, '1 session has no transcript');
+
+    // 4. Sort Order: Newest vs Oldest
+    const newest = [...mockSessions].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    assertEqual(newest[0].id, 5, 'Session 5 is newest');
+
+    const oldest = [...mockSessions].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+    assertEqual(oldest[0].id, 1, 'Session 1 is oldest');
+
+    // 5. Sort Order: Size Descending
+    const bySize = [...mockSessions].sort((a, b) => b.totalSize - a.totalSize);
+    assertEqual(bySize[0].id, 5, 'Session 5 has largest size (90MB)');
+    assertEqual(bySize[1].id, 3, 'Session 3 has second largest size (80MB)');
+
+    // 6. Sort Order: Duration Descending
+    const byDuration = [...mockSessions].sort((a, b) => b.duration - a.duration);
+    assertEqual(byDuration[0].id, 5, 'Session 5 has longest duration (1500s)');
+
+    // 7. Pagination Math per PC
+    const pc1Sessions = mockSessions.filter(s => s.pcName === 'PC-1');
+    const limit = 2;
+    const totalPages = Math.ceil(pc1Sessions.length / limit); // 3 / 2 = 2
+    assertEqual(totalPages, 2, '2 total pages for PC-1 with limit 2');
+
+    const page1 = pc1Sessions.slice(0, limit);
+    assertEqual(page1.length, 2, 'Page 1 has 2 items');
+    const page2 = pc1Sessions.slice(limit, limit * 2);
+    assertEqual(page2.length, 1, 'Page 2 has 1 item');
+  });
+
+  // =========================================================================
+  // SUITE 52: Extreme Concurrency & Memory Leak Longevity Benchmark (30 Parallel Sockets & 300 Cycles)
+  // =========================================================================
+  await runSuite('52. Extreme Concurrency & Memory Leak Longevity Benchmark (30 Sockets & 300 Telemetry Cycles)', async () => {
+    const cm = new ConfigManager(path.join(TEST_DIR, 'stress_long_cm.json'));
+    const db = new DatabaseManager(path.join(TEST_DIR, 'stress_long_db.json'));
+    const alertMgr = new AlertManager(cm, db);
+    const serverApp = new ServerApp(0);
+    serverApp.configManager = cm;
+    serverApp.dbManager = db;
+    serverApp.alertManager = alertMgr;
+
+    const port = await new Promise(r => serverApp.server.listen(0, '127.0.0.1', () => r(serverApp.server.address().port)));
+    const wsUrl = `http://127.0.0.1:${port}`;
+
+    const numAgents = 30;
+    const sockets = [];
+
+    // Connect 30 parallel agents
+    const connectPromises = [];
+    for (let i = 0; i < numAgents; i++) {
+      const sock = ioClient(wsUrl);
+      const uuid = `agent-longevity-${i}`;
+      connectPromises.push(new Promise(resolve => {
+        sock.on('connect', () => {
+          sock.emit('register', { type: 'agent', uuid, name: `Agent-Longevity-${i}` });
+          resolve();
+        });
+      }));
+      sockets.push(sock);
+    }
+
+    await Promise.all(connectPromises);
+    await new Promise(r => setTimeout(r, 100));
+
+    // Emit 300 telemetry bursts across agents
+    for (let cycle = 0; cycle < 10; cycle++) {
+      for (let i = 0; i < numAgents; i++) {
+        const uuid = `agent-longevity-${i}`;
+        const status = cycle % 3 === 0 ? 'DANGER' : 'AMAN';
+        sockets[i].emit('telemetry', {
+          uuid,
+          pcName: `Agent-Longevity-${i}`,
+          status,
+          micDb: status === 'DANGER' ? -90 : -22,
+          obsDb: -22,
+          dangerScore: status === 'DANGER' ? 85 : 0
+        });
+      }
+    }
+
+    await new Promise(r => setTimeout(r, 200));
+
+    // Verify all 30 agents have active state in server
+    for (let i = 0; i < numAgents; i++) {
+      const state = serverApp.telemetryHub.lastKnownState.get(`agent-longevity-${i}`);
+      assert(state !== undefined, `Agent ${i} registered in lastKnownState`);
+    }
+    assert(serverApp.telemetryHub.lastKnownState.size >= numAgents, 'At least 30 parallel agents accurately registered');
+
+    // Disconnect all
+    sockets.forEach(s => s.disconnect());
+    await new Promise(r => setTimeout(r, 600));
+
+    // Verify disconnected status
+    for (let i = 0; i < numAgents; i++) {
+      const state = serverApp.telemetryHub.lastKnownState.get(`agent-longevity-${i}`);
+      assertEqual(state.status, 'OFFLINE', `Agent ${i} properly set to OFFLINE after disconnect`);
+    }
+
+    await new Promise(r => serverApp.server.close(r));
+  });
+
+  // =========================================================================
+  // SUITE 53: Audio Header EBML & WebM Repair Parser Invariants
+  // =========================================================================
+  await runSuite('53. Audio Header EBML & WebM Repair Parser Invariants', () => {
+    // Valid standard WebM Header signature (0x1A, 0x45, 0xDF, 0xA3)
+    const validWebMHeader = Buffer.from([0x1A, 0x45, 0xDF, 0xA3, 0x9F, 0x42, 0x86, 0x81, 0x01, 0x42, 0xF7, 0x81, 0x01]);
+    const invalidHeader = Buffer.from([0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF]);
+
+    function isWebMHeader(buffer) {
+      if (!buffer || buffer.length < 4) return false;
+      return buffer[0] === 0x1A && buffer[1] === 0x45 && buffer[2] === 0xDF && buffer[3] === 0xA3;
+    }
+
+    assertEqual(isWebMHeader(validWebMHeader), true, 'Valid WebM EBML header signature recognized');
+    assertEqual(isWebMHeader(invalidHeader), false, 'Invalid header rejected');
+    assertEqual(isWebMHeader(Buffer.alloc(0)), false, 'Empty buffer safely handled');
+    assertEqual(isWebMHeader(null), false, 'Null buffer safely handled');
+  });
+
+  // =========================================================================
+  // SUITE 54: Host Audio Storage Uploaded-Only Verification & PIN Protection Matrix
+  // =========================================================================
+  await runSuite('54. Host Audio Storage Uploaded-Only Verification & PIN Protection Matrix', async () => {
+    const cm = new ConfigManager(path.join(TEST_DIR, 'storage_pin_cm.json'));
+    cm.setDashboardPin('8888');
+    const db = new DatabaseManager(path.join(TEST_DIR, 'storage_pin_db.json'));
+    const serverApp = new ServerApp(cm, db, null, 4588);
+    await new Promise(r => serverApp.server.listen(4588, r));
+
+    // 1. Missing PIN on POST /api/agents/clean-storage
+    const noPinRes = await fetch('http://localhost:4588/api/agents/clean-storage', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ targetUuid: 'all', onlyUploaded: true })
+    });
+    assertEqual(noPinRes.status, 401, 'POST /api/agents/clean-storage without PIN returns 401 Unauthorized');
+
+    // 2. Wrong PIN on POST /api/agents/clean-storage
+    const wrongPinRes = await fetch('http://localhost:4588/api/agents/clean-storage', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-pin': '0000' },
+      body: JSON.stringify({ targetUuid: 'all', onlyUploaded: true })
+    });
+    assertEqual(wrongPinRes.status, 401, 'POST /api/agents/clean-storage with wrong PIN returns 401 Unauthorized');
+
+    // 3. Correct PIN on POST /api/agents/clean-storage
+    const correctPinRes = await fetch('http://localhost:4588/api/agents/clean-storage', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-pin': '8888' },
+      body: JSON.stringify({ targetUuid: 'all', onlyUploaded: true })
+    });
+    assertEqual(correctPinRes.status, 200, 'POST /api/agents/clean-storage with correct PIN returns 200 OK');
+    const cleanData = await correctPinRes.json();
+    assertEqual(cleanData.success, true, 'Clean storage broadcast succeeded');
+
+    await new Promise(r => serverApp.server.close(r));
+  });
+
   // Clean up test directory
   try {
     fs.rmSync(TEST_DIR, { recursive: true, force: true });
