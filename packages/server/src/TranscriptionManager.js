@@ -90,6 +90,22 @@ class TranscriptionManager {
     }
 
     const config = this.configManager.getTranscriptionConfig();
+
+    // VAD Pre-Filter: Jika ukuran file mikro/rusak (< 64 bytes), lewati request API dan tandai sebagai hening
+    if (stat.size < 64) {
+      logger.info(`[Whisper] File ${fileName} sangat kecil (${stat.size} bytes), ditandai hening secara instan.`);
+      const silentResponse = {
+        text: "[Rekaman Hening / Tanpa Percakapan]",
+        language: config.language || 'id',
+        duration: 0,
+        segments: []
+      };
+      const normalized = this.normalizeResponse(silentResponse, fileName, sessionFolder, pcName, config.language);
+      const transcriptPath = `${filePath}.transcript.json`;
+      this.atomicWriteJsonSync(transcriptPath, normalized);
+      return normalized;
+    }
+
     if (!config.apiUrl) {
       throw new Error('URL Whisper API belum dikonfigurasi.');
     }

@@ -136,10 +136,19 @@ class DatabaseManager {
 
   /**
    * Mengambil sejumlah daftar insiden terbaru (diurutkan dari yang paling akhir).
+   * Dioptimalkan ke O(K) tanpa menyalin dan mensortir seluruh array.
    */
   getRecentIncidents(limit = 100, callback) {
-    const sorted = [...this.incidents].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-    callback(sorted.slice(0, limit));
+    const k = Math.max(1, parseInt(limit, 10) || 100);
+    const count = this.incidents.length;
+    const startIdx = Math.max(0, count - k);
+    const recent = [];
+    for (let i = count - 1; i >= startIdx; i--) {
+      recent.push(this.incidents[i]);
+    }
+    if (typeof callback === 'function') {
+      callback(recent);
+    }
   }
 
   /**

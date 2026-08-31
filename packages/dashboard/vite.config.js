@@ -11,5 +11,16 @@ export default defineConfig({
       '/media': 'http://localhost:4000',
       '/updates': 'http://localhost:4000'
     }
+  },
+  build: {
+    chunkSizeWarningLimit: 600,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'vendor-charts': ['recharts'],
+          'vendor-socket': ['socket.io-client']
+        }
+      }
+    }
   }
 })

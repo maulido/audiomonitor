@@ -55,6 +55,44 @@ class ServerApp {
   setupMiddleware() {
     this.app.use(cors());
     this.app.use(express.json());
+
+    // Middleware Kompresi Gzip Bawaan (Node.js zlib) untuk menghemat bandwidth LAN dan mempercepat respons
+    const zlib = require('zlib');
+    this.app.use((req, res, next) => {
+      const accept = req.headers['accept-encoding'] || '';
+      if (!accept.includes('gzip') || req.path.startsWith('/media') || req.path.startsWith('/updates')) {
+        return next();
+      }
+
+      const origSend = res.send;
+      const origJson = res.json;
+
+      res.send = function (body) {
+        if (typeof body === 'string' && body.length > 1024 && !res.getHeader('Content-Encoding')) {
+          res.setHeader('Content-Encoding', 'gzip');
+          const gzipped = zlib.gzipSync(Buffer.from(body, 'utf8'));
+          return origSend.call(this, gzipped);
+        } else if (Buffer.isBuffer(body) && body.length > 1024 && !res.getHeader('Content-Encoding')) {
+          res.setHeader('Content-Encoding', 'gzip');
+          const gzipped = zlib.gzipSync(body);
+          return origSend.call(this, gzipped);
+        }
+        return origSend.call(this, body);
+      };
+
+      res.json = function (obj) {
+        const jsonStr = JSON.stringify(obj);
+        if (jsonStr.length > 1024 && !res.getHeader('Content-Encoding')) {
+          res.setHeader('Content-Type', 'application/json; charset=utf-8');
+          res.setHeader('Content-Encoding', 'gzip');
+          const gzipped = zlib.gzipSync(Buffer.from(jsonStr, 'utf8'));
+          return origSend.call(this, gzipped);
+        }
+        return origJson.call(this, obj);
+      };
+
+      next();
+    });
     
     // Middleware Keamanan PIN khusus rute /api (Dashboard)
     // Endpoint /internal/ tidak memerlukan PIN karena digunakan untuk komunikasi mesin-ke-mesin (Agent -> Server)

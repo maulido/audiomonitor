@@ -36,6 +36,9 @@ import DashboardClient from './core/DashboardClient';
 
 const SERVER_URL = window.location.port.startsWith('517') ? `http://${window.location.hostname}:4000` : window.location.origin;
 
+// Cache global untuk menyimpan durasi audio yang telah didecode (menghemat CPU & network)
+const audioDurationCache = new Map();
+
 const getMediaUrl = (url) => {
   if (!url) return '';
   if (url.startsWith('http://') || url.startsWith('https://')) return url;
@@ -1056,13 +1059,18 @@ function App() {
         ctx = new (window.AudioContext || window.webkitAudioContext)();
         const results = await Promise.all(
           playingSession.parts.map(async (p, idx) => {
+            const mediaUrl = getMediaUrl(p.url);
+            if (audioDurationCache.has(mediaUrl)) {
+              return audioDurationCache.get(mediaUrl);
+            }
             try {
-              const res = await fetch(getMediaUrl(p.url), { signal: abortController.signal });
+              const res = await fetch(mediaUrl, { signal: abortController.signal });
               if (!res.ok) throw new Error(`HTTP ${res.status}`);
               const buf = await res.arrayBuffer();
               const decoded = await ctx.decodeAudioData(buf);
               const d = decoded.duration;
               if (d && isFinite(d) && !isNaN(d) && d > 0) {
+                audioDurationCache.set(mediaUrl, d);
                 return d;
               }
             } catch (err) {
