@@ -924,7 +924,7 @@ function App() {
       </div>
 
       <div className="main-status">
-        <div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
           <input 
             type="text" 
             className="pc-name-input" 
@@ -945,55 +945,63 @@ function App() {
             }}
             title="Klik untuk mengubah nama PC"
           />
-          <div style={{ fontSize: '11px', color: '#666', marginTop: '4px' }} title={uuid}>
+          <div style={{ fontSize: '11px', color: '#777', fontFamily: 'monospace' }} title={uuid}>
             ID: {uuid.length > 15 ? uuid.substring(0, 8) + '...' + uuid.slice(-4) : uuid}
           </div>
         </div>
-        
 
-          <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px' }}>
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-              <button 
-                  onClick={() => {
-                    if (isRecording) {
-                      audioProcessor.current.stopRecording();
-                      setIsRecording(false);
-                    } else {
-                      if (audioProcessor.current.startRecording(agentNameRef.current, recordDirRef.current, uuidRef.current, serverIpRef.current)) setIsRecording(true);
-                    }
-                  }}
-                  style={{
-                    background: isRecording ? '#f44336' : '#333',
-                    color: '#fff',
-                    border: 'none',
-                    padding: '4px 8px',
-                    borderRadius: '4px',
-                    cursor: 'pointer',
-                    fontSize: '11px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                    fontWeight: 'bold',
-                      whiteSpace: 'nowrap'
-                    }}
-                  >
-                    <i className="fa-solid fa-circle"></i> {isRecording ? 'Stop REC' : 'Manual REC'}
-              </button>
-              <div className={`status-badge ${status}`} style={{ opacity: isMonitoringActive ? 1 : 0.5, margin: 0 }}>
-                {isMonitoringActive ? status.replace(/_/g, ' ') : 'PAUSED'}
-              </div>
-            </div>
-
-            {isRecording && (
-              <div style={{ fontSize: '11px', color: '#f44336', fontWeight: 'bold', animation: 'pulse 1.5s infinite' }}>
-REC
-              </div>
-            )}
-            <div style={{ fontSize: '11px', color: isStreaming ? '#f44336' : '#666', fontWeight: 'bold' }}>
-              {isStreaming ? `LIVE - ${streamTimecode}` : 'OFFLINE'}
+        <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '5px' }}>
+          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+            <button 
+              onClick={() => {
+                if (isRecording) {
+                  audioProcessor.current.stopRecording();
+                  setIsRecording(false);
+                } else {
+                  if (audioProcessor.current.startRecording(agentNameRef.current, recordDirRef.current, uuidRef.current, serverIpRef.current)) setIsRecording(true);
+                }
+              }}
+              style={{
+                background: isRecording ? '#c0392b' : '#2c2c2c',
+                color: '#fff',
+                border: '1px solid ' + (isRecording ? '#e74c3c' : '#444'),
+                padding: '4px 8px',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontSize: '11px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+                fontWeight: 'bold',
+                whiteSpace: 'nowrap'
+              }}
+            >
+              <i className="fa-solid fa-circle" style={{ fontSize: '8px', color: isRecording ? '#fff' : '#e74c3c' }}></i>
+              {isRecording ? 'Stop REC' : 'Manual REC'}
+            </button>
+            <div className={`status-badge ${status}`} style={{ opacity: isMonitoringActive ? 1 : 0.5, margin: 0, padding: '4px 10px', fontSize: '11px' }}>
+              {isMonitoringActive ? status.replace(/_/g, ' ') : 'PAUSED'}
             </div>
           </div>
+
+          <div style={{ fontSize: '11px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            {isRecording && (
+              <span style={{ color: '#e74c3c', fontWeight: 'bold', fontSize: '10px', animation: 'pulse 1.5s infinite', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                <i className="fa-solid fa-circle" style={{ fontSize: '6px' }}></i> REC
+              </span>
+            )}
+            {isStreaming ? (
+              <span style={{ color: '#e74c3c', fontWeight: 'bold', fontSize: '10px', background: '#301313', padding: '1px 5px', borderRadius: '3px', border: '1px solid #632222' }}>
+                ● LIVE {streamTimecode}
+              </span>
+            ) : (
+              <span style={{ color: '#777', fontSize: '10px' }}>
+                OBS: {obsConnected ? 'Connected' : 'Standby'}
+              </span>
+            )}
+          </div>
         </div>
+      </div>
 
         <div className="tabs">
         <div className={`tab ${activeTab === 'monitoring' ? 'active' : ''}`} onClick={() => setActiveTab('monitoring')}>Monitoring</div>
