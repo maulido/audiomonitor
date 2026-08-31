@@ -1066,8 +1066,8 @@ REC
             
             
               <div className="setting-group full" style={{ marginTop: '5px', paddingTop: '10px', borderTop: '1px dashed #333' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                  <label style={{ margin: 0, fontWeight: 'bold', color: '#fff' }}>Penyimpanan Audio Lokal di PC Host</label>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                  <label style={{ margin: 0, fontWeight: 'bold', color: '#fff' }}>Penyimpanan Audio Lokal PC Host</label>
                   <span style={{ fontSize: '11px', color: '#4caf50', fontWeight: 'bold' }}>
                     {localStorageInfo.uploadedMb || '0.0'} MB Terupload / {localStorageInfo.totalMb} MB Total
                   </span>
@@ -1079,7 +1079,7 @@ REC
                     value={recordDir} 
                     onChange={e => setRecordDir(e.target.value)} 
                     placeholder="Default: Documents/AudioMonitor-Recordings" 
-                    style={{ flex: 1 }}
+                    style={{ flex: 1, fontSize: '11px' }}
                   />
                   <button 
                     onClick={async () => {
@@ -1088,25 +1088,26 @@ REC
                         if (folder) setRecordDir(folder);
                       }
                     }}
-                    style={{ background: '#444', color: '#fff', border: '1px solid #555', padding: '5px 10px', borderRadius: '3px', cursor: 'pointer' }}
+                    style={{ background: '#444', color: '#fff', border: '1px solid #555', padding: '4px 8px', borderRadius: '3px', cursor: 'pointer', fontSize: '11px' }}
                     title="Pilih folder kustom"
                   >
                     Pilih
                   </button>
                   <button 
                     onClick={handleOpenRecordingsFolder}
-                    style={{ background: '#2c3e50', color: '#ecf0f1', border: '1px solid #34495e', padding: '5px 10px', borderRadius: '3px', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                    style={{ background: '#2c3e50', color: '#ecf0f1', border: '1px solid #34495e', padding: '4px 8px', borderRadius: '3px', cursor: 'pointer', whiteSpace: 'nowrap', fontSize: '11px' }}
                     title="Buka folder rekaman di Windows File Explorer"
                   >
-                    Buka Folder
+                    Buka
                   </button>
                 </div>
 
-                {/* Tombol Aksi Hapus Audio & Pembersihan Storage */}
-                <div style={{ background: '#1a1a1a', border: '1px solid #333', borderRadius: '4px', padding: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '6px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <span style={{ fontSize: '11px', color: '#aaa' }}>Bersihkan Audio:</span>
+                {/* Card Bersihkan Audio & Auto-Retention */}
+                <div style={{ background: '#181818', border: '1px solid #2e2e2e', borderRadius: '6px', padding: '10px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {/* Baris 1: Filter Dropdown dan Tombol Eksekusi Bersihkan */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px' }}>
+                      <span style={{ color: '#aaa' }}>Bersihkan Audio:</span>
                       <select 
                         disabled={isCleaningStorage}
                         onChange={(e) => {
@@ -1117,10 +1118,10 @@ REC
                           e.target.value = '';
                         }}
                         defaultValue=""
-                        style={{ background: '#262626', color: '#e0e0e0', border: '1px solid #444', borderRadius: '3px', padding: '4px 6px', fontSize: '11px', cursor: 'pointer' }}
+                        style={{ background: '#222', color: '#ccc', border: '1px solid #3c3c3c', borderRadius: '4px', padding: '3px 8px', fontSize: '11px', cursor: 'pointer', width: '58%' }}
                       >
-                        <option value="" disabled>Pilih Opsi Hapus (Hanya Terupload)...</option>
-                        <option value="all">Hapus Semua File Terupload</option>
+                        <option value="" disabled>Pilih Opsi Hapus...</option>
+                        <option value="all">Semua Terupload ({localStorageInfo.uploadedMb || '0.0'} MB)</option>
                         <option value="1">Hapus Terupload &gt; 1 Hari</option>
                         <option value="3">Hapus Terupload &gt; 3 Hari</option>
                         <option value="7">Hapus Terupload &gt; 7 Hari</option>
@@ -1133,32 +1134,37 @@ REC
                       onClick={() => handleDeleteAudioFiles('all')}
                       disabled={isCleaningStorage}
                       style={{
-                        background: (localStorageInfo.uploadedFolderCount > 0 || parseFloat(localStorageInfo.uploadedMb || '0') > 0) && !isCleaningStorage ? '#c0392b' : '#333',
-                        color: (localStorageInfo.uploadedFolderCount > 0 || parseFloat(localStorageInfo.uploadedMb || '0') > 0) ? '#fff' : '#aaa',
-                        border: '1px solid ' + ((localStorageInfo.uploadedFolderCount > 0 || parseFloat(localStorageInfo.uploadedMb || '0') > 0) ? '#e74c3c' : '#444'),
-                        padding: '4px 10px',
-                        borderRadius: '3px',
+                        width: '100%',
+                        background: (localStorageInfo.uploadedFolderCount > 0 || parseFloat(localStorageInfo.uploadedMb || '0') > 0) && !isCleaningStorage ? '#c0392b' : '#2b2b2b',
+                        color: (localStorageInfo.uploadedFolderCount > 0 || parseFloat(localStorageInfo.uploadedMb || '0') > 0) ? '#fff' : '#888',
+                        border: '1px solid ' + ((localStorageInfo.uploadedFolderCount > 0 || parseFloat(localStorageInfo.uploadedMb || '0') > 0) ? '#e74c3c' : '#3d3d3d'),
+                        padding: '6px 10px',
+                        borderRadius: '4px',
                         fontSize: '11px',
                         fontWeight: 'bold',
                         cursor: isCleaningStorage ? 'wait' : 'pointer',
                         display: 'flex',
                         alignItems: 'center',
-                        gap: '5px'
+                        justifyContent: 'center',
+                        gap: '6px',
+                        boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+                        transition: 'all 0.2s'
                       }}
                       title="Hapus file rekaman lokal yang SUDAH TERUPLOAD ke Server"
                     >
                       <i className="fa-solid fa-trash-can"></i>
-                      {isCleaningStorage ? 'Sedang Menghapus...' : `Hapus Audio Terupload (${localStorageInfo.uploadedMb || '0.0'} MB)`}
+                      {isCleaningStorage ? 'Sedang Membersihkan Storage...' : `Hapus Audio Terupload (${localStorageInfo.uploadedMb || '0.0'} MB)`}
                     </button>
                   </div>
 
-                  <div style={{ fontSize: '10px', color: '#777', fontStyle: 'italic' }}>
+                  {/* Keterangan Aman */}
+                  <div style={{ fontSize: '10px', color: '#777', fontStyle: 'italic', lineHeight: '1.3' }}>
                     * Aman: Hanya file yang telah terverifikasi sukses terunggah ke Server yang dapat dihapus. Rekaman yang belum terupload otomatis dilindungi.
                   </div>
 
-                  {/* Konfigurasi Auto-Retention */}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px', color: '#888', borderTop: '1px solid #282828', paddingTop: '6px' }}>
-                    <span>Pembersihan Otomatis (Auto-Retention):</span>
+                  {/* Baris 2: Pembersihan Otomatis (Auto-Retention) */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px', color: '#aaa', borderTop: '1px solid #252525', paddingTop: '8px' }}>
+                    <span>Pembersihan Otomatis:</span>
                     <select 
                       value={localRetentionDays}
                       onChange={(e) => {
@@ -1166,7 +1172,7 @@ REC
                         setLocalRetentionDays(val);
                         localStorage.setItem('localRetentionDays', val.toString());
                       }}
-                      style={{ background: '#222', color: '#aaa', border: '1px solid #333', borderRadius: '3px', padding: '2px 6px', fontSize: '11px' }}
+                      style={{ background: '#222', color: '#ccc', border: '1px solid #3c3c3c', borderRadius: '4px', padding: '3px 8px', fontSize: '11px', cursor: 'pointer', width: '58%' }}
                     >
                       <option value="0">Tidak Pernah (Manual)</option>
                       <option value="1">Otomatis Hapus &gt; 1 Hari</option>
@@ -1178,7 +1184,7 @@ REC
                   </div>
 
                   {cleanupFeedback && (
-                    <div style={{ fontSize: '11px', color: cleanupFeedback.startsWith('Gagal') || cleanupFeedback.startsWith('Error') ? '#e74c3c' : '#2ecc71', fontWeight: 'bold' }}>
+                    <div style={{ fontSize: '11px', color: cleanupFeedback.startsWith('Gagal') || cleanupFeedback.startsWith('Error') ? '#e74c3c' : (cleanupFeedback.startsWith('Info') ? '#f39c12' : '#2ecc71'), fontWeight: 'bold', textAlign: 'center', background: '#111', padding: '4px 8px', borderRadius: '4px', border: '1px solid #333' }}>
                       {cleanupFeedback}
                     </div>
                   )}
