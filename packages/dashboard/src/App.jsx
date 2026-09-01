@@ -1335,9 +1335,6 @@ function App() {
 
     return () => {
       abortController.abort();
-      if (ctx && ctx.state !== 'closed') {
-        ctx.close().catch(() => {});
-      }
     };
   }, [playingSession?.folderName]);
 
