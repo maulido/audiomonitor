@@ -261,12 +261,21 @@ class TranscriptionManager {
   }
 
   scanAlertKeywords(text, keywords = []) {
-    if (!text || !Array.isArray(keywords) || keywords.length === 0) return [];
+    if (!text) return [];
+    let kwList = [];
+    if (Array.isArray(keywords)) {
+      kwList = keywords;
+    } else if (typeof keywords === 'string') {
+      kwList = keywords.split(',').map(k => k.trim()).filter(Boolean);
+    } else {
+      return [];
+    }
+    if (kwList.length === 0) return [];
     
     const lowerText = String(text || '').toLowerCase();
     const matched = [];
 
-    for (const kw of keywords) {
+    for (const kw of kwList) {
       const cleanKw = String(kw || '').trim().toLowerCase();
       if (cleanKw && lowerText.includes(cleanKw)) {
         matched.push(cleanKw);

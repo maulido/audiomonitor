@@ -795,7 +795,7 @@ class ServerApp {
 
     // API: Hapus file audio (.webm) pada server per sesi, namun tetap mempertahankan file transkrip
     this.app.post('/api/records/purge-session-audio', (req, res) => {
-      const { folderName } = req.body || {};
+      const folderName = req.body?.folderName || req.body?.folder;
       if (!folderName || typeof folderName !== 'string') {
         return res.status(400).json({ success: false, error: 'folderName is required' });
       }
@@ -843,7 +843,7 @@ class ServerApp {
           }
         }
 
-        // Tulis penanda .audio_purged.json
+        // Tulis penanda .audio_purged.json dan .audio_purged
         const purgeMarkerPath = path.join(folderPath, '.audio_purged.json');
         fs.writeFileSync(purgeMarkerPath, JSON.stringify({
           purgedAt: new Date().toISOString(),
@@ -852,6 +852,9 @@ class ServerApp {
           deletedFiles,
           preservedTranscripts
         }));
+        try {
+          fs.writeFileSync(path.join(folderPath, '.audio_purged'), 'purged', 'utf8');
+        } catch (mErr) {}
 
         const freedMb = (freedBytes / (1024 * 1024)).toFixed(2);
         logger.audit(`[PurgeAudio] Administrator membersihkan audio sesi ${safeFolder} (${freedMb} MB dibebaskan, ${deletedFiles} file dihapus, ${preservedTranscripts} transkrip dipertahankan)`);

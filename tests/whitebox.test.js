@@ -4114,6 +4114,244 @@ async function main() {
     await new Promise(r => serverApp.server.close(r));
   });
 
+  // =========================================================================
+  // SUITE 57: Real-time Keyword Alert Socket Broadcast & Incident Persistence Verification
+  // =========================================================================
+  await runSuite('57. Real-time Keyword Alert Socket Broadcast & Incident Persistence Verification', async () => {
+    const cm = new ConfigManager(path.join(TEST_DIR, 'config_57.json'));
+    const db = new DatabaseManager(path.join(TEST_DIR, 'db_57.json'));
+    const serverApp = new ServerApp(cm, db, null, 4788);
+    serverApp.start();
+
+    const wsUrl = 'http://localhost:4788';
+    const dashSock = ioClient(wsUrl);
+    await new Promise(r => dashSock.on('connect', r));
+
+    let receivedKeywordAlert = null;
+    dashSock.emit('register', { type: 'dashboard' });
+    dashSock.on('keyword-alert', (data) => {
+      receivedKeywordAlert = data;
+    });
+
+    await new Promise(r => setTimeout(r, 100));
+
+    // Pemicu handleKeywordAlert
+    serverApp.transcriptionManager.handleKeywordAlert(
+      'PC Studio 1',
+      'PC_Studio_1_Session',
+      'Part_001.webm',
+      ['bocor', 'mati'],
+      'Perhatian! Terjadi kebocoran pipa dan pemancar mati di studio.'
+    );
+
+    await new Promise(r => setTimeout(r, 200));
+
+    assert(receivedKeywordAlert !== null, 'Dashboard socket received keyword-alert event');
+    assertEqual(receivedKeywordAlert.pcName, 'PC Studio 1', 'Alert pcName is correct');
+    assertEqual(receivedKeywordAlert.fileName, 'Part_001.webm', 'Alert fileName is correct');
+    assert(Array.isArray(receivedKeywordAlert.keywords), 'Alert keywords is array');
+    assert(receivedKeywordAlert.keywords.includes('bocor'), 'Alert keywords contains "bocor"');
+    assert(receivedKeywordAlert.keywords.includes('mati'), 'Alert keywords contains "mati"');
+
+    // Cek DatabaseManager
+    const incidents = db.incidents;
+    const kwIncident = incidents.find(i => i.incidentType === 'KEYWORD_ALERT');
+    assert(kwIncident !== undefined, 'Database recorded KEYWORD_ALERT incident');
+    assertEqual(kwIncident.pcName, 'PC Studio 1', 'Incident PC name matches');
+    assert(kwIncident.details.includes('bocor, mati'), 'Incident details contain detected keywords');
+
+    dashSock.disconnect();
+    await new Promise(r => serverApp.server.close(r));
+  });
+
+  // =========================================================================
+  // SUITE 58: Audio Diagnostics & Target LUFS Compliance Configuration Invariants
+  // =========================================================================
+  await runSuite('58. Audio Diagnostics & Target LUFS Compliance Configuration Invariants', async () => {
+    const cm = new ConfigManager(path.join(TEST_DIR, 'config_58.json'));
+    const db = new DatabaseManager(path.join(TEST_DIR, 'db_58.json'));
+    const serverApp = new ServerApp(cm, db, null, 4888);
+    serverApp.start();
+
+    // Default diagnostics config
+    const defaultDiag = cm.getAudioDiagnosticsConfig();
+    assert(defaultDiag !== null && typeof defaultDiag === 'object', 'Default diagnostics config is object');
+    assertEqual(defaultDiag.lufsTarget, -14, 'Default target LUFS is -14');
+    assertEqual(defaultDiag.lufsTolerance, 2, 'Default LUFS tolerance is 2');
+    assertEqual(defaultDiag.noiseFloorThreshold, -45, 'Default noise floor threshold is -45');
+
+    // Update config via API
+    const resPost = await fetch('http://localhost:4888/api/config/audio-diagnostics', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-pin': '1234' },
+      body: JSON.stringify({
+        lufsTarget: -18,
+        lufsTolerance: 3,
+        noiseFloorThreshold: -55,
+        humDetectionEnabled: false
+      })
+    });
+    assertEqual(resPost.status, 200, 'POST /api/config/audio-diagnostics returns 200 OK');
+    const postData = await resPost.json();
+    assertEqual(postData.success, true, 'Diagnostics save success is true');
+    assertEqual(postData.config.lufsTarget, -18, 'Target LUFS updated to -18');
+    assertEqual(postData.config.lufsTolerance, 3, 'LUFS tolerance updated to 3');
+
+    // GET /api/config/audio-diagnostics
+    const resGet = await fetch('http://localhost:4888/api/config/audio-diagnostics', {
+      headers: { 'x-pin': '1234' }
+    });
+    assertEqual(resGet.status, 200, 'GET /api/config/audio-diagnostics returns 200 OK');
+    const getData = await resGet.json();
+    assertEqual(getData.config.lufsTarget, -18, 'Persisted target LUFS is -18');
+    assertEqual(getData.config.noiseFloorThreshold, -55, 'Persisted noise floor is -55');
+    assertEqual(getData.config.humDetectionEnabled, false, 'Persisted hum detection is false');
+
+    await new Promise(r => serverApp.server.close(r));
+  });
+
+  // =========================================================================
+  // SUITE 59: Concurrent Multi-Session Audio Purge & Transcript Integrity Under Race Conditions
+  // =========================================================================
+  await runSuite('59. Concurrent Multi-Session Audio Purge & Transcript Integrity Under Race Conditions', async () => {
+    const purgeRecordsDir = path.join(TEST_DIR, 'purge_concurrent_records');
+    fs.mkdirSync(purgeRecordsDir, { recursive: true });
+
+    // Buat 3 sesi rekaman independen dengan file audio dan transkrip
+    const sessionNames = [
+      'Session_Alpha_11111111-1111-1111-1111-111111111111_2026-08-25_10-00-00_to_10-10-00',
+      'Session_Beta_22222222-2222-2222-2222-222222222222_2026-08-25_11-00-00_to_11-10-00',
+      'Session_Gamma_33333333-3333-3333-3333-333333333333_2026-08-25_12-00-00_to_12-10-00'
+    ];
+
+    for (const sName of sessionNames) {
+      const sDir = path.join(purgeRecordsDir, sName);
+      fs.mkdirSync(sDir, { recursive: true });
+      const aFile = path.join(sDir, 'Part_001.webm');
+      fs.writeFileSync(aFile, Buffer.from([0x1a, 0x45, 0xdf, 0xa3, 0x01, 0x02, 0x03]));
+      fs.writeFileSync(`${aFile}.transcript.json`, JSON.stringify({ text: `Transkrip untuk ${sName}`, duration: 60 }, null, 2));
+    }
+
+    const cm = new ConfigManager(path.join(TEST_DIR, 'config_59.json'));
+    cm.config.recordDir = purgeRecordsDir;
+    cm.config.recordsDir = purgeRecordsDir;
+    cm.saveConfig();
+
+    const db = new DatabaseManager(path.join(TEST_DIR, 'db_59.json'));
+    const serverApp = new ServerApp(cm, db, null, 4988);
+    serverApp.start();
+
+    // Eksekusi purge konkruen ke seluruh 3 sesi secara simultan
+    const purgePromises = sessionNames.map(sName => 
+      fetch('http://localhost:4988/api/records/purge-session-audio', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-pin': '1234' },
+        body: JSON.stringify({ folder: sName })
+      }).then(res => res.json())
+    );
+
+    const purgeResults = await Promise.all(purgePromises);
+    assertEqual(purgeResults.length, 3, 'All 3 concurrent purges resolved');
+    assert(purgeResults.every(r => r.success === true), 'All 3 purges returned success: true');
+
+    // Verifikasi berkas fisik audio terhapus tetapi .transcript.json tetap utuh
+    for (const sName of sessionNames) {
+      const sDir = path.join(purgeRecordsDir, sName);
+      const aFile = path.join(sDir, 'Part_001.webm');
+      const tFile = `${aFile}.transcript.json`;
+      const marker = path.join(sDir, '.audio_purged');
+
+      assertEqual(fs.existsSync(aFile), false, `Audio file Part_001.webm deleted in ${sName}`);
+      assertEqual(fs.existsSync(tFile), true, `Transcript JSON preserved in ${sName}`);
+      assertEqual(fs.existsSync(marker), true, `.audio_purged marker created in ${sName}`);
+
+      // Verifikasi transkrip masih bisa dibaca lewat API
+      const resTranscript = await fetch(`http://localhost:4988/api/records/transcript?folder=${encodeURIComponent(sName)}`);
+      assertEqual(resTranscript.status, 200, `GET transcript returns 200 for purged ${sName}`);
+      const tData = await resTranscript.json();
+      assertEqual(tData.success, true, 'Transcript retrieval success is true');
+      assert(tData.transcript.text.includes('Transkrip untuk'), 'Transcript text content intact');
+    }
+
+    await new Promise(r => serverApp.server.close(r));
+  });
+
+  // =========================================================================
+  // SUITE 60: Dynamic Historical Keyword Live Filter & String Fallback Matrix
+  // =========================================================================
+  await runSuite('60. Dynamic Historical Keyword Live Filter & String Fallback Matrix', () => {
+    const tm = new TranscriptionManager(null, null, null, null);
+
+    // 1. Array keywords
+    const matches1 = tm.scanAlertKeywords('Ini adalah uji coba sistem darurat dan sinyal hilang.', ['darurat', 'hilang', 'bocor']);
+    assertEqual(matches1.length, 2, 'Matched 2 keywords from array');
+    assert(matches1.includes('darurat'), 'Matched "darurat"');
+    assert(matches1.includes('hilang'), 'Matched "hilang"');
+
+    // 2. Comma-separated string keywords fallback
+    const matches2 = tm.scanAlertKeywords('Pipa bocor di lantai dua saat siaran mati.', 'bocor, mati, rusak');
+    assertEqual(matches2.length, 2, 'Matched 2 keywords from comma-separated string');
+    assert(matches2.includes('bocor'), 'Matched "bocor"');
+    assert(matches2.includes('mati'), 'Matched "mati"');
+
+    // 3. Multi-word keywords
+    const matches3 = tm.scanAlertKeywords('Harap tenang, sinyal mati total dan listrik padam mendadak.', ['sinyal mati total', 'listrik padam']);
+    assertEqual(matches3.length, 2, 'Matched multi-word keywords');
+    assert(matches3.includes('sinyal mati total'), 'Matched "sinyal mati total"');
+    assert(matches3.includes('listrik padam'), 'Matched "listrik padam"');
+
+    // 4. Special characters in keywords
+    const matches4 = tm.scanAlertKeywords('Terdeteksi alert status [sensor-error] dan kode #99.', ['[sensor-error]', '#99']);
+    assertEqual(matches4.length, 2, 'Matched keywords with brackets and hash signs');
+    assert(matches4.includes('[sensor-error]'), 'Matched "[sensor-error]"');
+    assert(matches4.includes('#99'), 'Matched "#99"');
+
+    // 5. Empty or null handling
+    assertEqual(tm.scanAlertKeywords('', ['test']).length, 0, 'Empty text returns empty array');
+    assertEqual(tm.scanAlertKeywords('Sample text', null).length, 0, 'Null keywords return empty array');
+    assertEqual(tm.scanAlertKeywords('Sample text', []).length, 0, 'Empty keywords array returns empty array');
+    assertEqual(tm.scanAlertKeywords(null, ['test']).length, 0, 'Null text returns empty array');
+  });
+
+  // =========================================================================
+  // SUITE 61: Robustness Against Corrupt/Malformed Historical Transcript JSON Files
+  // =========================================================================
+  await runSuite('61. Robustness Against Corrupt/Malformed Historical Transcript JSON Files', () => {
+    const corruptRecordsDir = path.join(TEST_DIR, 'corrupt_transcripts_vault');
+    fs.mkdirSync(corruptRecordsDir, { recursive: true });
+
+    const sessionDir = path.join(corruptRecordsDir, 'Session_Corrupt_Test_2026-08-30');
+    fs.mkdirSync(sessionDir, { recursive: true });
+
+    // 1. File transkrip valid
+    fs.writeFileSync(path.join(sessionDir, 'Part_001.webm.transcript.json'), JSON.stringify({
+      text: 'Transkrip valid dengan kata kunci bahaya darurat.',
+      keywordsFound: []
+    }));
+
+    // 2. File transkrip korup (JSON sintaks rusak)
+    fs.writeFileSync(path.join(sessionDir, 'Part_002.webm.transcript.json'), '{ "text": "corrupt json syntax... ');
+
+    // 3. File 0-byte kosong
+    fs.writeFileSync(path.join(sessionDir, 'Part_003.webm.transcript.json'), '');
+
+    const cm = new ConfigManager(path.join(TEST_DIR, 'config_61.json'));
+    cm.setTranscriptionConfig({ alertKeywords: ['darurat'] });
+
+    const tm = new TranscriptionManager(cm, null, null, null);
+    
+    // rescanAllTranscripts harus tetap berjalan mulus tanpa throw exception
+    const rescanResult = tm.rescanAllTranscripts(corruptRecordsDir);
+    assertEqual(rescanResult.scannedFolders, 1, 'Scanned 1 session folder');
+    assertEqual(rescanResult.scannedFiles, 3, 'Scanned all 3 files in folder');
+    assertEqual(rescanResult.updatedFiles, 1, 'Updated exactly 1 valid transcript file');
+    assertEqual(rescanResult.keywordsFoundCount, 1, 'Detected 1 keyword in valid transcript');
+
+    // Verifikasi file valid berhasil diperbarui dengan kata 'darurat'
+    const validJson = JSON.parse(fs.readFileSync(path.join(sessionDir, 'Part_001.webm.transcript.json'), 'utf8'));
+    assert(validJson.keywordsFound.includes('darurat'), 'Valid transcript updated with "darurat"');
+  });
+
   // Clean up test directory
   try {
     fs.rmSync(TEST_DIR, { recursive: true, force: true });
