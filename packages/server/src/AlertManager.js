@@ -17,14 +17,14 @@ class AlertManager {
     if (telegramConfig && telegramConfig.token) {
       try {
         this.bot = new TelegramBot(telegramConfig.token, { polling: false });
-        logger.info('Telegram Bot initialized.');
+        logger.info('[Telegram] Bot Telegram berhasil diinisialisasi.');
       } catch (err) {
-        logger.error('Failed to initialize Telegram Bot:', err);
+        logger.error(`[Telegram] Gagal menginisialisasi bot Telegram: ${err.message}`);
         this.bot = null;
       }
     } else {
       this.bot = null;
-      logger.info('No Telegram token found in config. Bot alerts disabled.');
+      logger.info('[Telegram] Token Telegram kosong di konfigurasi. Notifikasi bot dinonaktifkan.');
     }
   }
 
@@ -32,7 +32,10 @@ class AlertManager {
     const telegramConfig = this.configManager.getTelegramConfig();
     if (this.bot && telegramConfig.chatId) {
       this.bot.sendMessage(telegramConfig.chatId, message, { parse_mode: 'HTML' })
-        .catch(err => logger.error('Telegram error:', err ? err.message : "Unknown error"));
+        .then(() => {
+          logger.info(`[Telegram] Notifikasi terkirim ke Chat ID ${telegramConfig.chatId}`);
+        })
+        .catch(err => logger.error(`[Telegram] Gagal mengirim pesan Telegram: ${err ? err.message : 'Unknown error'}`));
     }
   }
 
@@ -57,6 +60,10 @@ class AlertManager {
       const isNewDanger = state.status !== data.status;
       const canSendAlert = now - state.time > throttleMs;
 
+      if (isNewDanger) {
+        logger.warn(`[AlertManager] Insiden audio terdeteksi pada PC ${pcName}: ${data.status}`);
+      }
+
       if (canSendAlert) {
         this.sendTelegramAlert(
           `[ALERT] <b>AUDIO ISSUE</b>\n<b>${safePcName}</b> mengalami masalah: <b>${safeStatus}</b>`
@@ -69,6 +76,7 @@ class AlertManager {
          this.lastAlertState[data.uuid] = { ...state, status: data.status };
       }
     } else if (data.status === 'AMAN' && this.lastAlertState[data.uuid] && this.lastAlertState[data.uuid].status !== 'AMAN') {
+      logger.info(`[AlertManager] Status audio PC ${pcName} pulih kembali AMAN`);
       if (this.lastAlertState[data.uuid].notified) {
         this.sendTelegramAlert(`[OK] <b>${safePcName}</b> audio sudah kembali AMAN.`);
         if (this.dbManager) this.dbManager.logIncident(data.uuid, pcName, 'RECOVERY', 'Audio kembali AMAN');
@@ -83,6 +91,7 @@ class AlertManager {
 
   processOffline(uuid, pcName) {
     const safePcName = this.escapeHtml(pcName);
+    logger.warn(`[AlertManager] PC Host ${pcName} (${uuid}) terdeteksi OFFLINE`);
     this.sendTelegramAlert(`[OFFLINE] <b>${safePcName}</b> terputus dari jaringan.`);
     if (this.dbManager) this.dbManager.logIncident(uuid, pcName, 'OFFLINE', 'Koneksi terputus');
     

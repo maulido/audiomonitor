@@ -56,6 +56,7 @@ class TelemetryHub {
         if (data && data.type === 'dashboard') {
           // Masukkan ke ruangan khusus Dashboard
           socket.join('dashboards');
+          logger.info(`[Socket] Dashboard terhubung (Socket ID: ${socket.id})`);
           
           // Kirimkan state konfigurasi monitoring global
           socket.emit('monitoring-status', this.configManager.config.monitoringActive !== false);
@@ -91,6 +92,7 @@ class TelemetryHub {
           
           // Kirimkan token Telegram cadangan ke PC ini
           socket.emit('telegram-config', this.configManager.getTelegramConfig());
+          logger.info(`[Socket] PC Host terhubung dan terdaftar: ${pcName} (${data.uuid})`);
         }
       });
 
@@ -127,6 +129,7 @@ class TelemetryHub {
 
         // Teruskan data setelan baru ini ke ruang khusus PC
         this.io.to('agent-' + data.uuid).emit('update-config', data.config);
+        logger.info(`[RemoteConfig] Konfigurasi baru disiarkan ke PC ${data.uuid}`);
       });
 
       // Event usang (Legacy) saat Dashboard sekadar mengubah nama PC
@@ -144,6 +147,7 @@ class TelemetryHub {
       socket.on('agent-record', (data) => {
         if (!data || !data.uuid) return;
         this.io.to('agent-' + data.uuid).emit('command-record', !!data.record);
+        logger.info(`[RemoteControl] Mengirim perintah rekam ke PC ${data.uuid}: ${data.record ? 'MULAI REKAM' : 'HENTIKAN REKAM'}`);
       });
 
         // Event saat Agent melaporkan progres pengunduhan/instalasi update
@@ -200,6 +204,7 @@ class TelemetryHub {
 
             // Umumkan ke seluruh layar Dashboard agar kotak PC tersebut berubah jadi gelap (OFFLINE)
             this.io.to('dashboards').emit('agent-disconnect', offlineData);
+            logger.warn(`[Socket] PC Host terputus (Disconnect): ${pcName} (${socket.agentUuid})`);
             
             // Kirimkan notifikasi ke Telegram (Jika opsi pemantauan tidak sedang dimatikan secara manual)
             const globalActive = this.configManager.config.monitoringActive !== false;
@@ -221,6 +226,7 @@ class TelemetryHub {
     this.agentSockets.delete(uuid);
     delete this.pcMonitoringState[uuid];
     this.io.to('dashboards').emit('agent-deleted', uuid);
+    logger.info(`[TelemetryHub] Menghapus data memori untuk PC ${uuid}`);
   }
 
   /**

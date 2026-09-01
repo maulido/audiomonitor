@@ -1,5 +1,6 @@
 const path = require('path');
 const fs = require('fs');
+const logger = require('./utils/logger');
 
 /**
  * Class DatabaseManager
@@ -29,7 +30,7 @@ class DatabaseManager {
     this.incidents = [];
     this.nextId = 1;
     this.loadDb();
-    console.log('Connected to JSON database.');
+    logger.info(`[Database] Terhubung ke database JSON: ${path.basename(this.dbPath)} (${this.incidents.length} entri riwayat)`);
   }
 
   /**
@@ -46,11 +47,11 @@ class DatabaseManager {
           this.nextId = this.incidents.reduce((max, i) => Math.max(max, Number(i.id) || 0), 0) + 1;
         }
       } catch (err) {
-        console.error('Error reading JSON DB:', err.message);
+        logger.error(`[Database] Gagal membaca berkas database JSON: ${err.message}`);
         try {
           const backupPath = `${this.dbPath}.corrupt_${Date.now()}`;
           fs.copyFileSync(this.dbPath, backupPath);
-          console.warn(`Corrupted database backed up to: ${backupPath}`);
+          logger.warn(`[Database] Berkas korup diamankan ke: ${backupPath}`);
         } catch (bErr) {}
         this.incidents = [];
       }
@@ -90,7 +91,7 @@ class DatabaseManager {
         try { fs.unlinkSync(tempPath); } catch (e) {}
       }
     } catch (err) {
-      console.error('Error saving JSON DB:', err.message);
+      logger.error(`[Database] Gagal menyimpan database JSON: ${err.message}`);
     }
   }
 
@@ -108,7 +109,7 @@ class DatabaseManager {
     const removed = initialLength - this.incidents.length;
     
     if (removed > 0) {
-      console.log(`Auto-cleanup: Removed ${removed} old incidents.`);
+      logger.info(`[Database] Auto-cleanup: Menghapus ${removed} data insiden lawas yang melewati retensi ${retentionDays} hari.`);
       this.saveDb();
     }
     return removed;
@@ -131,6 +132,7 @@ class DatabaseManager {
       timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19) // Format: YYYY-MM-DD HH:MM:SS
     };
     this.incidents.push(incident);
+    logger.info(`[Database] Insiden baru dicatat: [${incidentType}] ${pcName} - ${details}`);
     this.saveDb();
   }
 
@@ -201,6 +203,7 @@ class DatabaseManager {
   clearIncidents(callback) {
     this.incidents = [];
     this.saveDbSync();
+    logger.audit('[Database] Seluruh riwayat insiden telah direset.');
     if (callback) callback(null);
   }
 }

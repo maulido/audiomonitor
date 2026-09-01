@@ -237,6 +237,7 @@ if (!gotTheLock) {
       return true;
     });
 
+    writeAgentLog('INFO', `[Lifecycle] Aplikasi Agent aktif (Platform: ${process.platform}, Node: ${process.versions.node}, Electron: ${process.versions.electron})`);
     createWindow();
     createTray();
 
@@ -255,6 +256,7 @@ if (!gotTheLock) {
 
   app.on('before-quit', () => {
     isQuitting = true;
+    writeAgentLog('INFO', '[Lifecycle] Aplikasi Agent sedang ditutup...');
   });
 
   // ============================================

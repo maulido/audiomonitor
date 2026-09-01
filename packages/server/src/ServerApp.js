@@ -111,6 +111,7 @@ class ServerApp {
         const pin = req.headers['x-pin'];
         const correctPin = this.configManager.config.dashboardPin || '1234';
         if (pin !== correctPin) {
+          logger.warn(`[Security] Percobaan aksi ${req.method} ${req.originalUrl} ditolak (PIN tidak valid) dari ${req.ip || 'unknown'}`);
           return res.status(401).json({ success: false, error: 'Unauthorized', message: 'PIN Salah' });
         }
       }
@@ -462,14 +463,17 @@ class ServerApp {
       const pin = req.headers['x-pin'];
       const correctPin = this.configManager.config.dashboardPin || '1234';
       if (!pin || pin !== correctPin) {
+        logger.warn(`[Security] Percobaan hapus PC ${req.params.uuid} ditolak (PIN tidak valid)`);
         return res.status(401).json({ error: 'Invalid PIN' });
       }
       const { uuid } = req.params;
+      const pcName = this.configManager.getPcName(uuid) || uuid;
       this.telemetryHub.deleteAgent(uuid);
       if (this.configManager.config.pcMapping) {
         delete this.configManager.config.pcMapping[uuid];
       }
       this.configManager.saveConfig();
+      logger.audit(`[PCManager] Administrator menghapus PC Host ${pcName} (${uuid}) dari sistem`);
       res.json({ success: true });
     });
     
@@ -478,6 +482,7 @@ class ServerApp {
       const { uuid, newName } = req.body;
       if (!uuid || !newName) return res.status(400).send({ success: false, error: 'Invalid data' });
       
+      const oldName = this.configManager.getPcName(uuid) || uuid;
       this.configManager.setPcName(uuid, newName);
         
       // Memberitahu PC tujuan agar mengganti nama lokalnya di layar aplikasinya
@@ -489,6 +494,7 @@ class ServerApp {
       this.telemetryHub.lastKnownState.set(uuid, existing);
       this.telemetryHub.io.to('dashboards').emit('dashboard-update', existing);
 
+      logger.audit(`[PCManager] Administrator mengubah nama PC Host ${uuid} dari "${oldName}" menjadi "${newName}"`);
       res.send({ success: true, pcMapping: this.configManager.getAllPcMappings() });
     });
 
@@ -521,7 +527,11 @@ class ServerApp {
     // API: Menghapus seluruh riwayat insiden
     this.app.delete('/api/incidents', (req, res) => {
       this.dbManager.clearIncidents((err) => {
-        if (err) return res.status(500).send({ success: false, error: err.message });
+        if (err) {
+          logger.error(`[IncidentManager] Gagal menghapus riwayat insiden: ${err.message}`);
+          return res.status(500).send({ success: false, error: err.message });
+        }
+        logger.audit('[IncidentManager] Administrator menghapus seluruh riwayat insiden audio');
         res.send({ success: true });
       });
     });
@@ -762,8 +772,10 @@ class ServerApp {
           if (fs.existsSync(transcriptPath)) {
             try { fs.unlinkSync(transcriptPath); } catch (e) {}
           }
+          logger.audit(`[RecordManager] Administrator menghapus file rekaman ${safePcName}/${safeFileName}`);
           res.json({ success: true });
         } catch (e) {
+          logger.error(`[RecordManager] Gagal menghapus file ${safePcName}/${safeFileName}: ${e.message}`);
           res.status(500).json({ success: false, error: e.message });
         }
       } else {
@@ -832,7 +844,7 @@ class ServerApp {
         }));
 
         const freedMb = (freedBytes / (1024 * 1024)).toFixed(2);
-        logger.info(`[PurgeAudio] Berhasil membersihkan audio sesi ${safeFolder} (${freedMb} MB dibebaskan, ${preservedTranscripts} transkrip dipertahankan).`);
+        logger.audit(`[PurgeAudio] Administrator membersihkan audio sesi ${safeFolder} (${freedMb} MB dibebaskan, ${deletedFiles} file dihapus, ${preservedTranscripts} transkrip dipertahankan)`);
         res.json({
           success: true,
           freedBytes,
@@ -872,10 +884,10 @@ class ServerApp {
       if (fs.existsSync(folderPath)) {
         try {
           fs.rmSync(folderPath, { recursive: true, force: true });
-          logger.info(`[DeleteSession] Seluruh sesi ${safeFolder} berhasil dihapus dari server.`);
+          logger.audit(`[RecordManager] Administrator menghapus seluruh sesi rekaman ${safeFolder} beserta transkripnya`);
           res.json({ success: true, message: 'Seluruh sesi rekaman dan transkrip berhasil dihapus.' });
         } catch (err) {
-          logger.error(`[DeleteSession] Gagal menghapus sesi ${safeFolder}: ${err.message}`);
+          logger.error(`[RecordManager] Gagal menghapus sesi ${safeFolder}: ${err.message}`);
           res.status(500).json({ success: false, error: err.message });
         }
       } else {
@@ -947,6 +959,8 @@ class ServerApp {
         return res.status(404).json({ success: false, error: 'Session folder not found' });
       }
 
+      logger.info(`[Whisper] Memulai permintaan transkripsi manual untuk folder sesi ${safeFolder} (Target: ${file || 'seluruh sesi'}, PC: ${pcName || 'unknown'})`);
+
       // Jika file ditentukan secara spesifik
       if (file && typeof file === 'string' && file !== 'all') {
         const safeFile = path.basename(file).replace(/[^a-zA-Z0-9_\-\.]/g, '').trim();
@@ -963,6 +977,7 @@ class ServerApp {
           const result = await this.transcriptionManager.transcribeFile(filePath, safeFolder, safeFile, pcName);
           return res.json({ success: true, transcript: result });
         } catch (err) {
+          logger.error(`[Whisper] Gagal transkripsi manual ${safeFile}: ${err.message}`);
           return res.status(500).json({ success: false, error: err.message });
         }
       } else {
@@ -981,13 +996,14 @@ class ServerApp {
             try {
               await this.transcriptionManager.transcribeFile(fPath, safeFolder, f, pcName);
             } catch (pErr) {
-              logger.warn(`Gagal transkripsi ${f}: ${pErr.message}`);
+              logger.warn(`[Whisper] Gagal transkripsi ${f}: ${pErr.message}`);
             }
           }
 
           const combinedTranscript = this.transcriptionManager.getTranscriptForSession(folderPath);
           return res.json({ success: true, transcript: combinedTranscript });
         } catch (err) {
+          logger.error(`[Whisper] Gagal transkripsi manual sesi ${safeFolder}: ${err.message}`);
           return res.status(500).json({ success: false, error: err.message });
         }
       }
@@ -1043,6 +1059,7 @@ class ServerApp {
       }
 
       this.configManager.setTranscriptionConfig(updateData);
+      logger.audit(`[Whisper] Konfigurasi Speech-to-Text diperbarui: status=${updateData.enabled !== false ? 'aktif' : 'nonaktif'}, bahasa=${updateData.language || 'id'}, autoTranscribe=${updateData.autoTranscribe !== false}`);
       res.json({ success: true, transcription: this.configManager.getTranscriptionConfig() });
     });
 
@@ -1052,6 +1069,7 @@ class ServerApp {
       const targetUrl = (apiUrl !== undefined && apiUrl !== null) ? String(apiUrl).trim() : this.configManager.getTranscriptionConfig().apiUrl;
       const targetKey = apiKey !== undefined ? String(apiKey).trim() : this.configManager.getTranscriptionConfig().apiKey;
 
+      logger.info(`[Whisper] Menguji konektivitas endpoint Speech-to-Text API: ${targetUrl}`);
       const result = await this.transcriptionManager.testConnection(targetUrl, targetKey);
       res.json(result);
     });
@@ -1078,11 +1096,12 @@ class ServerApp {
       try {
           this.alertManager.initBot(); 
         } catch (err) {
-          console.error('Failed to init bot:', err);
+          logger.error(`[Telegram] Gagal inisialisasi bot: ${err.message}`);
         }
       
       // Sebarkan kunci Telegram yang baru ke semua PC Agent sebagai cadangan darurat (Fallback Offline)
       this.telemetryHub.io.to('agents').emit('telegram-config', this.configManager.getTelegramConfig());
+      logger.audit(`[Telegram] Konfigurasi Telegram diperbarui (Interval notifikasi: ${this.configManager.config.telegram.interval}s, Retensi: ${this.configManager.config.logRetentionDays} hari)`);
       
       res.send({ success: true, telegram: this.configManager.config.telegram });
     });
@@ -1093,6 +1112,7 @@ class ServerApp {
       this.configManager.config.monitoringActive = active;
       this.configManager.saveConfig();
       this.telemetryHub.io.emit('monitoring-status', active); // Umumkan ke seluruh klien
+      logger.audit(`[Monitoring] Status pemantauan global diubah menjadi: ${active ? 'AKTIF' : 'NONAKTIF'}`);
       res.send({ success: true, monitoringActive: active });
     });
 
@@ -1103,6 +1123,7 @@ class ServerApp {
       if (!cleanPin || cleanPin.length < 4) return res.status(400).json({ error: 'PIN minimal 4 karakter' });
       this.configManager.config.dashboardPin = cleanPin;
       this.configManager.saveConfig();
+      logger.audit('[Security] PIN Dashboard administrator berhasil diperbarui');
       res.send({ success: true });
     });
 
@@ -1113,6 +1134,7 @@ class ServerApp {
       this.configManager.config.logRetentionDays = retentionDays;
       this.configManager.saveConfig();
       const removed = this.dbManager.autoCleanup(retentionDays);
+      logger.audit(`[Database] Batas retensi log insiden diubah menjadi ${retentionDays} hari (${removed} entri lawas dihapus)`);
       res.json({ success: true, logRetentionDays: retentionDays, removedCount: removed });
     });
 
@@ -1120,6 +1142,7 @@ class ServerApp {
     this.app.post('/api/incidents/cleanup-now', (req, res) => {
       const retentionDays = this.configManager.config.logRetentionDays || 30;
       const removed = this.dbManager.autoCleanup(retentionDays);
+      logger.audit(`[Database] Pembersihan log insiden manual dijalankan (${removed} entri lawas dihapus)`);
       res.json({ success: true, removedCount: removed, logRetentionDays: retentionDays });
     });
 
@@ -1130,6 +1153,8 @@ class ServerApp {
       
       // Mengubah status di memori pusat dan meneruskannya ke Agent dan Dashboard
       this.telemetryHub.setPcMonitoring(uuid, active);
+      const pcName = this.configManager.getPcName(uuid) || uuid;
+      logger.audit(`[Monitoring] Status pemantauan PC Host ${pcName} (${uuid}) diubah menjadi: ${active ? 'AKTIF' : 'NONAKTIF'}`);
       
       res.send({ success: true, active: !!active });
     });
@@ -1154,11 +1179,14 @@ class ServerApp {
         this.telemetryHub.io.to(agentSocketId).emit('update-config', config);
       }
 
+      const pcName = this.configManager.getPcName(uuid) || uuid;
+      logger.audit(`[RemoteConfig] Konfigurasi audio remote dikirim ke PC Host ${pcName} (${uuid})`);
       res.json({ success: true, config });
     });
 
     // API: Mengirim pesan percobaan Telegram ("Ping!")
     this.app.post('/api/telegram/test', (req, res) => {
+      logger.info('[Telegram] Mengirim pesan uji coba (Ping!) ke Telegram bot');
       this.alertManager.sendTelegramAlert('[TEST] <b>Ping!</b> Ini adalah pesan percobaan dari AudioMonitor Server.');
       res.json({ success: true, message: 'Test message sent' });
     });
@@ -1319,7 +1347,7 @@ class ServerApp {
       try {
         const storageConfig = req.body || {};
         this.configManager.setStorageAutomationConfig(storageConfig);
-        logger.info('[SmartStorage] Konfigurasi otomasi penyimpanan diperbarui');
+        logger.audit('[SmartStorage] Konfigurasi otomasi penyimpanan diperbarui oleh administrator');
         res.json({ success: true, config: this.configManager.getStorageAutomationConfig() });
       } catch (err) {
         logger.error(`[SmartStorage] Error set storage config: ${err.message}`);
@@ -1331,6 +1359,7 @@ class ServerApp {
     this.app.post('/api/storage/trigger-sync', async (req, res) => {
       try {
         const recordsDir = this.getRecordsDir();
+        logger.info('[SmartStorage] Memicu sinkronisasi manual ke folder cadangan / NAS / Webhook');
         const result = await this.storageAutomationManager.runBackupSync(recordsDir);
         res.json(result);
       } catch (err) {
@@ -1343,6 +1372,7 @@ class ServerApp {
     this.app.post('/api/storage/trigger-archive', async (req, res) => {
       try {
         const recordsDir = this.getRecordsDir();
+        logger.info('[SmartStorage] Memicu kompresi/pengarsipan manual berkas rekaman lawas');
         const result = await this.storageAutomationManager.runAutoArchive(recordsDir);
         res.json(result);
       } catch (err) {
@@ -1364,7 +1394,7 @@ class ServerApp {
       try {
         const diagConfig = req.body || {};
         this.configManager.setAudioDiagnosticsConfig(diagConfig);
-        logger.info('[AudioDiagnostics] Konfigurasi diagnostik audio diperbarui');
+        logger.audit('[AudioDiagnostics] Konfigurasi diagnostik audio diperbarui oleh administrator');
         res.json({ success: true, config: this.configManager.getAudioDiagnosticsConfig() });
       } catch (err) {
         res.status(500).json({ success: false, error: err.message });
