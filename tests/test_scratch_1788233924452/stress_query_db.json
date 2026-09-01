@@ -1,0 +1,242 @@
+[
+  {
+    "id": 1,
+    "uuid": "PC-2",
+    "pcName": "PC-2",
+    "incidentType": "AUDIO_DEAD",
+    "details": "Insiden simulasi stres uji #1",
+    "timestamp": "2026-09-01 03:38:52"
+  },
+  {
+    "id": 2,
+    "uuid": "PC-3",
+    "pcName": "PC-3",
+    "incidentType": "KEYWORD_ALERT",
+    "details": "Insiden simulasi stres uji #2",
+    "timestamp": "2026-09-01 03:38:53"
+  },
+  {
+    "id": 3,
+    "uuid": "PC-4",
+    "pcName": "PC-4",
+    "incidentType": "OBS_DISCONNECTED",
+    "details": "Insiden simulasi stres uji #3",
+    "timestamp": "2026-09-01 03:38:53"
+  },
+  {
+    "id": 4,
+    "uuid": "PC-5",
+    "pcName": "PC-5",
+    "incidentType": "CLIPPING",
+    "details": "Insiden simulasi stres uji #4",
+    "timestamp": "2026-09-01 03:38:53"
+  },
+  {
+    "id": 5,
+    "uuid": "PC-1",
+    "pcName": "PC-1",
+    "incidentType": "AUDIO_DEAD",
+    "details": "Insiden simulasi stres uji #5",
+    "timestamp": "2026-09-01 03:38:53"
+  },
+  {
+    "id": 6,
+    "uuid": "PC-2",
+    "pcName": "PC-2",
+    "incidentType": "KEYWORD_ALERT",
+    "details": "Insiden simulasi stres uji #6",
+    "timestamp": "2026-09-01 03:38:53"
+  },
+  {
+    "id": 7,
+    "uuid": "PC-3",
+    "pcName": "PC-3",
+    "incidentType": "OBS_DISCONNECTED",
+    "details": "Insiden simulasi stres uji #7",
+    "timestamp": "2026-09-01 03:38:53"
+  },
+  {
+    "id": 8,
+    "uuid": "PC-4",
+    "pcName": "PC-4",
+    "incidentType": "CLIPPING",
+    "details": "Insiden simulasi stres uji #8",
+    "timestamp": "2026-09-01 03:38:53"
+  },
+  {
+    "id": 9,
+    "uuid": "PC-5",
+    "pcName": "PC-5",
+    "incidentType": "AUDIO_DEAD",
+    "details": "Insiden simulasi stres uji #9",
+    "timestamp": "2026-09-01 03:38:53"
+  },
+  {
+    "id": 10,
+    "uuid": "PC-1",
+    "pcName": "PC-1",
+    "incidentType": "KEYWORD_ALERT",
+    "details": "Insiden simulasi stres uji #10",
+    "timestamp": "2026-09-01 03:38:53"
+  },
+  {
+    "id": 11,
+    "uuid": "PC-2",
+    "pcName": "PC-2",
+    "incidentType": "OBS_DISCONNECTED",
+    "details": "Insiden simulasi stres uji #11",
+    "timestamp": "2026-09-01 03:38:53"
+  },
+  {
+    "id": 12,
+    "uuid": "PC-3",
+    "pcName": "PC-3",
+    "incidentType": "CLIPPING",
+    "details": "Insiden simulasi stres uji #12",
+    "timestamp": "2026-09-01 03:38:53"
+  },
+  {
+    "id": 13,
+    "uuid": "PC-4",
+    "pcName": "PC-4",
+    "incidentType": "AUDIO_DEAD",
+    "details": "Insiden simulasi stres uji #13",
+    "timestamp": "2026-09-01 03:38:53"
+  },
+  {
+    "id": 14,
+    "uuid": "PC-5",
+    "pcName": "PC-5",
+    "incidentType": "KEYWORD_ALERT",
+    "details": "Insiden simulasi stres uji #14",
+    "timestamp": "2026-09-01 03:38:53"
+  },
+  {
+    "id": 15,
+    "uuid": "PC-1",
+    "pcName": "PC-1",
+    "incidentType": "OBS_DISCONNECTED",
+    "details": "Insiden simulasi stres uji #15",
+    "timestamp": "2026-09-01 03:38:53"
+  },
+  {
+    "id": 16,
+    "uuid": "PC-2",
+    "pcName": "PC-2",
+    "incidentType": "CLIPPING",
+    "details": "Insiden simulasi stres uji #16",
+    "timestamp": "2026-09-01 03:38:53"
+  },
+  {
+    "id": 17,
+    "uuid": "PC-3",
+    "pcName": "PC-3",
+    "incidentType": "AUDIO_DEAD",
+    "details": "Insiden simulasi stres uji #17",
+    "timestamp": "2026-09-01 03:38:53"
+  },
+  {
+    "id": 18,
+    "uuid": "PC-4",
+    "pcName": "PC-4",
+    "incidentType": "KEYWORD_ALERT",
+    "details": "Insiden simulasi stres uji #18",
+    "timestamp": "2026-09-01 03:38:53"
+  },
+  {
+    "id": 19,
+    "uuid": "PC-5",
+    "pcName": "PC-5",
+    "incidentType": "OBS_DISCONNECTED",
+    "details": "Insiden simulasi stres uji #19",
+    "timestamp": "2026-09-01 03:38:53"
+  },
+  {
+    "id": 20,
+    "uuid": "PC-1",
+    "pcName": "PC-1",
+    "incidentType": "CLIPPING",
+    "details": "Insiden simulasi stres uji #20",
+    "timestamp": "2026-09-01 03:38:53"
+  },
+  {
+    "id": 21,
+    "uuid": "PC-2",
+    "pcName": "PC-2",
+    "incidentType": "AUDIO_DEAD",
+    "details": "Insiden simulasi stres uji #21",
+    "timestamp": "2026-09-01 03:38:53"
+  },
+  {
+    "id": 22,
+    "uuid": "PC-3",
+    "pcName": "PC-3",
+    "incidentType": "KEYWORD_ALERT",
+    "details": "Insiden simulasi stres uji #22",
+    "timestamp": "2026-09-01 03:38:53"
+  },
+  {
+    "id": 23,
+    "uuid": "PC-4",
+    "pcName": "PC-4",
+    "incidentType": "OBS_DISCONNECTED",
+    "details": "Insiden simulasi stres uji #23",
+    "timestamp": "2026-09-01 03:38:53"
+  },
+  {
+    "id": 24,
+    "uuid": "PC-5",
+    "pcName": "PC-5",
+    "incidentType": "CLIPPING",
+    "details": "Insiden simulasi stres uji #24",
+    "timestamp": "2026-09-01 03:38:53"
+  },
+  {
+    "id": 25,
+    "uuid": "PC-1",
+    "pcName": "PC-1",
+    "incidentType": "AUDIO_DEAD",
+    "details": "Insiden simulasi stres uji #25",
+    "timestamp": "2026-09-01 03:38:53"
+  },
+  {
+    "id": 26,
+    "uuid": "PC-2",
+    "pcName": "PC-2",
+    "incidentType": "KEYWORD_ALERT",
+    "details": "Insiden simulasi stres uji #26",
+    "timestamp": "2026-09-01 03:38:53"
+  },
+  {
+    "id": 27,
+    "uuid": "PC-3",
+    "pcName": "PC-3",
+    "incidentType": "OBS_DISCONNECTED",
+    "details": "Insiden simulasi stres uji #27",
+    "timestamp": "2026-09-01 03:38:53"
+  },
+  {
+    "id": 28,
+    "uuid": "PC-4",
+    "pcName": "PC-4",
+    "incidentType": "CLIPPING",
+    "details": "Insiden simulasi stres uji #28",
+    "timestamp": "2026-09-01 03:38:53"
+  },
+  {
+    "id": 29,
+    "uuid": "PC-5",
+    "pcName": "PC-5",
+    "incidentType": "AUDIO_DEAD",
+    "details": "Insiden simulasi stres uji #29",
+    "timestamp": "2026-09-01 03:38:53"
+  },
+  {
+    "id": 30,
+    "uuid": "PC-1",
+    "pcName": "PC-1",
+    "incidentType": "KEYWORD_ALERT",
+    "details": "Insiden simulasi stres uji #30",
+    "timestamp": "2026-09-01 03:38:53"
+  }
+]

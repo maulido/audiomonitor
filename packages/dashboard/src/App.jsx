@@ -295,6 +295,7 @@ function App() {
   });
   const [alertKeywordsInput, setAlertKeywordsInput] = useState('');
   const [isTestingWhisperApi, setIsTestingWhisperApi] = useState(false);
+  const [isRescanningKeywords, setIsRescanningKeywords] = useState(false);
   const [whisperTestResult, setWhisperTestResult] = useState(null);
   const [activeTranscriptModal, setActiveTranscriptModal] = useState(null);
   const [transcriptSearchQuery, setTranscriptSearchQuery] = useState('');
@@ -546,7 +547,8 @@ function App() {
         })
       });
       if (res.ok) {
-        await customAlert('Pengaturan integrasi Whisper berhasil disimpan.', 'Tersimpan');
+        await customAlert('Pengaturan integrasi Whisper berhasil disimpan. Seluruh kata bahaya akan otomatis disinkronkan ke rekaman.', 'Tersimpan');
+        fetchRecords();
       } else {
         await customAlert('Gagal menyimpan konfigurasi Whisper.', 'Error');
       }
@@ -554,6 +556,70 @@ function App() {
       await customAlert('Error: ' + err.message, 'Error');
     } finally {
       setIsSavingWhisper(false);
+    }
+  };
+
+  const handleRescanKeywords = async () => {
+    try {
+      setIsRescanningKeywords(true);
+      const res = await apiFetch('/api/transcription/rescan-keywords', { method: 'POST' });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        await customAlert(
+          `Pemindaian kata bahaya pada seluruh rekaman selesai.\n\nBerkas Diperiksa: ${data.scannedFiles || 0} (${data.scannedFolders || 0} sesi)\nBerkas Diperbarui: ${data.updatedFiles || 0} transkrip\nKata Bahaya Terdeteksi: ${data.keywordsFoundCount || 0}`,
+          'Pemindaian Selesai'
+        );
+        fetchRecords();
+      } else {
+        await customAlert(data.error || 'Gagal memindai ulang kata bahaya.', 'Gagal');
+      }
+    } catch (err) {
+      await customAlert(`Terjadi kesalahan: ${err.message}`, 'Error');
+    } finally {
+      setIsRescanningKeywords(false);
+    }
+  };
+
+  const renderHighlightedTranscriptText = (text, dynamicKeywords = []) => {
+    if (!text || typeof text !== 'string') return text;
+    const activeKw = [
+      ...new Set([
+        ...(dynamicKeywords || []),
+        ...(transcriptionConfig?.alertKeywords || []),
+        ...alertKeywordsInput.split(',').map(k => k.trim()).filter(Boolean)
+      ])
+    ].filter(Boolean);
+
+    if (activeKw.length === 0) return text;
+
+    const escaped = activeKw.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+    if (!escaped) return text;
+
+    try {
+      const regex = new RegExp(`(${escaped})`, 'gi');
+      const parts = String(text).split(regex);
+      return parts.map((part, idx) => {
+        if (regex.test(part)) {
+          return (
+            <mark 
+              key={idx} 
+              style={{ 
+                background: 'rgba(239, 68, 68, 0.28)', 
+                color: '#fca5a5', 
+                padding: '1px 5px', 
+                borderRadius: '4px', 
+                border: '1px solid rgba(239, 68, 68, 0.45)',
+                fontWeight: 600 
+              }}
+            >
+              {part}
+            </mark>
+          );
+        }
+        return part;
+      });
+    } catch (e) {
+      return text;
     }
   };
 
@@ -2750,9 +2816,18 @@ function App() {
             if (r.transcriptSnippet && !sess.transcriptSnippet) {
               sess.transcriptSnippet = r.transcriptSnippet;
             }
-            if (Array.isArray(r.keywordsFound) && r.keywordsFound.length > 0) {
+            const currentActiveKeywords = [
+              ...(transcriptionConfig?.alertKeywords || []),
+              ...alertKeywordsInput.split(',').map(k => k.trim().toLowerCase()).filter(Boolean)
+            ];
+            const dynamicFound = currentActiveKeywords.filter(kw => {
+              const snippetLower = (r.transcriptSnippet || '').toLowerCase();
+              return snippetLower.includes(kw);
+            });
+            const mergedKeywords = [...new Set([...(Array.isArray(r.keywordsFound) ? r.keywordsFound : []), ...dynamicFound])];
+            if (mergedKeywords.length > 0) {
               sess.hasAlertKeyword = true;
-              sess.keywordsFound = [...new Set([...sess.keywordsFound, ...r.keywordsFound])];
+              sess.keywordsFound = [...new Set([...sess.keywordsFound, ...mergedKeywords])];
             }
             sess.parts.push(r);
             sess.hasAudio = sess.parts.some(p => p.hasAudio !== false && !p.audioPurged && (p.size > 0 || p.url));
@@ -4097,7 +4172,20 @@ function App() {
                       <i className="fa-solid fa-plus"></i> Tambah Kata
                     </button>
                   </div>
-                  <span className="form-help">Jika kata-kata ini terucap dalam rekaman, server otomatis mengirim peringatan Telegram & notifikasi Dashboard.</span>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px', flexWrap: 'wrap', gap: '8px' }}>
+                    <span className="form-help" style={{ margin: 0 }}>Jika kata-kata ini terucap dalam rekaman, server otomatis mengirim peringatan Telegram & notifikasi Dashboard.</span>
+                    <button
+                      type="button"
+                      className="btn-filter secondary"
+                      style={{ fontSize: '0.78rem', padding: '5px 12px', height: '30px' }}
+                      disabled={isRescanningKeywords}
+                      onClick={handleRescanKeywords}
+                      title="Pindai ulang dan tandai kata bahaya pada seluruh rekaman masa lalu"
+                    >
+                      <i className={`fa-solid fa-arrows-rotate ${isRescanningKeywords ? 'fa-spin' : ''}`} style={{ marginRight: '6px' }}></i>
+                      {isRescanningKeywords ? 'Memindai Riwayat...' : 'Pindai Ulang Rekaman Lama'}
+                    </button>
+                  </div>
                 </div>
 
                 {whisperTestResult && (
@@ -5178,12 +5266,28 @@ function App() {
                           {activeTranscriptModal.transcript.transcribedAt}
                         </span>
                       )}
-                      {activeTranscriptModal.transcript.keywordsFound && activeTranscriptModal.transcript.keywordsFound.length > 0 && (
-                        <span className="transcript-keyword-badge">
-                          <i className="fa-solid fa-triangle-exclamation"></i>
-                          Kata Bahaya: {activeTranscriptModal.transcript.keywordsFound.join(', ')}
-                        </span>
-                      )}
+                      {(() => {
+                        const dynamicKw = [
+                          ...new Set([
+                            ...(activeTranscriptModal.transcript.keywordsFound || []),
+                            ...(transcriptionConfig?.alertKeywords || []),
+                            ...alertKeywordsInput.split(',').map(k => k.trim().toLowerCase()).filter(Boolean)
+                          ])
+                        ].filter(k => {
+                          const fullText = ((activeTranscriptModal.transcript.text || '') + ' ' + (activeTranscriptModal.transcript.segments || []).map(s => s.text || '').join(' ')).toLowerCase();
+                          return fullText.includes(k.toLowerCase());
+                        });
+
+                        if (dynamicKw.length > 0) {
+                          return (
+                            <span className="transcript-keyword-badge">
+                              <i className="fa-solid fa-triangle-exclamation"></i>
+                              Kata Bahaya: {dynamicKw.join(', ')}
+                            </span>
+                          );
+                        }
+                        return null;
+                      })()}
                     </div>
 
                     <div style={{ display: 'flex', gap: '6px' }}>
@@ -5272,14 +5376,14 @@ function App() {
                               {timeStr}
                             </span>
                             <div className="transcript-segment-text">
-                              {seg.text}
+                              {renderHighlightedTranscriptText(seg.text, activeTranscriptModal.transcript.keywordsFound)}
                             </div>
                           </div>
                         );
                       })
                     ) : (
                       <div style={{ padding: '12px', background: 'rgba(255,255,255,0.02)', borderRadius: '6px', fontSize: '0.9rem', lineHeight: '1.6' }}>
-                        {activeTranscriptModal.transcript.text || 'Tidak ada teks yang dapat ditranskripsi.'}
+                        {renderHighlightedTranscriptText(activeTranscriptModal.transcript.text, activeTranscriptModal.transcript.keywordsFound) || 'Tidak ada teks yang dapat ditranskripsi.'}
                       </div>
                     )}
                   </div>

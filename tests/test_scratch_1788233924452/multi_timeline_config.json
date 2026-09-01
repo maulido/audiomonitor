@@ -1,0 +1,34 @@
+{
+  "pcMapping": {},
+  "telegram": {
+    "token": "",
+    "chatId": "",
+    "interval": 60
+  },
+  "monitoringActive": true,
+  "dashboardPin": "1234",
+  "logRetentionDays": 30,
+  "recordDir": "",
+  "transcription": {
+    "enabled": false,
+    "apiUrl": "",
+    "apiKey": "",
+    "language": "id",
+    "autoTranscribe": true,
+    "alertKeywords": []
+  },
+  "storageAutomation": {
+    "autoArchiveDays": 14,
+    "minFreeDiskGb": 5,
+    "cloudSyncEnabled": false,
+    "cloudSyncUrl": "",
+    "backupDirectory": "",
+    "archiveQuality": "low_opus"
+  },
+  "audioDiagnostics": {
+    "lufsTarget": -14,
+    "lufsTolerance": 2,
+    "humDetectionEnabled": true,
+    "noiseFloorThreshold": -45
+  }
+}

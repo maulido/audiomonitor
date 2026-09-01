@@ -1,0 +1,38 @@
+{
+  "pcMapping": {
+    "77777777-8888-9999-aaaa-bbbbccccdddd": "PC Stress Test"
+  },
+  "telegram": {
+    "token": "",
+    "chatId": "",
+    "interval": 60
+  },
+  "monitoringActive": true,
+  "dashboardPin": "1234",
+  "logRetentionDays": 30,
+  "recordDir": "D:\\audiomonitor\\tests\\test_scratch_1788233924452\\stress_vault",
+  "transcription": {
+    "enabled": true,
+    "apiUrl": "http://127.0.0.1:39903/transcribe",
+    "apiKey": "",
+    "language": "id",
+    "autoTranscribe": true,
+    "alertKeywords": [
+      "paralel"
+    ]
+  },
+  "storageAutomation": {
+    "autoArchiveDays": 14,
+    "minFreeDiskGb": 5,
+    "cloudSyncEnabled": false,
+    "cloudSyncUrl": "",
+    "backupDirectory": "",
+    "archiveQuality": "low_opus"
+  },
+  "audioDiagnostics": {
+    "lufsTarget": -14,
+    "lufsTolerance": 2,
+    "humDetectionEnabled": true,
+    "noiseFloorThreshold": -45
+  }
+}

@@ -1,0 +1,26 @@
+[
+  {
+    "id": 2,
+    "uuid": "pc-2",
+    "pcName": "PC-Beta",
+    "incidentType": "BAHAYA_CLIPPING",
+    "details": "Pecah",
+    "timestamp": "2026-08-07 03:38:44"
+  },
+  {
+    "id": 3,
+    "uuid": "pc-1",
+    "pcName": "PC-Alpha",
+    "incidentType": "AMAN",
+    "details": "Normal",
+    "timestamp": "2026-08-22 03:38:44"
+  },
+  {
+    "id": 4,
+    "uuid": "pc-3",
+    "pcName": "PC-Gamma (Special <#1>)",
+    "incidentType": "BAHAYA_AUDIO_DEAD",
+    "details": "Dead Mic",
+    "timestamp": "2026-09-01 03:38:43"
+  }
+]

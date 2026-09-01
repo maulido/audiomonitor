@@ -4026,6 +4026,94 @@ async function main() {
     await new Promise(r => serverApp.server.close(r));
   });
 
+  // =========================================================================
+  // SUITE 56: Historical Transcripts Dynamic Alert Keyword Evaluation & Rescan
+  // =========================================================================
+  await runSuite('56. Historical Transcripts Dynamic Alert Keyword Evaluation & Rescan', async () => {
+    const testRecordsDir = path.join(TEST_DIR, 'historical_records');
+    fs.mkdirSync(testRecordsDir, { recursive: true });
+
+    const sessionFolder = 'PC_Historical_11111111-2222-3333-4444-555555555555_2026-08-20_10-00-00_to_10-30-00';
+    const sessionPath = path.join(testRecordsDir, sessionFolder);
+    fs.mkdirSync(sessionPath, { recursive: true });
+
+    // 1. Buat berkas audio dummy dan transkrip lama (yang dibuat saat kata kunci bahaya masih kosong)
+    const audioFile1 = path.join(sessionPath, 'Part_001.webm');
+    fs.writeFileSync(audioFile1, Buffer.from([0x1a, 0x45, 0xdf, 0xa3, 0x01, 0x02, 0x03]));
+
+    const oldTranscriptData = {
+      text: 'Halo selamat pagi, saat ini terjadi pipa bocor dan sinyal mati di studio satu.',
+      segments: [
+        { id: 0, start: 0, end: 5, text: 'Halo selamat pagi,' },
+        { id: 1, start: 5, end: 12, text: 'saat ini terjadi pipa bocor dan sinyal mati di studio satu.' }
+      ],
+      duration: 12,
+      fileName: 'Part_001.webm',
+      pcName: 'PC Historical',
+      keywordsFound: [] // Transkrip lama awalnya kosong kata bahaya
+    };
+
+    const transcriptFile1 = `${audioFile1}.transcript.json`;
+    fs.writeFileSync(transcriptFile1, JSON.stringify(oldTranscriptData, null, 2), 'utf8');
+
+    // 2. Setup ServerApp dengan ConfigManager & TranscriptionManager
+    const cm = new ConfigManager(path.join(TEST_DIR, 'config_hist.json'));
+    cm.config.recordDir = testRecordsDir;
+    cm.config.recordsDir = testRecordsDir;
+    cm.saveConfig();
+
+    const db = new DatabaseManager(path.join(TEST_DIR, 'historical_test_db.json'));
+    const serverApp = new ServerApp(cm, db, null, 4689);
+    serverApp.start();
+
+    // 3. Konfigurasi kata bahaya baru yang sebelumnya belum ada
+    serverApp.configManager.setTranscriptionConfig({
+      enabled: true,
+      alertKeywords: ['bocor', 'mati', 'darurat']
+    });
+
+    // 4. Test dynamic evaluation pada getTranscriptForFile
+    const loadedFileTranscript = serverApp.transcriptionManager.getTranscriptForFile(audioFile1);
+    assert(Array.isArray(loadedFileTranscript.keywordsFound), 'getTranscriptForFile returns keywordsFound array');
+    assert(loadedFileTranscript.keywordsFound.includes('bocor'), 'Dynamic keyword "bocor" detected in old transcript');
+    assert(loadedFileTranscript.keywordsFound.includes('mati'), 'Dynamic keyword "mati" detected in old transcript');
+
+    // 5. Test dynamic evaluation pada getTranscriptForSession
+    const loadedSessionTranscript = serverApp.transcriptionManager.getTranscriptForSession(sessionPath);
+    assert(Array.isArray(loadedSessionTranscript.keywordsFound), 'getTranscriptForSession returns keywordsFound array');
+    assert(loadedSessionTranscript.keywordsFound.includes('bocor'), 'Dynamic keyword "bocor" detected in old session transcript');
+    assert(loadedSessionTranscript.keywordsFound.includes('mati'), 'Dynamic keyword "mati" detected in old session transcript');
+
+    // 6. Test GET /api/records dynamically flags keywords on old records
+    const resRecords = await fetch('http://localhost:4689/api/records');
+    assertEqual(resRecords.status, 200, 'GET /api/records returns 200 OK');
+    const recordsList = await resRecords.json();
+    const targetRecord = recordsList.find(r => r.folderName === sessionFolder);
+    assert(targetRecord !== undefined, 'Historical record found in /api/records');
+    assert(Array.isArray(targetRecord.keywordsFound), 'Record keywordsFound is array');
+    assert(targetRecord.keywordsFound.includes('bocor'), 'GET /api/records returns "bocor" for historical record');
+    assert(targetRecord.keywordsFound.includes('mati'), 'GET /api/records returns "mati" for historical record');
+
+    // 7. Test POST /api/transcription/rescan-keywords to permanently update disk JSON files
+    const resRescan = await fetch('http://localhost:4689/api/transcription/rescan-keywords', {
+      method: 'POST',
+      headers: { 'x-pin': '1234' }
+    });
+    assertEqual(resRescan.status, 200, 'POST /api/transcription/rescan-keywords returns 200 OK');
+    const rescanData = await resRescan.json();
+    assertEqual(rescanData.success, true, 'Rescan success is true');
+    assert(rescanData.scannedFiles >= 1, 'Scanned files count is at least 1');
+    assert(rescanData.updatedFiles >= 1, 'Updated files count is at least 1');
+
+    // 8. Verifikasi berkas di disk sekarang telah berisi keywordsFound secara permanen
+    const updatedDiskJson = JSON.parse(fs.readFileSync(transcriptFile1, 'utf8'));
+    assert(Array.isArray(updatedDiskJson.keywordsFound), 'Disk JSON keywordsFound is array');
+    assert(updatedDiskJson.keywordsFound.includes('bocor'), 'Disk JSON contains "bocor"');
+    assert(updatedDiskJson.keywordsFound.includes('mati'), 'Disk JSON contains "mati"');
+
+    await new Promise(r => serverApp.server.close(r));
+  });
+
   // Clean up test directory
   try {
     fs.rmSync(TEST_DIR, { recursive: true, force: true });

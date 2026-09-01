@@ -1,0 +1,162 @@
+[
+  {
+    "id": 1,
+    "uuid": "agent-stress-uuid-1",
+    "pcName": "Studio PC 1",
+    "incidentType": "BAHAYA_MIC_MATI",
+    "details": "Audio/OBS Issue Detected",
+    "timestamp": "2026-09-01 03:39:48"
+  },
+  {
+    "id": 2,
+    "uuid": "agent-stress-uuid-2",
+    "pcName": "Studio PC 2",
+    "incidentType": "BAHAYA_MIC_MATI",
+    "details": "Audio/OBS Issue Detected",
+    "timestamp": "2026-09-01 03:39:48"
+  },
+  {
+    "id": 3,
+    "uuid": "agent-stress-uuid-3",
+    "pcName": "Studio PC 3",
+    "incidentType": "BAHAYA_MIC_MATI",
+    "details": "Audio/OBS Issue Detected",
+    "timestamp": "2026-09-01 03:39:48"
+  },
+  {
+    "id": 4,
+    "uuid": "agent-stress-uuid-4",
+    "pcName": "Studio PC 4",
+    "incidentType": "BAHAYA_MIC_MATI",
+    "details": "Audio/OBS Issue Detected",
+    "timestamp": "2026-09-01 03:39:48"
+  },
+  {
+    "id": 5,
+    "uuid": "agent-stress-uuid-5",
+    "pcName": "Studio PC 5",
+    "incidentType": "BAHAYA_MIC_MATI",
+    "details": "Audio/OBS Issue Detected",
+    "timestamp": "2026-09-01 03:39:48"
+  },
+  {
+    "id": 6,
+    "uuid": "agent-stress-uuid-1",
+    "pcName": "Studio PC 1",
+    "incidentType": "OFFLINE",
+    "details": "Koneksi terputus",
+    "timestamp": "2026-09-01 03:39:49"
+  },
+  {
+    "id": 7,
+    "uuid": "agent-stress-uuid-2",
+    "pcName": "Studio PC 2",
+    "incidentType": "OFFLINE",
+    "details": "Koneksi terputus",
+    "timestamp": "2026-09-01 03:39:49"
+  },
+  {
+    "id": 8,
+    "uuid": "agent-stress-uuid-3",
+    "pcName": "Studio PC 3",
+    "incidentType": "OFFLINE",
+    "details": "Koneksi terputus",
+    "timestamp": "2026-09-01 03:39:49"
+  },
+  {
+    "id": 9,
+    "uuid": "agent-stress-uuid-4",
+    "pcName": "Studio PC 4",
+    "incidentType": "OFFLINE",
+    "details": "Koneksi terputus",
+    "timestamp": "2026-09-01 03:39:49"
+  },
+  {
+    "id": 10,
+    "uuid": "agent-stress-uuid-5",
+    "pcName": "Studio PC 5",
+    "incidentType": "OFFLINE",
+    "details": "Koneksi terputus",
+    "timestamp": "2026-09-01 03:39:49"
+  },
+  {
+    "id": 11,
+    "uuid": "agent-stress-uuid-6",
+    "pcName": "Studio PC 6",
+    "incidentType": "OFFLINE",
+    "details": "Koneksi terputus",
+    "timestamp": "2026-09-01 03:39:49"
+  },
+  {
+    "id": 12,
+    "uuid": "agent-stress-uuid-7",
+    "pcName": "Studio PC 7",
+    "incidentType": "OFFLINE",
+    "details": "Koneksi terputus",
+    "timestamp": "2026-09-01 03:39:49"
+  },
+  {
+    "id": 13,
+    "uuid": "agent-stress-uuid-8",
+    "pcName": "Studio PC 8",
+    "incidentType": "OFFLINE",
+    "details": "Koneksi terputus",
+    "timestamp": "2026-09-01 03:39:49"
+  },
+  {
+    "id": 14,
+    "uuid": "agent-stress-uuid-9",
+    "pcName": "Studio PC 9",
+    "incidentType": "OFFLINE",
+    "details": "Koneksi terputus",
+    "timestamp": "2026-09-01 03:39:49"
+  },
+  {
+    "id": 15,
+    "uuid": "agent-stress-uuid-10",
+    "pcName": "Studio PC 10",
+    "incidentType": "OFFLINE",
+    "details": "Koneksi terputus",
+    "timestamp": "2026-09-01 03:39:49"
+  },
+  {
+    "id": 16,
+    "uuid": "agent-stress-uuid-11",
+    "pcName": "Studio PC 11",
+    "incidentType": "OFFLINE",
+    "details": "Koneksi terputus",
+    "timestamp": "2026-09-01 03:39:49"
+  },
+  {
+    "id": 17,
+    "uuid": "agent-stress-uuid-12",
+    "pcName": "Studio PC 12",
+    "incidentType": "OFFLINE",
+    "details": "Koneksi terputus",
+    "timestamp": "2026-09-01 03:39:49"
+  },
+  {
+    "id": 18,
+    "uuid": "agent-stress-uuid-13",
+    "pcName": "Studio PC 13",
+    "incidentType": "OFFLINE",
+    "details": "Koneksi terputus",
+    "timestamp": "2026-09-01 03:39:49"
+  },
+  {
+    "id": 19,
+    "uuid": "agent-stress-uuid-14",
+    "pcName": "Studio PC 14",
+    "incidentType": "OFFLINE",
+    "details": "Koneksi terputus",
+    "timestamp": "2026-09-01 03:39:49"
+  },
+  {
+    "id": 20,
+    "uuid": "agent-stress-uuid-15",
+    "pcName": "Studio PC 15",
+    "incidentType": "OFFLINE",
+    "details": "Koneksi terputus",
+    "timestamp": "2026-09-01 03:39:49"
+  }
+]

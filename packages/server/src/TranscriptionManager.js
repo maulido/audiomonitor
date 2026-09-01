@@ -312,7 +312,13 @@ class TranscriptionManager {
     if (fs.existsSync(transcriptPath)) {
       try {
         const raw = fs.readFileSync(transcriptPath, 'utf8');
-        return JSON.parse(raw);
+        const data = JSON.parse(raw);
+        const activeKeywords = this.configManager ? (this.configManager.getTranscriptionConfig().alertKeywords || []) : [];
+        if (activeKeywords.length > 0 && data.text) {
+          const dynamicKeywords = this.scanAlertKeywords(data.text, activeKeywords);
+          data.keywordsFound = Array.from(new Set([...(Array.isArray(data.keywordsFound) ? data.keywordsFound : []), ...dynamicKeywords]));
+        }
+        return data;
       } catch (e) {
         logger.error(`Gagal membaca file transkrip ${transcriptPath}: ${e.message}`);
       }
@@ -335,6 +341,7 @@ class TranscriptionManager {
       let lastTranscribedAt = '';
       let cumulativeOffsetSec = 0;
       let totalSessionDuration = 0;
+      const activeKeywords = this.configManager ? (this.configManager.getTranscriptionConfig().alertKeywords || []) : [];
 
       for (const tf of transcriptFiles) {
         try {
@@ -373,8 +380,17 @@ class TranscriptionManager {
           if (Array.isArray(data.keywordsFound)) {
             data.keywordsFound.forEach(k => allKeywords.add(k));
           }
+          if (activeKeywords.length > 0 && data.text) {
+            const dynamicFound = this.scanAlertKeywords(data.text, activeKeywords);
+            dynamicFound.forEach(k => allKeywords.add(k));
+          }
           lastTranscribedAt = data.transcribedAt || lastTranscribedAt;
         } catch (err) {}
+      }
+
+      if (activeKeywords.length > 0 && fullText) {
+        const sessionDynamic = this.scanAlertKeywords(fullText, activeKeywords);
+        sessionDynamic.forEach(k => allKeywords.add(k));
       }
 
       return {
@@ -390,6 +406,63 @@ class TranscriptionManager {
       logger.error(`Gagal mengumpulkan transkrip sesi ${sessionDir}: ${e.message}`);
       return null;
     }
+  }
+
+  /**
+   * Memindai ulang seluruh berkas transkrip historis terhadap daftar kata bahaya aktif saat ini.
+   * Memperbarui keywordsFound secara permanen ke file JSON di disk.
+   */
+  rescanAllTranscripts(recordsDir) {
+    if (!recordsDir || !fs.existsSync(recordsDir)) {
+      return { scannedFolders: 0, scannedFiles: 0, updatedFiles: 0, keywordsFoundCount: 0 };
+    }
+    const activeKeywords = this.configManager ? (this.configManager.getTranscriptionConfig().alertKeywords || []) : [];
+    let scannedFolders = 0;
+    let scannedFiles = 0;
+    let updatedFiles = 0;
+    let keywordsFoundCount = 0;
+
+    try {
+      const folders = fs.readdirSync(recordsDir);
+      for (const folder of folders) {
+        const folderPath = path.join(recordsDir, folder);
+        try {
+          if (!fs.statSync(folderPath).isDirectory()) continue;
+          scannedFolders++;
+          const files = fs.readdirSync(folderPath);
+          const tFiles = files.filter(f => f.endsWith('.transcript.json'));
+          
+          for (const tf of tFiles) {
+            scannedFiles++;
+            const tPath = path.join(folderPath, tf);
+            try {
+              const data = JSON.parse(fs.readFileSync(tPath, 'utf8'));
+              const oldKeywords = Array.isArray(data.keywordsFound) ? data.keywordsFound : [];
+              const newKeywords = this.scanAlertKeywords(data.text || '', activeKeywords);
+              
+              const oldSet = new Set(oldKeywords);
+              const isDifferent = oldKeywords.length !== newKeywords.length || !newKeywords.every(k => oldSet.has(k));
+              
+              if (isDifferent) {
+                data.keywordsFound = newKeywords;
+                this.atomicWriteJsonSync(tPath, data);
+                updatedFiles++;
+              }
+              if (newKeywords.length > 0) {
+                keywordsFoundCount += newKeywords.length;
+              }
+            } catch (readErr) {
+              logger.warn(`[Whisper] Gagal memindai berkas transkrip ${tf}: ${readErr.message}`);
+            }
+          }
+        } catch (fErr) {}
+      }
+    } catch (e) {
+      logger.error(`[Whisper] Error rescanAllTranscripts: ${e.message}`);
+    }
+
+    logger.info(`[Whisper] Pemindaian ulang kata bahaya selesai: ${scannedFiles} file diperiksa (${scannedFolders} folder), ${updatedFiles} file transkrip diperbarui.`);
+    return { scannedFolders, scannedFiles, updatedFiles, keywordsFoundCount };
   }
 
   searchTranscripts(query, recordDir, filters = {}) {

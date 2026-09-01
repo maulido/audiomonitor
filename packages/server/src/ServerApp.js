@@ -266,6 +266,7 @@ class ServerApp {
     const path = require('path');
     return path.resolve(
       this.configManager?.config?.recordDir ||
+      this.configManager?.config?.recordsDir ||
       path.join(os.homedir(), 'Documents', 'AudioMonitor-Recordings-Server')
     );
   }
@@ -543,7 +544,10 @@ class ServerApp {
       const recordDir = this.getRecordsDir();
       
       const records = [];
-      if (fs.existsSync(recordDir)) {
+      const recordsDir = this.getRecordsDir();
+      const activeAlertKeywords = this.configManager ? (this.configManager.getTranscriptionConfig().alertKeywords || []) : [];
+
+      if (fs.existsSync(recordsDir)) {
         try {
           const pcFolders = fs.readdirSync(recordDir);
           for (const pc of pcFolders) {
@@ -612,9 +616,12 @@ class ServerApp {
                         if (tData.text) {
                           const cleanT = tData.text.trim();
                           transcriptSnippet = cleanT.length > 180 ? cleanT.substring(0, 180) + '...' : cleanT;
-                        }
-                        if (Array.isArray(tData.keywordsFound) && tData.keywordsFound.length > 0) {
-                          keywordsFound = tData.keywordsFound;
+                          if (activeAlertKeywords.length > 0 && this.transcriptionManager) {
+                            const dynamicKeywords = this.transcriptionManager.scanAlertKeywords(cleanT, activeAlertKeywords);
+                            keywordsFound = Array.from(new Set([...(Array.isArray(tData.keywordsFound) ? tData.keywordsFound : []), ...dynamicKeywords]));
+                          } else if (Array.isArray(tData.keywordsFound) && tData.keywordsFound.length > 0) {
+                            keywordsFound = tData.keywordsFound;
+                          }
                         }
                         if (typeof tData.duration === 'number' && tData.duration > 0) {
                           transcriptDuration = tData.duration;
@@ -665,9 +672,12 @@ class ServerApp {
                         if (tData.text) {
                           const cleanT = tData.text.trim();
                           transcriptSnippet = cleanT.length > 180 ? cleanT.substring(0, 180) + '...' : cleanT;
-                        }
-                        if (Array.isArray(tData.keywordsFound) && tData.keywordsFound.length > 0) {
-                          keywordsFound = tData.keywordsFound;
+                          if (activeAlertKeywords.length > 0 && this.transcriptionManager) {
+                            const dynamicKeywords = this.transcriptionManager.scanAlertKeywords(cleanT, activeAlertKeywords);
+                            keywordsFound = Array.from(new Set([...(Array.isArray(tData.keywordsFound) ? tData.keywordsFound : []), ...dynamicKeywords]));
+                          } else if (Array.isArray(tData.keywordsFound) && tData.keywordsFound.length > 0) {
+                            keywordsFound = tData.keywordsFound;
+                          }
                         }
                         if (typeof tData.duration === 'number' && tData.duration > 0) {
                           transcriptDuration = tData.duration;
@@ -1060,7 +1070,32 @@ class ServerApp {
 
       this.configManager.setTranscriptionConfig(updateData);
       logger.audit(`[Whisper] Konfigurasi Speech-to-Text diperbarui: status=${updateData.enabled !== false ? 'aktif' : 'nonaktif'}, bahasa=${updateData.language || 'id'}, autoTranscribe=${updateData.autoTranscribe !== false}`);
+      
+      // Jika kata bahaya diperbarui, sinkronisasikan ke seluruh berkas transkrip historis di background
+      if (updateData.alertKeywords !== undefined) {
+        setTimeout(() => {
+          try {
+            this.transcriptionManager.rescanAllTranscripts(this.getRecordsDir());
+          } catch (rErr) {
+            logger.warn(`[Whisper] Background rescan kata bahaya: ${rErr.message}`);
+          }
+        }, 50);
+      }
+
       res.json({ success: true, transcription: this.configManager.getTranscriptionConfig() });
+    });
+
+    // API: Pemicu pemindaian ulang kata bahaya pada seluruh rekaman transkrip historis
+    this.app.post('/api/transcription/rescan-keywords', (req, res) => {
+      try {
+        const recordsDir = this.getRecordsDir();
+        logger.info('[Whisper] Memicu pemindaian ulang kata bahaya pada seluruh riwayat rekaman');
+        const result = this.transcriptionManager.rescanAllTranscripts(recordsDir);
+        res.json({ success: true, ...result });
+      } catch (err) {
+        logger.error(`[Whisper] Error rescan keywords: ${err.message}`);
+        res.status(500).json({ success: false, error: err.message });
+      }
     });
 
     // API: Menguji konektivitas ke Whisper API
