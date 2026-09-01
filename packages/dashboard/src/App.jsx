@@ -2513,7 +2513,7 @@ function App() {
                   <h1 className="settings-header" style={{ marginBottom: 0 }}>Incident Logs</h1>
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <button className="btn-primary" onClick={exportToCSV} style={{ background: '#10b981' }}><i className="fa-solid fa-file-csv"></i> Unduh CSV</button>
-                    <button className="btn-primary" onClick={() => { setShowSystemLogs(true); fetchSystemLogs(); }}><i className="fa-solid fa-terminal"></i> System Logs</button>
+                    <button className="btn-primary" onClick={() => { setShowSystemLogs(true); fetchSystemLogs(); fetchSystemLogDates(); }}><i className="fa-solid fa-terminal"></i> System Logs</button>
                   </div>
                 </div>
               <p className="settings-desc">Rekam jejak dan analisis masalah audio dari seluruh PC.</p>
@@ -4732,8 +4732,13 @@ function App() {
                   className="btn-filter secondary"
                   title="Unduh berkas log (.log)"
                   onClick={() => {
-                    const dlUrl = `/api/logs/download${systemLogSelectedDate ? `?date=${systemLogSelectedDate}` : ''}`;
-                    window.open(dlUrl, '_blank');
+                    const dlUrl = `${SERVER_URL}/api/logs/download${systemLogSelectedDate ? `?date=${systemLogSelectedDate}` : ''}`;
+                    const a = document.createElement('a');
+                    a.href = dlUrl;
+                    a.download = `server-${systemLogSelectedDate || getLocalDateStr()}.log`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
                   }}
                   style={{ height: '32px', padding: '0 10px', fontSize: '0.75rem' }}
                 >
