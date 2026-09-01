@@ -3927,6 +3927,105 @@ async function main() {
     await new Promise(r => serverApp.server.close(r));
   });
 
+  // =========================================================================
+  // SUITE 55: Enhanced Structured Logging, Socket.io Real-Time Streaming & REST API
+  // =========================================================================
+  await runSuite('55. Enhanced Structured Logging, Socket.io Real-Time Streaming & REST API', async () => {
+    const logger = require('../packages/server/src/utils/logger');
+    logger.clearMemoryLogs();
+
+    // 1. Tag parsing and structured fields
+    const entry1 = logger.info('[StorageHub] Inisialisasi smart storage backup');
+    assertEqual(entry1.level, 'INFO', 'Log level is INFO');
+    assertEqual(entry1.tag, 'StorageHub', 'Extracted tag [StorageHub]');
+    assertEqual(entry1.cleanMessage, 'Inisialisasi smart storage backup', 'Clean message without tag brackets');
+
+    const entry2 = logger.warn('[Whisper] Koneksi ke endpoint transkripsi lambat (1500ms)');
+    assertEqual(entry2.level, 'WARN', 'Log level is WARN');
+    assertEqual(entry2.tag, 'Whisper', 'Extracted tag [Whisper]');
+
+    const entry3 = logger.error('[Auth] Percobaan login dengan PIN salah 3 kali');
+    assertEqual(entry3.level, 'ERROR', 'Log level is ERROR');
+    assertEqual(entry3.tag, 'Auth', 'Extracted tag [Auth]');
+
+    const entry4 = logger.audit('[Settings] Administrator mengubah interval telegram menjadi 30s');
+    assertEqual(entry4.level, 'AUDIT', 'Log level is AUDIT');
+    assertEqual(entry4.tag, 'Settings', 'Extracted tag [Settings]');
+
+    // 2. Query Memory Logs with Level and Tag filters
+    const allRecent = logger.getRecentLogs(10);
+    assertEqual(allRecent.length, 4, '4 logs recorded in memory ring buffer');
+
+    const warnOnly = logger.getRecentLogs(10, { level: 'WARN' });
+    assertEqual(warnOnly.length, 1, 'Filtered 1 WARN log');
+    assertEqual(warnOnly[0].tag, 'Whisper', 'WARN log is Whisper');
+
+    const authOnly = logger.getRecentLogs(10, { tag: 'Auth' });
+    assertEqual(authOnly.length, 1, 'Filtered 1 Auth tag log');
+
+    const searchKeyword = logger.getRecentLogs(10, { search: 'smart storage' });
+    assertEqual(searchKeyword.length, 1, 'Search keyword matched 1 log');
+
+    // 3. Real-time Subscription listener
+    let receivedLiveLog = null;
+    const unsubscribe = logger.subscribe((log) => {
+      receivedLiveLog = log;
+    });
+
+    logger.info('[LiveTest] Broadcast event ke subscription listener');
+    assert(receivedLiveLog !== null, 'Subscription listener received real-time log event');
+    assertEqual(receivedLiveLog.tag, 'LiveTest', 'Live log has correct tag');
+    unsubscribe();
+
+    // 4. REST API verification
+    const cm = new ConfigManager(path.join(TEST_DIR, 'log_api_cm.json'));
+    cm.setDashboardPin('1234');
+    const db = new DatabaseManager(path.join(TEST_DIR, 'log_api_db.json'));
+    const serverApp = new ServerApp(cm, db, null, 4688);
+    await new Promise(r => serverApp.server.listen(4688, r));
+
+    // GET /api/logs
+    const resLogs = await fetch('http://localhost:4688/api/logs?level=INFO');
+    assertEqual(resLogs.status, 200, 'GET /api/logs returns 200 OK');
+    const dataLogs = await resLogs.json();
+    assertEqual(dataLogs.success, true, 'GET /api/logs success is true');
+    assert(Array.isArray(dataLogs.logs), 'Logs returned as array');
+
+    // GET /api/logs/dates
+    const resDates = await fetch('http://localhost:4688/api/logs/dates');
+    assertEqual(resDates.status, 200, 'GET /api/logs/dates returns 200 OK');
+    const dataDates = await resDates.json();
+    assertEqual(dataDates.success, true, 'GET /api/logs/dates success is true');
+    assert(Array.isArray(dataDates.dates), 'Dates returned as array');
+
+    // GET /api/logs/download
+    const resDownload = await fetch('http://localhost:4688/api/logs/download');
+    assertEqual(resDownload.status, 200, 'GET /api/logs/download returns 200 OK');
+    const dlText = await resDownload.text();
+    assert(dlText.length > 0, 'Downloaded log file contains content');
+
+    // Socket Agent Log Forwarding
+    const wsUrl = 'http://localhost:4688';
+    const clientSock = ioClient(wsUrl);
+    await new Promise(r => clientSock.on('connect', r));
+
+    clientSock.emit('agent_log', {
+      uuid: 'PC-Studio-55',
+      pcName: 'PC Studio 55',
+      level: 'WARN',
+      message: 'OBS Audio input level clipping detected'
+    });
+
+    await new Promise(r => setTimeout(r, 250));
+
+    const agentLogs = logger.getRecentLogs(10, { search: 'PC-Studio-55' });
+    assertEqual(agentLogs.length, 1, 'Agent log forwarded and captured by server logger');
+    assertEqual(agentLogs[0].level, 'WARN', 'Agent log level preserved');
+
+    clientSock.disconnect();
+    await new Promise(r => serverApp.server.close(r));
+  });
+
   // Clean up test directory
   try {
     fs.rmSync(TEST_DIR, { recursive: true, force: true });

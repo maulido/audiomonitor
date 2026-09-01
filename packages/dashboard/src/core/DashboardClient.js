@@ -1,7 +1,7 @@
 import { io } from 'socket.io-client';
 
 class DashboardClient {
-  constructor(serverUrl, onConnectChange, onDataUpdate, onMonitoringStatus, onPcMonitoringUpdate, onPcMonitoringStates, onAllAgents, onAgentDeleted, onUpdateProgress, onTranscriptionStatus, onKeywordAlert, onStorageCleaned) {
+  constructor(serverUrl, onConnectChange, onDataUpdate, onMonitoringStatus, onPcMonitoringUpdate, onPcMonitoringStates, onAllAgents, onAgentDeleted, onUpdateProgress, onTranscriptionStatus, onKeywordAlert, onStorageCleaned, onSystemLog) {
     this.serverUrl = serverUrl;
     this.socket = null;
     this.onConnectChange = onConnectChange;
@@ -15,6 +15,7 @@ class DashboardClient {
     this.onTranscriptionStatus = onTranscriptionStatus;
     this.onKeywordAlert = onKeywordAlert;
     this.onStorageCleaned = onStorageCleaned;
+    this.onSystemLog = onSystemLog;
   }
 
   connect() {
@@ -72,6 +73,10 @@ class DashboardClient {
 
       this.socket.on('pc-monitoring-states', (states) => {
         if (this.onPcMonitoringStates) this.onPcMonitoringStates(states);
+      });
+
+      this.socket.on('system_log', (logEntry) => {
+        if (this.onSystemLog) this.onSystemLog(logEntry);
       });
     }
   }

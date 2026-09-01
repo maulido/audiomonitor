@@ -385,10 +385,75 @@ class ServerApp {
       }
     });
 
-    // API: Mengambil log harian dari file log
+    // API: Mengambil log sistem terstruktur (dari memori real-time atau berkas arsip)
     this.app.get('/api/logs', (req, res) => {
-      const logger = require('./utils/logger');
-      res.send({ success: true, logs: logger.getTodayLogs() });
+      const { date, level, search, tag, limit, offset } = req.query || {};
+      const safeLimit = Math.max(1, Math.min(parseInt(limit) || 200, 1000));
+      const safeOffset = Math.max(0, parseInt(offset) || 0);
+
+      if (date && typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
+        const fileResult = logger.getLogsForDate(date, {
+          level: level || 'ALL',
+          search: search || '',
+          tag: tag || 'ALL',
+          limit: safeLimit,
+          offset: safeOffset
+        });
+        return res.json({
+          success: true,
+          date,
+          total: fileResult.total,
+          logs: fileResult.logs,
+          raw: logger.getTodayLogs()
+        });
+      } else {
+        const recent = logger.getRecentLogs(safeLimit, {
+          level: level || 'ALL',
+          search: search || '',
+          tag: tag || 'ALL'
+        });
+        return res.json({
+          success: true,
+          total: recent.length,
+          logs: recent,
+          raw: logger.getTodayLogs()
+        });
+      }
+    });
+
+    // API: Mengambil daftar tanggal berkas log yang tersedia
+    this.app.get('/api/logs/dates', (req, res) => {
+      res.json({ success: true, dates: logger.listLogDates() });
+    });
+
+    // API: Mengunduh berkas log harian
+    this.app.get('/api/logs/download', (req, res) => {
+      const { date } = req.query || {};
+      const logFilePath = logger.getLogFilePath(date);
+
+      if (!fs.existsSync(logFilePath)) {
+        return res.status(404).send('Berkas log tidak ditemukan');
+      }
+
+      const fileName = path.basename(logFilePath);
+      res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+      const fileStream = fs.createReadStream(logFilePath);
+      fileStream.pipe(res);
+    });
+
+    // API: Membersihkan log memori atau log lawas (Dilindungi PIN)
+    this.app.delete('/api/logs/clear', (req, res) => {
+      const { mode, retentionDays } = req.body || {};
+      if (mode === 'files') {
+        const result = logger.cleanOldLogs(parseInt(retentionDays) || 30);
+        logger.audit(`[LogManager] Membersihkan ${result.deletedCount} berkas log lawas (${(result.freedBytes / 1024).toFixed(1)} KB dibebaskan)`);
+        return res.json({ success: true, ...result });
+      } else {
+        logger.clearMemoryLogs();
+        logger.audit('[LogManager] Buffer log memori dikosongkan oleh administrator');
+        return res.json({ success: true, message: 'Buffer log memori berhasil dikosongkan' });
+      }
     });
     
     // API: Menghapus sebuah PC (Agent) dari daftar Dashboard

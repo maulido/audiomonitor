@@ -34,6 +34,13 @@ class TelemetryHub {
       cors: { origin: '*' } // Mengizinkan Dashboard (jika dijalankan terpisah/Dev Mode) untuk terkoneksi
     });
 
+    // Hubungkan stream logger server ke semua Dashboard yang terkoneksi
+    this.unsubscribeLogger = logger.subscribe((logEntry) => {
+      try {
+        this.io.to('dashboards').emit('system_log', logEntry);
+      } catch (e) {}
+    });
+
     this.setupListeners();
   }
 
@@ -156,6 +163,14 @@ class TelemetryHub {
             pcName,
             ...data
           });
+        });
+
+        // Event saat Agent melaporkan log sistem (Error, Warning, Audio Event)
+        socket.on('agent_log', (data) => {
+          if (!data || !data.message) return;
+          const pcName = this.configManager.getPcName(data.uuid || socket.agentUuid) || socket.agentName || 'PC Host';
+          const level = data.level || 'INFO';
+          logger.writeLog(level, `[Agent:${pcName}] ${data.message}`);
         });
 
         // Event usang (Legacy) via socket untuk toggle monitoring PC

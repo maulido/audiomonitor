@@ -149,6 +149,14 @@ function App() {
   const [sessionsPerPage, setSessionsPerPage] = useState(5); // 5, 10, 25, 50, 0 (all)
   const [recordViewLayout, setRecordViewLayout] = useState('detailed'); // 'detailed' | 'compact'
   const [systemLogs, setSystemLogs] = useState('');
+  const [systemLogEntries, setSystemLogEntries] = useState([]);
+  const [systemLogLevelFilter, setSystemLogLevelFilter] = useState('ALL'); // 'ALL', 'INFO', 'WARN', 'ERROR', 'AUDIT', 'DEBUG'
+  const [systemLogSearchQuery, setSystemLogSearchQuery] = useState('');
+  const [systemLogSelectedDate, setSystemLogSelectedDate] = useState(''); // '' means Live Stream / Today
+  const [systemLogDates, setSystemLogDates] = useState([]);
+  const [systemLogAutoScroll, setSystemLogAutoScroll] = useState(true);
+  const [systemLogLoading, setSystemLogLoading] = useState(false);
+  const systemLogScrollRef = useRef(null);
   const [showSystemLogs, setShowSystemLogs] = useState(false);
   const [showTelegramToken, setShowTelegramToken] = useState(false);
   const [isSavingTelegram, setIsSavingTelegram] = useState(false);
@@ -763,16 +771,40 @@ function App() {
     }
   };
 
-  const fetchSystemLogs = async () => {
+  const fetchSystemLogs = async (customDate = systemLogSelectedDate, customLevel = systemLogLevelFilter, customSearch = systemLogSearchQuery) => {
     try {
-      const res = await apiFetch('/api/logs');
+      setSystemLogLoading(true);
+      const params = new URLSearchParams();
+      if (customDate) params.set('date', customDate);
+      if (customLevel && customLevel !== 'ALL') params.set('level', customLevel);
+      if (customSearch && customSearch.trim()) params.set('search', customSearch.trim());
+      params.set('limit', '500');
+
+      const res = await apiFetch(`/api/logs?${params.toString()}`);
       if (res.ok) {
         const data = await res.json();
-        setSystemLogs(data.logs || 'No logs available.');
+        if (Array.isArray(data.logs)) {
+          setSystemLogEntries(data.logs);
+        }
+        setSystemLogs(data.raw || (Array.isArray(data.logs) ? data.logs.map(l => l.raw || l.message).join('\n') : 'Tidak ada catatan log.'));
       }
     } catch(e) {
-      setSystemLogs('Failed to fetch system logs.');
+      setSystemLogs('Gagal mengambil data log sistem.');
+    } finally {
+      setSystemLogLoading(false);
     }
+  };
+
+  const fetchSystemLogDates = async () => {
+    try {
+      const res = await apiFetch('/api/logs/dates');
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.dates)) {
+          setSystemLogDates(data.dates);
+        }
+      }
+    } catch(e) {}
   };
 
   const fetchLogs = async (filters = {}) => {
@@ -1596,6 +1628,14 @@ function App() {
             `Pembersihan audio lokal di PC Host "${storageData.pcName || storageData.uuid}" selesai.\n\nMembebaskan ${storageData.freedMb} MB (${storageData.deletedFolders} folder rekaman dihapus, ${storageData.skippedUnuploaded || 0} folder yang belum terupload tetap aman).`,
             'Pembersihan Host Selesai'
           );
+        }
+      },
+      (logEntry) => {
+        if (logEntry) {
+          setSystemLogEntries(prev => {
+            const next = [...prev, logEntry];
+            return next.length > 1000 ? next.slice(-1000) : next;
+          });
         }
       }
     );
@@ -4560,31 +4600,272 @@ function App() {
 
       
 
-            {showSystemLogs && (
+      {showSystemLogs && (
         <div className="modal-overlay">
-          <div className="modal" style={{ width: '800px', maxWidth: '95vw', background: 'var(--bg-card)' }}>
-            <div className="modal-header">
+          <div className="modal" style={{ width: '1050px', maxWidth: '96vw', background: 'var(--bg-card)', display: 'flex', flexDirection: 'column', maxHeight: '90vh' }}>
+            <div className="modal-header" style={{ padding: '16px 24px', borderBottom: '1px solid var(--border)' }}>
               <div>
-                <h3 style={{ margin: 0 }}><i className="fa-solid fa-terminal"></i> System Audit Logs</h3>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Real-time server logs for debugging</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <i className="fa-solid fa-terminal" style={{ color: 'var(--accent)' }}></i> Log Sistem & Audit Live
+                  </h3>
+                  <span style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    fontSize: '0.72rem',
+                    padding: '3px 8px',
+                    borderRadius: '12px',
+                    background: systemLogSelectedDate ? 'rgba(100, 116, 139, 0.2)' : 'rgba(16, 185, 129, 0.15)',
+                    color: systemLogSelectedDate ? '#94a3b8' : '#10b981',
+                    fontWeight: 600
+                  }}>
+                    <span style={{
+                      width: '6px',
+                      height: '6px',
+                      borderRadius: '50%',
+                      background: systemLogSelectedDate ? '#94a3b8' : '#10b981',
+                      animation: systemLogSelectedDate ? 'none' : 'pulse 2s infinite'
+                    }}></span>
+                    {systemLogSelectedDate ? `Arsip: ${systemLogSelectedDate}` : 'Live Stream Aktif'}
+                  </span>
+                </div>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px' }}>
+                  Pemantauan lalu-lintas event Server, integrasi Whisper, Storage Sync, dan Agent secara real-time.
+                </div>
               </div>
               <button className="close-btn" onClick={() => setShowSystemLogs(false)}><i className="fa-solid fa-times"></i></button>
             </div>
-            <div className="modal-body" style={{ padding: '0' }}>
-              <pre style={{ 
-                background: '#111', 
-                color: '#fff', 
-                padding: '16px', 
-                margin: '0',
-                borderRadius: '0 0 8px 8px',
-                height: '500px', 
+
+            {/* Filter & Toolbar */}
+            <div style={{ padding: '12px 24px', background: 'rgba(0,0,0,0.2)', borderBottom: '1px solid var(--border)', display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center', justifyContent: 'space-between' }}>
+              {/* Level Filter Pills */}
+              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                {[
+                  { id: 'ALL', label: 'Semua', color: 'var(--text-main)', bg: 'rgba(255,255,255,0.08)' },
+                  { id: 'INFO', label: 'INFO', color: '#0ea5e9', bg: 'rgba(14, 165, 233, 0.15)' },
+                  { id: 'WARN', label: 'WARN', color: '#f59e0b', bg: 'rgba(245, 158, 11, 0.15)' },
+                  { id: 'ERROR', label: 'ERROR', color: '#ef4444', bg: 'rgba(239, 68, 68, 0.15)' },
+                  { id: 'AUDIT', label: 'AUDIT', color: '#a855f7', bg: 'rgba(168, 85, 247, 0.15)' },
+                  { id: 'DEBUG', label: 'DEBUG', color: '#94a3b8', bg: 'rgba(148, 163, 184, 0.15)' }
+                ].map(lvl => (
+                  <button
+                    key={lvl.id}
+                    onClick={() => {
+                      setSystemLogLevelFilter(lvl.id);
+                      fetchSystemLogs(systemLogSelectedDate, lvl.id, systemLogSearchQuery);
+                    }}
+                    style={{
+                      padding: '4px 10px',
+                      borderRadius: '6px',
+                      fontSize: '0.72rem',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      border: systemLogLevelFilter === lvl.id ? `1.5px solid ${lvl.color}` : '1px solid transparent',
+                      background: systemLogLevelFilter === lvl.id ? lvl.bg : 'rgba(255,255,255,0.04)',
+                      color: systemLogLevelFilter === lvl.id ? lvl.color : 'var(--text-muted)',
+                      transition: 'all 0.15s ease'
+                    }}
+                  >
+                    {lvl.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Search, Date Select & Controls */}
+              <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+                {/* Search Box */}
+                <div style={{ position: 'relative', minWidth: '180px' }}>
+                  <i className="fa-solid fa-search" style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', fontSize: '0.75rem' }}></i>
+                  <input
+                    type="text"
+                    className="form-input"
+                    placeholder="Cari log..."
+                    value={systemLogSearchQuery}
+                    onChange={(e) => {
+                      setSystemLogSearchQuery(e.target.value);
+                      fetchSystemLogs(systemLogSelectedDate, systemLogLevelFilter, e.target.value);
+                    }}
+                    style={{ paddingLeft: '28px', paddingRight: '24px', fontSize: '0.75rem', height: '32px' }}
+                  />
+                  {systemLogSearchQuery && (
+                    <button
+                      onClick={() => {
+                        setSystemLogSearchQuery('');
+                        fetchSystemLogs(systemLogSelectedDate, systemLogLevelFilter, '');
+                      }}
+                      style={{ position: 'absolute', right: '6px', top: '50%', transform: 'translateY(-50%)', background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '0.75rem' }}
+                    >
+                      &times;
+                    </button>
+                  )}
+                </div>
+
+                {/* Date Dropdown */}
+                <select
+                  className="form-input"
+                  value={systemLogSelectedDate}
+                  onChange={(e) => {
+                    setSystemLogSelectedDate(e.target.value);
+                    fetchSystemLogs(e.target.value, systemLogLevelFilter, systemLogSearchQuery);
+                  }}
+                  style={{ fontSize: '0.75rem', height: '32px', minWidth: '140px' }}
+                >
+                  <option value="">Live / Hari Ini</option>
+                  {systemLogDates.map(d => (
+                    <option key={d.date} value={d.date}>{d.date} ({d.sizeFormatted})</option>
+                  ))}
+                </select>
+
+                {/* Auto Scroll Checkbox */}
+                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.75rem', color: 'var(--text-muted)', cursor: 'pointer', userSelect: 'none' }}>
+                  <input
+                    type="checkbox"
+                    checked={systemLogAutoScroll}
+                    onChange={e => setSystemLogAutoScroll(e.target.checked)}
+                  />
+                  Auto-Scroll
+                </label>
+
+                {/* Action Buttons */}
+                <button
+                  className="btn-filter secondary"
+                  title="Unduh berkas log (.log)"
+                  onClick={() => {
+                    const dlUrl = `/api/logs/download${systemLogSelectedDate ? `?date=${systemLogSelectedDate}` : ''}`;
+                    window.open(dlUrl, '_blank');
+                  }}
+                  style={{ height: '32px', padding: '0 10px', fontSize: '0.75rem' }}
+                >
+                  <i className="fa-solid fa-download"></i> Unduh
+                </button>
+
+                <button
+                  className="btn-filter secondary"
+                  title="Muat Ulang Log"
+                  onClick={() => {
+                    fetchSystemLogs();
+                    fetchSystemLogDates();
+                  }}
+                  style={{ height: '32px', padding: '0 10px', fontSize: '0.75rem' }}
+                >
+                  <i className={`fa-solid fa-arrows-rotate ${systemLogLoading ? 'fa-spin' : ''}`}></i>
+                </button>
+
+                <button
+                  className="btn-filter secondary"
+                  title="Bersihkan tampilan saat ini"
+                  onClick={() => setSystemLogEntries([])}
+                  style={{ height: '32px', padding: '0 10px', fontSize: '0.75rem' }}
+                >
+                  <i className="fa-solid fa-trash-can"></i>
+                </button>
+              </div>
+            </div>
+
+            {/* Console Log Stream Body */}
+            <div
+              ref={systemLogScrollRef}
+              style={{
+                flex: 1,
+                minHeight: '400px',
+                maxHeight: '60vh',
                 overflowY: 'auto',
-                fontSize: '0.8rem',
-                fontFamily: 'monospace',
-                whiteSpace: 'pre-wrap'
-              }}>
-                {systemLogs}
-              </pre>
+                background: '#090a0f',
+                padding: '12px 16px',
+                fontFamily: 'Consolas, Monaco, "Courier New", monospace',
+                fontSize: '0.78rem',
+                lineHeight: '1.6'
+              }}
+            >
+              {systemLogEntries.length === 0 ? (
+                <div style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '60px 0' }}>
+                  <i className="fa-solid fa-terminal" style={{ fontSize: '2rem', marginBottom: '12px', opacity: 0.3 }}></i>
+                  <div>{systemLogLoading ? 'Memuat catatan log sistem...' : 'Tidak ada catatan log yang sesuai dengan filter.'}</div>
+                </div>
+              ) : (
+                systemLogEntries.map((log, idx) => {
+                  const lvl = (log.level || 'INFO').toUpperCase();
+                  const levelColors = {
+                    INFO: { color: '#38bdf8', bg: 'rgba(56, 189, 248, 0.12)' },
+                    WARN: { color: '#fbbf24', bg: 'rgba(251, 191, 36, 0.12)' },
+                    ERROR: { color: '#f87171', bg: 'rgba(248, 113, 113, 0.15)' },
+                    AUDIT: { color: '#c084fc', bg: 'rgba(192, 132, 252, 0.15)' },
+                    DEBUG: { color: '#94a3b8', bg: 'rgba(148, 163, 184, 0.1)' }
+                  };
+                  const styling = levelColors[lvl] || levelColors.INFO;
+
+                  return (
+                    <div
+                      key={log.id || `${log.timeString}-${idx}`}
+                      style={{
+                        display: 'flex',
+                        gap: '8px',
+                        alignItems: 'flex-start',
+                        padding: '3px 0',
+                        borderBottom: '1px solid rgba(255, 255, 255, 0.03)',
+                        wordBreak: 'break-word'
+                      }}
+                    >
+                      {/* Timestamp */}
+                      <span style={{ color: '#64748b', fontSize: '0.72rem', flexShrink: 0, minWidth: '60px', userSelect: 'none' }}>
+                        {log.timeString || (log.timestamp ? new Date(log.timestamp).toLocaleTimeString() : '')}
+                      </span>
+
+                      {/* Level Badge */}
+                      <span style={{
+                        color: styling.color,
+                        background: styling.bg,
+                        padding: '1px 6px',
+                        borderRadius: '4px',
+                        fontSize: '0.68rem',
+                        fontWeight: 700,
+                        flexShrink: 0,
+                        minWidth: '50px',
+                        textAlign: 'center',
+                        userSelect: 'none'
+                      }}>
+                        {lvl}
+                      </span>
+
+                      {/* Tag Badge */}
+                      {log.tag && (
+                        <span style={{
+                          color: '#10b981',
+                          background: 'rgba(16, 185, 129, 0.1)',
+                          padding: '1px 6px',
+                          borderRadius: '4px',
+                          fontSize: '0.68rem',
+                          fontWeight: 600,
+                          flexShrink: 0,
+                          userSelect: 'none'
+                        }}>
+                          [{log.tag}]
+                        </span>
+                      )}
+
+                      {/* Message Content */}
+                      <span style={{
+                        color: lvl === 'ERROR' ? '#fca5a5' : lvl === 'WARN' ? '#fde68a' : '#e2e8f0',
+                        flex: 1
+                      }}>
+                        {log.cleanMessage || log.message || log.raw}
+                      </span>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* Footer Summary */}
+            <div style={{ padding: '8px 24px', background: 'rgba(0,0,0,0.3)', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+              <div>Menampilkan {systemLogEntries.length} entri log</div>
+              <div style={{ display: 'flex', gap: '16px' }}>
+                <span>INFO: {systemLogEntries.filter(l => l.level === 'INFO').length}</span>
+                <span style={{ color: '#fbbf24' }}>WARN: {systemLogEntries.filter(l => l.level === 'WARN').length}</span>
+                <span style={{ color: '#f87171' }}>ERROR: {systemLogEntries.filter(l => l.level === 'ERROR').length}</span>
+                <span style={{ color: '#c084fc' }}>AUDIT: {systemLogEntries.filter(l => l.level === 'AUDIT').length}</span>
+              </div>
             </div>
           </div>
         </div>
