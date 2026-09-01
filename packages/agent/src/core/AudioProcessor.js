@@ -229,16 +229,25 @@ class AudioProcessor {
     // Split every 10 minutes (600,000 ms)
     this.chunkTimer = setTimeout(() => {
       if (this.mediaRecorder && this.mediaRecorder.state === 'recording') {
-        this.mediaRecorder.onstop = () => {
+        const oldRecorder = this.mediaRecorder;
+        oldRecorder.onstop = () => {
           if (window.electronAPI && window.electronAPI.stopRecording) { 
             window.electronAPI.stopRecording(true); 
           }
           this.partNumber++;
           if (this.isRecording) {
-            this._startMediaRecorderChunk();
+            setTimeout(() => {
+              if (this.isRecording) {
+                this._startMediaRecorderChunk();
+              }
+            }, 50);
           }
         };
-        this.mediaRecorder.stop();
+        try {
+          oldRecorder.stop();
+        } catch (sErr) {
+          console.warn('Error stopping mediaRecorder during rollover:', sErr);
+        }
       }
     }, 10 * 60 * 1000);
   }

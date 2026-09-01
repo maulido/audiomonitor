@@ -359,6 +359,13 @@ class ServerApp {
         writeStream.on('finish', () => {
           logger.info(`[Upload] Berhasil menerima file rekaman dari ${agentName}: ${fileName} -> ${filePath}`);
           if (this.transcriptionManager) {
+            try {
+              if (filePath.endsWith('.webm')) {
+                this.transcriptionManager.repairWebMFile(filePath);
+              }
+            } catch (rErr) {
+              logger.warn(`[Upload] Auto-repair WebM check: ${rErr.message}`);
+            }
             this.transcriptionManager.enqueueFile(filePath, sessionFolder, fileName, agentName);
           }
           sendResponse(200, { success: true, message: 'Upload selesai', path: filePath });

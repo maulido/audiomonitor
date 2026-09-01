@@ -110,7 +110,13 @@ class TranscriptionManager {
       throw new Error('URL Whisper API belum dikonfigurasi.');
     }
 
-    logger.info(`[Whisper] Mengirim audio (${(stat.size / 1024 / 1024).toFixed(2)} MB) ke Whisper API (${config.apiUrl}): ${fileName}`);
+    // Auto-repair WebM header jika file berformat .webm (misal chunk rollover Part 2, Part 3, dll)
+    if (filePath.endsWith('.webm')) {
+      this.repairWebMFile(filePath);
+    }
+
+    const currentStat = fs.existsSync(filePath) ? fs.statSync(filePath) : stat;
+    logger.info(`[Whisper] Mengirim audio (${(currentStat.size / 1024 / 1024).toFixed(2)} MB) ke Whisper API (${config.apiUrl}): ${fileName}`);
 
     const fileBuffer = fs.readFileSync(filePath);
     const mimeType = fileName.endsWith('.wav') ? 'audio/wav' : (fileName.endsWith('.mp3') ? 'audio/mpeg' : 'audio/webm');
@@ -642,6 +648,111 @@ class TranscriptionManager {
       })),
       queueLength: this.queue.length
     };
+  }
+
+  /**
+   * Memeriksa dan memperbaiki header WebM EBML jika rusak, tergeser oleh cluster sampah, atau hilang total.
+   * Sangat penting untuk chunk rekaman rollover (Part 2, Part 3, dst.) agar dapat dibaca FFmpeg & Whisper API.
+   * @param {string} filePath - Path absolut ke file .webm
+   * @returns {boolean} True jika file sudah valid atau berhasil diperbaiki
+   */
+  repairWebMFile(filePath) {
+    if (!fs.existsSync(filePath) || !filePath.endsWith('.webm')) return false;
+
+    let fd = null;
+    try {
+      const stat = fs.statSync(filePath);
+      if (stat.size < 4) return false;
+
+      fd = fs.openSync(filePath, 'r');
+      const magic = Buffer.alloc(4);
+      fs.readSync(fd, magic, 0, 4, 0);
+      fs.closeSync(fd);
+      fd = null;
+
+      // Jika sudah diawali signature EBML baku (1a 45 df a3)
+      if (magic.toString('hex') === '1a45dfa3') {
+        return true;
+      }
+
+      logger.warn(`[Whisper Media] Berkas ${path.basename(filePath)} tidak diawali EBML header valid (magic: ${magic.toString('hex')}), memproses auto-repair...`);
+
+      const currentData = fs.readFileSync(filePath);
+      const ebmlMarker = Buffer.from([0x1a, 0x45, 0xdf, 0xa3]);
+      const clusterMarker = Buffer.from([0x1f, 0x43, 0xb6, 0x75]);
+
+      // Kasus A: EBML header ada di dalam berkas namun tergeser karena ada prefix cluster lama (offset > 0)
+      const ebmlOffset = currentData.indexOf(ebmlMarker);
+      if (ebmlOffset > 0 && ebmlOffset < 1048576) {
+        const strippedData = currentData.slice(ebmlOffset);
+        const tempPath = `${filePath}.repaired_${Date.now()}`;
+        fs.writeFileSync(tempPath, strippedData);
+        try {
+          fs.renameSync(tempPath, filePath);
+        } catch (rnErr) {
+          fs.copyFileSync(tempPath, filePath);
+          try { fs.unlinkSync(tempPath); } catch (e) {}
+        }
+        logger.info(`[Whisper Media] Berhasil memotong prefix sampah (${ebmlOffset} bytes) dan memulihkan EBML header untuk: ${path.basename(filePath)}`);
+        return true;
+      }
+
+      // Kasus B: EBML header hilang total. Pinjam header dari Part_001.webm pada folder sesi yang sama / folder sibling
+      const parentDir = path.dirname(filePath);
+      let p1Path = path.join(parentDir, 'Part_001.webm');
+
+      if (!fs.existsSync(p1Path)) {
+        const baseFolder = path.basename(parentDir).replace(/_to_\d{2}-\d{2}-\d{2}$/i, '');
+        const rootDir = path.dirname(parentDir);
+        if (fs.existsSync(rootDir)) {
+          const siblings = fs.readdirSync(rootDir);
+          for (const sib of siblings) {
+            if (sib.startsWith(baseFolder)) {
+              const candidate = path.join(rootDir, sib, 'Part_001.webm');
+              if (fs.existsSync(candidate)) {
+                p1Path = candidate;
+                break;
+              }
+            }
+          }
+        }
+      }
+
+      if (fs.existsSync(p1Path) && path.resolve(p1Path) !== path.resolve(filePath)) {
+        let p1Fd = null;
+        try {
+          p1Fd = fs.openSync(p1Path, 'r');
+          const p1HeaderSample = Buffer.alloc(131072); // 128 KB
+          const bytesRead = fs.readSync(p1Fd, p1HeaderSample, 0, 131072, 0);
+          const p1Buf = p1HeaderSample.slice(0, bytesRead);
+          const clusterIdx = p1Buf.indexOf(clusterMarker);
+
+          if (clusterIdx > 0 && p1Buf.slice(0, 4).toString('hex') === '1a45dfa3') {
+            const headerBuf = p1Buf.slice(0, clusterIdx);
+            const repairedData = Buffer.concat([headerBuf, currentData]);
+            const tempPath = `${filePath}.repaired_${Date.now()}`;
+            fs.writeFileSync(tempPath, repairedData);
+            try {
+              fs.renameSync(tempPath, filePath);
+            } catch (rnErr) {
+              fs.copyFileSync(tempPath, filePath);
+              try { fs.unlinkSync(tempPath); } catch (e) {}
+            }
+            logger.info(`[Whisper Media] Berhasil menyematkan EBML header dari ${path.basename(p1Path)} ke ${path.basename(filePath)}`);
+            return true;
+          }
+        } finally {
+          if (p1Fd !== null) try { fs.closeSync(p1Fd); } catch(e) {}
+        }
+      }
+
+      return false;
+    } catch (err) {
+      logger.warn(`[Whisper Media] Gagal memperbaiki WebM ${path.basename(filePath)}: ${err.message}`);
+      return false;
+    } finally {
+      if (fd !== null) try { fs.closeSync(fd); } catch(e) {}
+    }
   }
 
   broadcastStatus(sessionFolder, fileName, status, error = null) {

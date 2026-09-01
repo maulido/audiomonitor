@@ -808,6 +808,9 @@ if (!gotTheLock) {
         audioWriteStream = null;
       }
 
+      // Selalu bersihkan antrean pending chunks agar potongan trailing dari Part sebelumnya tidak merusak header Part baru
+      pendingAudioChunks = [];
+
       const baseDir = recordDir && recordDir.trim() !== '' ? recordDir : path.join(app.getPath('documents'), 'AudioMonitor-Recordings');
       const sessionDir = path.join(baseDir, sessionFolderName || 'UnknownSession');
       currentSessionDir = sessionDir;
@@ -820,14 +823,6 @@ if (!gotTheLock) {
 
       audioWriteStream = fs.createWriteStream(filePath);
 
-      // Flush any pending chunks (e.g. EBML header sent just before stream was ready)
-      if (pendingAudioChunks.length > 0) {
-        for (const chunk of pendingAudioChunks) {
-          audioWriteStream.write(chunk);
-        }
-        pendingAudioChunks = [];
-      }
-
       writeAgentLog('INFO', `Memulai perekaman audio ke: ${filePath}`);
     } catch (error) {
       writeAgentLog('ERROR', `Gagal memulai perekaman: ${error.message}`);
@@ -838,10 +833,8 @@ if (!gotTheLock) {
     try {
       if (!arrayBuffer) return;
       const buf = Buffer.from(arrayBuffer);
-      if (audioWriteStream) {
+      if (audioWriteStream && audioWriteStream.writable) {
         audioWriteStream.write(buf);
-      } else if (currentSessionDir && pendingAudioChunks.length < 120) {
-        pendingAudioChunks.push(buf);
       }
     } catch (err) {
       writeAgentLog('WARN', `Gagal memproses save-audio-chunk: ${err.message}`);
@@ -853,9 +846,10 @@ if (!gotTheLock) {
     const capturedAgentName = currentAgentName;
     const capturedServerIp = currentServerIp;
 
+    pendingAudioChunks = [];
+
     if (!isRollover) {
       currentSessionDir = null;
-      pendingAudioChunks = [];
     }
 
     if (audioWriteStream) {

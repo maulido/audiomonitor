@@ -4352,6 +4352,66 @@ async function main() {
     assert(validJson.keywordsFound.includes('darurat'), 'Valid transcript updated with "darurat"');
   });
 
+  // =========================================================================
+  // SUITE 62: WebM Auto-Repair Invariants on Shifted EBML Headers & Rollover Chunks (Part 2, Part 3)
+  // =========================================================================
+  await runSuite('62. WebM Auto-Repair Invariants on Shifted EBML Headers & Rollover Chunks (Part 2, Part 3)', () => {
+    const repairDir = path.join(TEST_DIR, 'webm_repair_vault');
+    fs.mkdirSync(repairDir, { recursive: true });
+
+    const sessionDir = path.join(repairDir, 'Session_Roll_Test_2026-09-01');
+    fs.mkdirSync(sessionDir, { recursive: true });
+
+    const tm = new TranscriptionManager(null, null, null, null);
+
+    // 1. Buat Part_001.webm yang valid dengan EBML header lengkap (1A 45 DF A3 ...) dan Cluster element (1F 43 B6 75)
+    const validEbmlHeader = Buffer.from([
+      0x1a, 0x45, 0xdf, 0xa3, 0x01, 0x00, 0x00, 0x00, // EBML ID & Size
+      0x42, 0x86, 0x81, 0x01,                         // EBMLVersion
+      0x42, 0x82, 0x84, 0x77, 0x65, 0x62, 0x6d,       // DocType: 'webm'
+      0x18, 0x53, 0x80, 0x67, 0x01, 0x00, 0x00, 0x00, // Segment ID & Size
+      0x1f, 0x43, 0xb6, 0x75, 0x01, 0x00, 0x00, 0x00, // Cluster ID
+      0x01, 0x02, 0x03, 0x04                          // Audio Payload
+    ]);
+    const p1Path = path.join(sessionDir, 'Part_001.webm');
+    fs.writeFileSync(p1Path, validEbmlHeader);
+
+    // Test Case 1: Part 1 valid tidak perlu diperbaiki dan mengembalikan true
+    const p1Res = tm.repairWebMFile(p1Path);
+    assertEqual(p1Res, true, 'Valid Part 1 WebM passes repair check');
+
+    // Test Case 2: Part 2 memiliki sampah trailing cluster di byte 0-63, kemudian baru EBML header di offset 64
+    const garbagePrefix = Buffer.from('GARBAGE_CLUSTER_TRAILING_DATA_FROM_PART_001_LEAKED_TO_PART_002_CHUNK');
+    const shiftedPart2Data = Buffer.concat([garbagePrefix, validEbmlHeader]);
+    const p2Path = path.join(sessionDir, 'Part_002.webm');
+    fs.writeFileSync(p2Path, shiftedPart2Data);
+
+    // Verifikasi bahwa file Part 2 sebelum diperbaiki TIDAK diawali EBML header
+    const p2RawBefore = fs.readFileSync(p2Path);
+    assert(p2RawBefore.slice(0, 4).toString('hex') !== '1a45dfa3', 'Part 2 before repair does not start with EBML magic');
+
+    // Jalankan repairWebMFile
+    const p2Res = tm.repairWebMFile(p2Path);
+    assertEqual(p2Res, true, 'Shifted Part 2 WebM successfully repaired');
+
+    // Verifikasi Part 2 setelah diperbaiki sudah diawali 1a 45 df a3 dan prefix sampah terpotong
+    const p2RawAfter = fs.readFileSync(p2Path);
+    assertEqual(p2RawAfter.slice(0, 4).toString('hex'), '1a45dfa3', 'Part 2 after repair starts with EBML magic (1a45dfa3)');
+    assertEqual(p2RawAfter.length, validEbmlHeader.length, 'Garbage prefix stripped cleanly');
+
+    // Test Case 3: Part 3 tanpa EBML header sama sekali (pure audio cluster continuation)
+    const pureClusterData = Buffer.from([0x1f, 0x43, 0xb6, 0x75, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff]);
+    const p3Path = path.join(sessionDir, 'Part_003.webm');
+    fs.writeFileSync(p3Path, pureClusterData);
+
+    const p3Res = tm.repairWebMFile(p3Path);
+    assertEqual(p3Res, true, 'Pure cluster Part 3 WebM successfully synthesized header from Part 1');
+
+    const p3RawAfter = fs.readFileSync(p3Path);
+    assertEqual(p3RawAfter.slice(0, 4).toString('hex'), '1a45dfa3', 'Part 3 after synthesis starts with EBML magic');
+    assert(p3RawAfter.length > pureClusterData.length, 'Part 3 size increased by synthesized header size');
+  });
+
   // Clean up test directory
   try {
     fs.rmSync(TEST_DIR, { recursive: true, force: true });
