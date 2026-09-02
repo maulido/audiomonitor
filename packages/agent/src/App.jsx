@@ -156,7 +156,15 @@ function App() {
         if (obsClient.current) {
           obsClient.current.getDetailedSources().then(sources => {
             setObsSources(sources);
-            const currentSource = sources.find(s => s.name === obsSourceNameRef.current);
+            let currentSource = sources.find(s => s.name === obsSourceNameRef.current);
+            if (!currentSource && sources.length > 0) {
+              const micSource = sources.find(s => s.name.toLowerCase().includes('mic') || s.name.toLowerCase().includes('audio input') || s.name.toLowerCase().includes('capture')) || sources[0];
+              if (micSource) {
+                setObsSourceName(micSource.name);
+                obsSourceNameRef.current = micSource.name;
+                currentSource = micSource;
+              }
+            }
             if (currentSource) setIsObsMutedBtn(currentSource.muted);
           }).catch(console.error);
         }
@@ -636,7 +644,15 @@ function App() {
         obsClient.current.getAudioInputs().then(inputs => setObsInputs(inputs)).catch(console.error);
         obsClient.current.getDetailedSources().then(sources => {
           setObsSources(sources);
-          const currentSource = sources.find(s => s.name === obsSourceNameRef.current);
+          let currentSource = sources.find(s => s.name === obsSourceNameRef.current);
+          if (!currentSource && sources.length > 0) {
+            const micSource = sources.find(s => s.name.toLowerCase().includes('mic') || s.name.toLowerCase().includes('audio input') || s.name.toLowerCase().includes('capture')) || sources[0];
+            if (micSource) {
+              setObsSourceName(micSource.name);
+              obsSourceNameRef.current = micSource.name;
+              currentSource = micSource;
+            }
+          }
           if (currentSource) setIsObsMutedBtn(currentSource.muted);
         }).catch(console.error);
         obsClient.current.getStreamStatus().then(status => {
@@ -665,12 +681,23 @@ function App() {
         obsClient.current.onMuteStateChange = (inputName, isMuted) => {
           if (inputName === obsSourceNameRef.current) {
             setIsObsMutedBtn(isMuted);
+          } else if (!obsSourceNameRef.current || obsSourceNameRef.current === 'Mic/Aux') {
+            setIsObsMutedBtn(isMuted);
+            setObsSourceName(inputName);
+            obsSourceNameRef.current = inputName;
           }
         };
       },
       () => { setObsConnected(false); if (window.electronAPI && window.electronAPI.writeLog) window.electronAPI.writeLog('WARN', 'OBS Terputus'); },
       (inputs) => {
-        const source = inputs.find(i => i.inputName === obsSourceNameRef.current);
+        let source = inputs.find(i => i.inputName === obsSourceNameRef.current);
+        if (!source && inputs.length > 0) {
+          source = inputs.find(i => i.inputName.toLowerCase().includes('mic') || i.inputName.toLowerCase().includes('audio input') || i.inputName.toLowerCase().includes('capture')) || inputs[0];
+          if (source && (!obsSourceNameRef.current || obsSourceNameRef.current === 'Mic/Aux')) {
+            setObsSourceName(source.inputName);
+            obsSourceNameRef.current = source.inputName;
+          }
+        }
         if (source && source.inputLevelsMul && source.inputLevelsMul[0] && source.inputLevelsMul[0].length > 0) {
           const levelMul = source.inputLevelsMul[0][1] || source.inputLevelsMul[0][0] || 0;
           const db = levelMul > 0 ? 20 * Math.log10(levelMul) : -100;
