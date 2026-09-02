@@ -174,8 +174,8 @@ class TranscriptionManager {
     }
 
     const controller = new AbortController();
-    const timeoutMs = 120000;
-    const timeoutId = setTimeout(() => controller.abort(new Error('Whisper API request timeout')), timeoutMs);
+    const timeoutMs = 600000; // 10 menit (600 detik) untuk audio durasi panjang / inferensi CPU
+    const timeoutId = setTimeout(() => controller.abort(new Error('Whisper API request timeout (10 menit terlampaui)')), timeoutMs);
 
     let rawData;
     try {
@@ -736,26 +736,56 @@ class TranscriptionManager {
 
       // Kasus B: EBML header hilang total. Pinjam header dari Part_001.webm pada folder sesi yang sama / folder sibling
       const parentDir = path.dirname(filePath);
-      let p1Path = path.join(parentDir, 'Part_001.webm');
+      let p1Path = null;
+      const candidates = ['Part_001.webm', 'part_1.webm', 'part_001.webm', 'Part_1.webm'];
+      for (const cand of candidates) {
+        const fullCandidate = path.join(parentDir, cand);
+        if (fs.existsSync(fullCandidate) && path.resolve(fullCandidate) !== path.resolve(filePath)) {
+          p1Path = fullCandidate;
+          break;
+        }
+      }
 
-      if (!fs.existsSync(p1Path)) {
+      if (!p1Path) {
+        // Cari berkas .webm lain di folder sesi yang diawali EBML header valid
+        try {
+          const sessionFiles = fs.readdirSync(parentDir).filter(f => f.endsWith('.webm') && path.join(parentDir, f) !== filePath);
+          sessionFiles.sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+          for (const sFile of sessionFiles) {
+            const sPath = path.join(parentDir, sFile);
+            const headerCheck = Buffer.alloc(4);
+            const sFd = fs.openSync(sPath, 'r');
+            fs.readSync(sFd, headerCheck, 0, 4, 0);
+            fs.closeSync(sFd);
+            if (headerCheck.toString('hex') === '1a45dfa3') {
+              p1Path = sPath;
+              break;
+            }
+          }
+        } catch (scanErr) {}
+      }
+
+      if (!p1Path) {
         const baseFolder = path.basename(parentDir).replace(/_to_\d{2}-\d{2}-\d{2}$/i, '');
         const rootDir = path.dirname(parentDir);
         if (fs.existsSync(rootDir)) {
           const siblings = fs.readdirSync(rootDir);
           for (const sib of siblings) {
             if (sib.startsWith(baseFolder)) {
-              const candidate = path.join(rootDir, sib, 'Part_001.webm');
-              if (fs.existsSync(candidate)) {
-                p1Path = candidate;
-                break;
+              for (const cand of candidates) {
+                const candidate = path.join(rootDir, sib, cand);
+                if (fs.existsSync(candidate) && path.resolve(candidate) !== path.resolve(filePath)) {
+                  p1Path = candidate;
+                  break;
+                }
               }
+              if (p1Path) break;
             }
           }
         }
       }
 
-      if (fs.existsSync(p1Path) && path.resolve(p1Path) !== path.resolve(filePath)) {
+      if (p1Path && fs.existsSync(p1Path) && path.resolve(p1Path) !== path.resolve(filePath)) {
         let p1Fd = null;
         try {
           p1Fd = fs.openSync(p1Path, 'r');

@@ -1060,6 +1060,7 @@ class ServerApp {
 
         try {
           const result = await this.transcriptionManager.transcribeFile(filePath, safeFolder, safeFile, pcName);
+          this.invalidateRecordsCache();
           return res.json({ success: true, transcript: result });
         } catch (err) {
           logger.error(`[Whisper] Gagal transkripsi manual ${safeFile}: ${err.message}`);
@@ -1085,6 +1086,7 @@ class ServerApp {
             }
           }
 
+          this.invalidateRecordsCache();
           const combinedTranscript = this.transcriptionManager.getTranscriptForSession(folderPath);
           return res.json({ success: true, transcript: combinedTranscript });
         } catch (err) {
