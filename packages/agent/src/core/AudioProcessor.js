@@ -15,7 +15,10 @@ class AudioProcessor {
     this.animationFrame = null;
     this.onLevelChange = onLevelChange; // Callback for UI
     this.onDeviceDisconnected = null; // Callback when mic hardware is unplugged
+    this.onDeviceReconnected = null; // Callback when mic hardware recovers
     this.isDeviceDisconnected = false;
+    this.currentDeviceId = null;
+    this.reconnectTimer = null;
   }
 
   /**
@@ -24,6 +27,11 @@ class AudioProcessor {
    * @param {string|null} deviceId - ID Perangkat mikrofon yang ingin digunakan. Jika null, menggunakan mikrofon default.
    */
   async start(deviceId = null) {
+    this.currentDeviceId = deviceId;
+    if (this.reconnectTimer) {
+      clearInterval(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
     this.stop(); // Bersihkan context dan stream lama sebelum membuat yang baru
     try {
       // Mendefinisikan aturan permintaan media (hanya audio)
@@ -41,6 +49,20 @@ class AudioProcessor {
           this.stopRecording();
           if (typeof this.onDeviceDisconnected === 'function') {
             try { this.onDeviceDisconnected(); } catch (e) {}
+          }
+
+          // Auto-reconnect polling retry
+          if (!this.reconnectTimer) {
+            this.reconnectTimer = setInterval(async () => {
+              try {
+                const ok = await this.start(this.currentDeviceId);
+                if (ok) {
+                  if (typeof this.onDeviceReconnected === 'function') {
+                    try { this.onDeviceReconnected(); } catch (e) {}
+                  }
+                }
+              } catch (e) {}
+            }, 2000);
           }
         };
       });
@@ -287,6 +309,10 @@ class AudioProcessor {
   }
 
   stop() {
+    if (this.reconnectTimer) {
+      clearInterval(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
     this.stopRecording();
     this.isRunning = false;
     if (this.animationFrame) clearTimeout(this.animationFrame);

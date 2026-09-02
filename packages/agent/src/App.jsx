@@ -559,6 +559,12 @@ function App() {
       if (noiseFloorDb !== undefined) setMicNoiseFloor(noiseFloorDb);
       setMicHum(humDetected || null);
       if (spectrum8Band) setMicSpectrum(spectrum8Band);
+
+      // Self-healing: jika data audio masuk (level > 0 atau dB > -60), hardware pasti terhubung
+      if (isMicHardwareDisconnectedRef.current && (db > -60 || level > 0)) {
+        setIsMicHardwareDisconnected(false);
+        silenceScore.current = 0;
+      }
     });
 
     audioProcessor.current.onDeviceDisconnected = () => {
@@ -568,20 +574,34 @@ function App() {
       }
     };
 
+    audioProcessor.current.onDeviceReconnected = () => {
+      setIsMicHardwareDisconnected(false);
+      silenceScore.current = 0;
+      if (window.electronAPI && window.electronAPI.writeLog) {
+        window.electronAPI.writeLog('INFO', 'Hardware Mikrofon Terhubung Kembali');
+      }
+    };
+
     const handleDeviceChange = async () => {
       try {
         const devices = await navigator.mediaDevices.enumerateDevices();
         const audioInputs = devices.filter(device => device.kind === 'audioinput');
         setAudioDevices(audioInputs);
 
-        const currentMicExists = audioInputs.some(d => d.deviceId === selectedMicIdRef.current || (!selectedMicIdRef.current && (d.deviceId === 'default' || d.deviceId)));
-        if (!currentMicExists && audioInputs.length === 0) {
+        if (audioInputs.length === 0) {
           setIsMicHardwareDisconnected(true);
-        } else if (isMicHardwareDisconnectedRef.current && audioInputs.length > 0) {
-          // Device reconnected! Auto-recovery
+        } else {
           setIsMicHardwareDisconnected(false);
-          const micToUse = selectedMicIdRef.current || audioInputs[0].deviceId;
-          audioProcessor.current.start(micToUse).catch(console.error);
+          silenceScore.current = 0;
+          const currentMicExists = audioInputs.some(d => d.deviceId === selectedMicIdRef.current);
+          const micToUse = currentMicExists ? selectedMicIdRef.current : (audioInputs[0]?.deviceId || 'default');
+          if (!currentMicExists && audioInputs[0]) {
+            setSelectedMicId(audioInputs[0].deviceId);
+            setMicDriverName(audioInputs[0].label || 'Default Microphone');
+          }
+          if (audioProcessor.current) {
+            audioProcessor.current.start(micToUse).catch(console.error);
+          }
         }
       } catch (err) {}
     };
@@ -719,6 +739,8 @@ function App() {
   const handleMicChange = async (e) => {
     const newMicId = e.target.value;
     setSelectedMicId(newMicId);
+    setIsMicHardwareDisconnected(false);
+    silenceScore.current = 0;
     if (window.electronAPI && window.electronAPI.writeLog) window.electronAPI.writeLog('INFO', 'Mengganti Mic ke: ' + newMicId);
 
     const selectedDevice = audioDevices.find(d => d.deviceId === newMicId);
@@ -814,25 +836,28 @@ function App() {
     }
 
     // Silence & Dead Mic Logic via tick score (hanya dievaluasi jika OBS tidak sedang di-mute)
-    if (isMicHardwareDisconnected) {
+    const hasAudioActivity = currentMicLevel.current >= 2 || currentRawMicLevel.current >= 2 || currentObsLevel.current >= 2;
+
+    if (hasAudioActivity) {
+      silenceScore.current = 0;
+      if (isMicHardwareDisconnected) {
+        setIsMicHardwareDisconnected(false);
+      }
+      if (nextStatus === 'STANDBY_DIAM' || nextStatus === 'BAHAYA_MIC_MATI') {
+        nextStatus = 'AMAN';
+      }
+    } else if (isMicHardwareDisconnected) {
       nextStatus = 'BAHAYA_MIC_MATI';
       silenceScore.current = deadMicTimeoutSec * 1000;
     } else if (!isActuallyMuted) {
-      if (currentMicLevel.current < 2 && currentObsLevel.current < 2) {
-        silenceScore.current += 100;
-        if (silenceScore.current >= deadMicTimeoutSec * 1000) {
-          if (!nextStatus.startsWith('BAHAYA')) {
-            nextStatus = 'BAHAYA_MIC_MATI';
-          }
-        } else if (silenceScore.current >= silenceTimeoutSec * 1000) {
-          if (!nextStatus.startsWith('BAHAYA')) {
-            nextStatus = 'STANDBY_DIAM';
-          }
+      silenceScore.current += 100;
+      if (silenceScore.current >= deadMicTimeoutSec * 1000) {
+        if (!nextStatus.startsWith('BAHAYA')) {
+          nextStatus = 'BAHAYA_MIC_MATI';
         }
-      } else {
-        silenceScore.current = 0;
-        if (nextStatus === 'STANDBY_DIAM' || nextStatus === 'BAHAYA_MIC_MATI') {
-          nextStatus = 'AMAN';
+      } else if (silenceScore.current >= silenceTimeoutSec * 1000) {
+        if (!nextStatus.startsWith('BAHAYA')) {
+          nextStatus = 'STANDBY_DIAM';
         }
       }
     } else {
