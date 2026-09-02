@@ -67,6 +67,35 @@ class ServerApp {
 
     this.setupMiddleware();
     this.setupRoutes();
+    this.startPeriodicMaintenance();
+  }
+
+  /**
+   * Menjalankan pemeliharaan background berkala (auto-cleanup insiden database, auto-purge audio lawas, dan auto-archive).
+   */
+  startPeriodicMaintenance() {
+    if (this._maintenanceTimer) return;
+    this._maintenanceTimer = setInterval(async () => {
+      try {
+        const recordsDir = this.getRecordsDir();
+        const retentionDays = this.configManager.config.logRetentionDays || 30;
+        this.dbManager.autoCleanup(retentionDays);
+
+        if (this.storageAutomationManager) {
+          const autoPurgeRes = await this.storageAutomationManager.runAutoPurgeRawAudio(recordsDir);
+          if (autoPurgeRes && autoPurgeRes.purgedSessions > 0) {
+            this.invalidateRecordsCache();
+          }
+          await this.storageAutomationManager.runAutoArchive(recordsDir);
+        }
+      } catch (err) {
+        logger.error(`[Maintenance] Error running periodic maintenance: ${err.message}`);
+      }
+    }, 3600000); // Setiap 1 jam
+
+    if (this._maintenanceTimer.unref) {
+      this._maintenanceTimer.unref();
+    }
   }
 
   /**
@@ -1121,7 +1150,10 @@ class ServerApp {
       if (updateData.alertKeywords !== undefined) {
         setTimeout(() => {
           try {
-            this.transcriptionManager.rescanAllTranscripts(this.getRecordsDir());
+            const rescanRes = this.transcriptionManager.rescanAllTranscripts(this.getRecordsDir());
+            if (rescanRes && rescanRes.updatedFiles > 0) {
+              this.invalidateRecordsCache();
+            }
           } catch (rErr) {
             logger.warn(`[Whisper] Background rescan kata bahaya: ${rErr.message}`);
           }
@@ -1137,6 +1169,9 @@ class ServerApp {
         const recordsDir = this.getRecordsDir();
         logger.info('[Whisper] Memicu pemindaian ulang kata bahaya pada seluruh riwayat rekaman');
         const result = this.transcriptionManager.rescanAllTranscripts(recordsDir);
+        if (result && result.updatedFiles > 0) {
+          this.invalidateRecordsCache();
+        }
         res.json({ success: true, ...result });
       } catch (err) {
         logger.error(`[Whisper] Error rescan keywords: ${err.message}`);
