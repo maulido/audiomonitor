@@ -914,7 +914,7 @@ function App() {
       obsConnected,
       isObsMutedBtn,
       status,
-      muteDangerProgress: isActuallyMuted ? Math.min(100, Math.max(0, Math.round((dangerScore.current / (Math.max(1, obsMuteTimeoutSec) * 1000)) * 100))) : 0,
+      muteDangerProgress: (obsConnected && Boolean(isObsMutedBtn)) ? Math.min(100, Math.max(0, Math.round((dangerScore.current / (Math.max(1, obsMuteTimeoutSec) * 1000)) * 100))) : 0,
       dangerScoreMs: Math.max(0, dangerScore.current),
       silenceDurationSec: Math.round(silenceScore.current / 1000),
       deadMicProgress: Math.min(100, Math.max(0, Math.round((silenceScore.current / (Math.max(1, deadMicTimeoutSec) * 1000)) * 100))),
