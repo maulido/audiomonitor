@@ -2408,7 +2408,7 @@ function App() {
 
                     <div className={statusAreaClass}>
                       <h3 className="status-text">
-                        {agent.status === 'WASPADA_BICARA_MUTE' ? 'WASPADA: BICARA SAAT MUTE' : (agent.status === 'STANDBY_MUTE' ? 'MUTE (DIAM)' : (agent.status || '').replace(/_/g, ' '))}
+                        {agent.isMicHardwareDisconnected || agent.status === 'BAHAYA_MIC_MATI' ? 'BAHAYA: MIC MATI / TERPUTUS' : (agent.status === 'WASPADA_BICARA_MUTE' ? 'WASPADA: BICARA SAAT MUTE' : (agent.status === 'STANDBY_MUTE' ? 'MUTE (DIAM)' : (agent.status === 'STANDBY_DIAM' ? 'STANDBY (DIAM)' : (agent.status || '').replace(/_/g, ' '))))}
                       </h3>
                       {!isOffline && (
                           <>
@@ -2546,6 +2546,19 @@ function App() {
                         </div>
                         <div style={{ width: '100%', height: '4px', background: 'rgba(255,255,255,0.1)', borderRadius: '2px', overflow: 'hidden' }}>
                           <div style={{ width: `${Math.min(100, Math.max(5, agent.muteDangerProgress || 0))}%`, height: '100%', background: 'linear-gradient(90deg, #f97316, #ef4444)', transition: 'width 0.15s ease' }}></div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Live Silence Duration Tracker when Standby */}
+                    {agent.status === 'STANDBY_DIAM' && (agent.silenceDurationSec || 0) > 0 && (
+                      <div style={{ margin: '0 14px 8px 14px', background: 'rgba(59, 130, 246, 0.08)', border: '1px solid rgba(59, 130, 246, 0.25)', borderRadius: '6px', padding: '6px 10px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.73rem', fontWeight: 'bold', color: '#60a5fa' }}>
+                          <span><i className="fa-solid fa-microphone-slash" style={{ marginRight: '5px' }}></i>Hening / Jeda Bicara</span>
+                          <span>{agent.silenceDurationSec || 0}s / {agent.deadMicTimeoutSec || 60}s ({agent.deadMicProgress || 0}%)</span>
+                        </div>
+                        <div style={{ width: '100%', height: '4px', background: 'rgba(255,255,255,0.1)', borderRadius: '2px', overflow: 'hidden' }}>
+                          <div style={{ width: `${Math.min(100, Math.max(5, agent.deadMicProgress || 0))}%`, height: '100%', background: 'linear-gradient(90deg, #3b82f6, #f59e0b)', transition: 'width 0.15s ease' }}></div>
                         </div>
                       </div>
                     )}

@@ -14,6 +14,8 @@ class AudioProcessor {
     this.microphone = null;
     this.animationFrame = null;
     this.onLevelChange = onLevelChange; // Callback for UI
+    this.onDeviceDisconnected = null; // Callback when mic hardware is unplugged
+    this.isDeviceDisconnected = false;
   }
 
   /**
@@ -32,9 +34,14 @@ class AudioProcessor {
       
       // Meminta akses aliran (stream) mikrofon dari sistem operasi
       this.stream = await navigator.mediaDevices.getUserMedia(constraints);
+      this.isDeviceDisconnected = false;
       this.stream.getTracks().forEach(track => {
         track.onended = () => {
+          this.isDeviceDisconnected = true;
           this.stopRecording();
+          if (typeof this.onDeviceDisconnected === 'function') {
+            try { this.onDeviceDisconnected(); } catch (e) {}
+          }
         };
       });
       

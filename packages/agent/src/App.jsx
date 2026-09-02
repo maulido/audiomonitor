@@ -123,6 +123,12 @@ function App() {
   useEffect(() => { audioDevicesRef.current = audioDevices; }, [audioDevices]);
 
 
+  const [isMicHardwareDisconnected, setIsMicHardwareDisconnected] = useState(false);
+  const isMicHardwareDisconnectedRef = useRef(false);
+  useEffect(() => { isMicHardwareDisconnectedRef.current = isMicHardwareDisconnected; }, [isMicHardwareDisconnected]);
+  const selectedMicIdRef = useRef(selectedMicId);
+  useEffect(() => { selectedMicIdRef.current = selectedMicId; }, [selectedMicId]);
+
   const [tick, setTick] = useState(0);
   useEffect(() => {
     const interval = setInterval(() => setTick(t => t + 1), 100);
@@ -555,6 +561,35 @@ function App() {
       if (spectrum8Band) setMicSpectrum(spectrum8Band);
     });
 
+    audioProcessor.current.onDeviceDisconnected = () => {
+      setIsMicHardwareDisconnected(true);
+      if (window.electronAPI && window.electronAPI.writeLog) {
+        window.electronAPI.writeLog('ERROR', 'Hardware Mikrofon Terputus / Tercabut');
+      }
+    };
+
+    const handleDeviceChange = async () => {
+      try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const audioInputs = devices.filter(device => device.kind === 'audioinput');
+        setAudioDevices(audioInputs);
+
+        const currentMicExists = audioInputs.some(d => d.deviceId === selectedMicIdRef.current || (!selectedMicIdRef.current && (d.deviceId === 'default' || d.deviceId)));
+        if (!currentMicExists && audioInputs.length === 0) {
+          setIsMicHardwareDisconnected(true);
+        } else if (isMicHardwareDisconnectedRef.current && audioInputs.length > 0) {
+          // Device reconnected! Auto-recovery
+          setIsMicHardwareDisconnected(false);
+          const micToUse = selectedMicIdRef.current || audioInputs[0].deviceId;
+          audioProcessor.current.start(micToUse).catch(console.error);
+        }
+      } catch (err) {}
+    };
+
+    if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
+      navigator.mediaDevices.addEventListener('devicechange', handleDeviceChange);
+    }
+
     // Fetch Devices
     navigator.mediaDevices.enumerateDevices().then(devices => {
       const audioInputs = devices.filter(device => device.kind === 'audioinput');
@@ -776,7 +811,10 @@ function App() {
     }
 
     // Silence & Dead Mic Logic via tick score (hanya dievaluasi jika OBS tidak sedang di-mute)
-    if (!isActuallyMuted) {
+    if (isMicHardwareDisconnected) {
+      nextStatus = 'BAHAYA_MIC_MATI';
+      silenceScore.current = deadMicTimeoutSec * 1000;
+    } else if (!isActuallyMuted) {
       if (currentMicLevel.current < 2 && currentObsLevel.current < 2) {
         silenceScore.current += 100;
         if (silenceScore.current >= deadMicTimeoutSec * 1000) {
@@ -875,6 +913,9 @@ function App() {
       status,
       muteDangerProgress: (isObsMutedBtn || (currentObsLevel.current < 0.5)) ? Math.min(100, Math.max(0, Math.round((dangerScore.current / (Math.max(1, obsMuteTimeoutSec) * 1000)) * 100))) : 0,
       dangerScoreMs: Math.max(0, dangerScore.current),
+      silenceDurationSec: Math.round(silenceScore.current / 1000),
+      deadMicProgress: Math.min(100, Math.max(0, Math.round((silenceScore.current / (Math.max(1, deadMicTimeoutSec) * 1000)) * 100))),
+      isMicHardwareDisconnected,
       lufs: micLufs,
       truePeak: micTruePeak,
       noiseFloorDb: micNoiseFloor,
