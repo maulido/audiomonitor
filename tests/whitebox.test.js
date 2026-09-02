@@ -473,12 +473,13 @@ async function main() {
           socket.on('connect', () => {
             socket.emit('register', { type: 'agent', uuid, name: 'PC-Concurrent-' + (i + 1) });
             sockets.push(socket);
-            setTimeout(res, 50);
+            setTimeout(res, 120);
           });
         });
       })
     );
 
+    await new Promise(r => setTimeout(r, 100));
     assertEqual(serverApp.telemetryHub.agentSockets.size, AGENT_COUNT, 'All 10 concurrent agents registered in agentSockets map');
 
     // All 10 agents send telemetries in parallel

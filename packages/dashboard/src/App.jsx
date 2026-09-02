@@ -3452,7 +3452,13 @@ function App() {
                   return (
                     <div className="settings-card" key={pc} style={{ marginBottom: '24px' }}>
                       <div className="settings-card-accent purple"></div>
-                      <div className="settings-card-header" style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => setCollapsedPcs(prev => ({ ...prev, [pc]: !prev[pc] }))}>
+                      <div className="settings-card-content" style={{ padding: '0', display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
+                        {/* PC Header (Collapsible / Minimize Toggle) */}
+                        <div 
+                          className="pc-header-collapsible"
+                          onClick={() => setCollapsedPcs(prev => ({ ...prev, [pc]: !prev[pc] }))}
+                          title="Klik untuk memperluas / mengecilkan daftar rekaman PC ini"
+                        >
                         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
                           <h3 style={{ margin: 0, fontSize: '1.05rem', color: 'var(--text-main)' }}>
                             <i className="fa-solid fa-desktop" style={{ color: 'var(--accent)', marginRight: '8px' }}></i>
@@ -3945,6 +3951,7 @@ function App() {
                           </>
                         )}
                       </div>
+                    </div>
                     );
                   })
               )}
