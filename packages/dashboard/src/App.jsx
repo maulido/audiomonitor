@@ -2040,13 +2040,21 @@ function App() {
     'BAHAYA_OBS_MUTE': 1,
     'BAHAYA_AUDIO_PECAH': 2,
     'BAHAYA_MIC_MATI': 3,
-    'STANDBY_DIAM': 4,
-    'AMAN': 5,
+    'WASPADA_BICARA_MUTE': 4,
+    'STANDBY_MUTE': 5,
+    'STANDBY_DIAM': 6,
+    'AMAN': 7,
     'OFFLINE': 99
   };
 
   const sortedFilteredAgents = agentsArray
-    .filter(agent => filterStatus === 'ALL' || (filterStatus === 'BAHAYA' ? agent.status?.startsWith('BAHAYA') : agent.status === filterStatus))
+    .filter(agent => {
+      if (filterStatus === 'ALL') return true;
+      if (filterStatus === 'BAHAYA') return agent.status?.startsWith('BAHAYA');
+      if (filterStatus === 'MUTE') return agent.isObsMutedBtn || agent.status === 'STANDBY_MUTE' || agent.status === 'WASPADA_BICARA_MUTE' || agent.status === 'BAHAYA_OBS_MUTE' || (agent.obsDb !== undefined && agent.obsDb <= -90);
+      if (filterStatus === 'AMAN') return agent.status === 'AMAN';
+      return agent.status === filterStatus;
+    })
     .filter(agent => !searchTerm || (agent.pcName && agent.pcName.toLowerCase().includes(searchTerm.toLowerCase())))
     .sort((a, b) => {
       const pA = statusPriority[a.status] || 99;
@@ -2217,9 +2225,9 @@ function App() {
                 </div>
                 <div className="summary-card danger">
                   <div className="summary-value">
-                    <span style={{color: 'var(--danger)'}}>{Object.values(agents).filter(a => a.status !== 'OFFLINE' && a.status && (a.status === 'BAHAYA_MIC_MATI' || a.status === 'BAHAYA_AUDIO_PECAH')).length}</span>
+                    <span style={{color: 'var(--danger)'}}>{Object.values(agents).filter(a => a.status !== 'OFFLINE' && a.status && a.status.startsWith('BAHAYA')).length}</span>
                     <span style={{fontSize: '1.2rem', color: '#444', margin: '0 8px'}}>/</span>
-                    <span style={{color: 'var(--warning)'}}>{Object.values(agents).filter(a => a.status !== 'OFFLINE' && a.status === 'BAHAYA_OBS_MUTE').length}</span>
+                    <span style={{color: 'var(--warning)'}}>{Object.values(agents).filter(a => a.status !== 'OFFLINE' && (a.isObsMutedBtn || a.status === 'STANDBY_MUTE' || a.status === 'WASPADA_BICARA_MUTE' || a.status === 'BAHAYA_OBS_MUTE' || (a.obsDb !== undefined && a.obsDb <= -90 && a.obsConnected))).length}</span>
                   </div>
                   <div className="summary-label">Bahaya / Mute</div>
                 </div>
@@ -2227,7 +2235,7 @@ function App() {
                   <div className="summary-value">
                     <span style={{color: 'var(--success)'}}>{Object.values(agents).filter(a => a.status !== 'OFFLINE' && a.status === 'AMAN').length}</span>
                     <span style={{fontSize: '1.2rem', color: '#444', margin: '0 8px'}}>/</span>
-                    <span style={{color: 'var(--text-main)'}}>{Object.values(agents).filter(a => a.status !== 'OFFLINE' && (!a.status || a.status === 'STANDBY_DIAM')).length}</span>
+                    <span style={{color: 'var(--text-main)'}}>{Object.values(agents).filter(a => a.status !== 'OFFLINE' && (!a.status || a.status === 'STANDBY_DIAM' || a.status === 'STANDBY_MUTE' || a.status === 'WASPADA_BICARA_MUTE')).length}</span>
                   </div>
                   <div className="summary-label">Aman / Standby</div>
                 </div>
@@ -2259,6 +2267,7 @@ function App() {
                 <select className="filter-select" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
                 <option value="ALL">Semua Status</option>
                 <option value="BAHAYA">Hanya Bahaya</option>
+                <option value="MUTE">Hanya Mute</option>
                 <option value="AMAN">Hanya Aman</option>
               </select>
             </div>
@@ -2267,11 +2276,15 @@ function App() {
               {sortedFilteredAgents.map(agent => {
                 const isOffline = agent.status === 'OFFLINE';
                 const isDanger = agent.status && agent.status.startsWith('BAHAYA');
+                const isWarning = agent.status === 'WASPADA_BICARA_MUTE';
+                const isMuteStandby = agent.status === 'STANDBY_MUTE';
                 const isStandby = agent.status && agent.status.startsWith('STANDBY');
                 
                 let cardClass = 'agent-card';
                 if (isOffline) cardClass += ' offline';
                 else if (isDanger) cardClass += ' danger';
+                else if (isWarning) cardClass += ' warning';
+                else if (isMuteStandby) cardClass += ' mute-standby';
                 else if (isStandby) cardClass += ' standby';
                 
                 if (agent.isMonitoringActive === false && !isOffline) cardClass += ' monitoring-off';
@@ -2279,6 +2292,8 @@ function App() {
                 let statusAreaClass = 'status-area';
                 if (isOffline) statusAreaClass += ' offline';
                 else if (isDanger) statusAreaClass += ' danger';
+                else if (isWarning) statusAreaClass += ' warning';
+                else if (isMuteStandby) statusAreaClass += ' mute-standby';
 
                 return (
                   <div key={agent.uuid} className={cardClass}>
@@ -2392,7 +2407,9 @@ function App() {
                     </div>
 
                     <div className={statusAreaClass}>
-                      <h3 className="status-text">{(agent.status || '').replace(/_/g, ' ')}</h3>
+                      <h3 className="status-text">
+                        {agent.status === 'WASPADA_BICARA_MUTE' ? 'WASPADA: BICARA SAAT MUTE' : (agent.status === 'STANDBY_MUTE' ? 'MUTE (DIAM)' : (agent.status || '').replace(/_/g, ' '))}
+                      </h3>
                       {!isOffline && (
                           <>
                           <div className="hw-stats">
@@ -2519,6 +2536,19 @@ function App() {
                         </div>
                       </div>
                     </div>
+
+                    {/* Live Danger Charge Meter for Speech While Muted */}
+                    {(agent.status === 'WASPADA_BICARA_MUTE' || (agent.muteDangerProgress !== undefined && agent.muteDangerProgress > 0 && agent.status !== 'BAHAYA_OBS_MUTE')) && (
+                      <div style={{ margin: '0 14px 8px 14px', background: 'rgba(249, 115, 22, 0.12)', border: '1px solid rgba(249, 115, 22, 0.35)', borderRadius: '6px', padding: '6px 10px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.73rem', fontWeight: 'bold', color: '#fb923c' }}>
+                          <span><i className="fa-solid fa-triangle-exclamation" style={{ marginRight: '5px' }}></i>Bicara Saat Mute</span>
+                          <span>{agent.dangerScoreMs ? `${(agent.dangerScoreMs / 1000).toFixed(1)}s` : `${((agent.muteDangerProgress * (agent.obsMuteTimeoutSec || 3)) / 100).toFixed(1)}s`} / {agent.obsMuteTimeoutSec || 3}s ({agent.muteDangerProgress || 0}%)</span>
+                        </div>
+                        <div style={{ width: '100%', height: '4px', background: 'rgba(255,255,255,0.1)', borderRadius: '2px', overflow: 'hidden' }}>
+                          <div style={{ width: `${Math.min(100, Math.max(5, agent.muteDangerProgress || 0))}%`, height: '100%', background: 'linear-gradient(90deg, #f97316, #ef4444)', transition: 'width 0.15s ease' }}></div>
+                        </div>
+                      </div>
+                    )}
 
                     {/* Audio Engineering & Spectrum Visualizer */}
                     <div style={{ padding: '6px 14px 10px 14px', borderTop: '1px solid rgba(255,255,255,0.05)' }}>

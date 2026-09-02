@@ -77,6 +77,8 @@ body {
 }
 
 .status-badge.AMAN { background: rgba(76, 175, 80, 0.15); color: #4caf50; border: 1px solid rgba(76, 175, 80, 0.5); }
+.status-badge.STANDBY_MUTE { background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.5); }
+.status-badge.WASPADA_BICARA_MUTE { background: rgba(249, 115, 22, 0.18); color: #fb923c; border: 1px solid rgba(249, 115, 22, 0.6); animation: blink 0.8s infinite; }
 .status-badge.BAHAYA_OBS_MUTE { background: rgba(244, 67, 54, 0.15); color: #f44336; border: 1px solid rgba(244, 67, 54, 0.5); animation: blink 1s infinite; }
 .status-badge.BAHAYA_MIC_MATI { background: rgba(255, 152, 0, 0.15); color: #ff9800; border: 1px solid rgba(255, 152, 0, 0.5); animation: blink 1s infinite; }
 .status-badge.BAHAYA_AUDIO_PECAH { background: rgba(156, 39, 176, 0.15); color: #9c27b0; border: 1px solid rgba(156, 39, 176, 0.5); animation: blink 0.5s infinite; }

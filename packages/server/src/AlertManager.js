@@ -75,16 +75,16 @@ class AlertManager {
       } else if (isNewDanger) {
          this.lastAlertState[data.uuid] = { ...state, status: data.status };
       }
-    } else if (data.status === 'AMAN' && this.lastAlertState[data.uuid] && this.lastAlertState[data.uuid].status !== 'AMAN') {
-      logger.info(`[AlertManager] Status audio PC ${pcName} pulih kembali AMAN`);
+    } else if (!isDanger && this.lastAlertState[data.uuid] && this.lastAlertState[data.uuid].status && this.lastAlertState[data.uuid].status.startsWith('BAHAYA')) {
+      logger.info(`[AlertManager] Status audio PC ${pcName} pulih kembali normal (${data.status})`);
       if (this.lastAlertState[data.uuid].notified) {
-        this.sendTelegramAlert(`[OK] <b>${safePcName}</b> audio sudah kembali AMAN.`);
-        if (this.dbManager) this.dbManager.logIncident(data.uuid, pcName, 'RECOVERY', 'Audio kembali AMAN');
+        this.sendTelegramAlert(`[OK] <b>${safePcName}</b> audio sudah kembali normal.`);
+        if (this.dbManager) this.dbManager.logIncident(data.uuid, pcName, 'RECOVERY', 'Audio kembali normal');
       }
-      this.lastAlertState[data.uuid].status = 'AMAN';
+      this.lastAlertState[data.uuid].status = data.status;
       this.lastAlertState[data.uuid].notified = false;
-    } else if (!isDanger && data.status !== 'AMAN' && this.lastAlertState[data.uuid] && this.lastAlertState[data.uuid].status !== 'STANDBY') {
-      this.lastAlertState[data.uuid].status = 'STANDBY';
+    } else if (!isDanger && this.lastAlertState[data.uuid]) {
+      this.lastAlertState[data.uuid].status = data.status;
       this.lastAlertState[data.uuid].notified = false;
     }
   }

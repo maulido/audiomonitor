@@ -756,36 +756,46 @@ function App() {
       }
     }
 
-    if (dangerScore.current >= (obsMuteTimeoutSec * 1000)) {
-      if (autoRecoveryUnmute && obsClient.current && obsConnected) {
-        obsClient.current.setMute(obsSourceNameRef.current, false);
-        dangerScore.current = -2000; // grace period of 2 seconds to allow meter to recover
+    if (isActuallyMuted && obsConnected) {
+      if (dangerScore.current >= (obsMuteTimeoutSec * 1000)) {
+        if (autoRecoveryUnmute && obsClient.current && obsConnected) {
+          obsClient.current.setMute(obsSourceNameRef.current, false);
+          dangerScore.current = -2000; // grace period of 2 seconds to allow meter to recover
+        } else {
+          nextStatus = 'BAHAYA_OBS_MUTE';
+        }
+      } else if (isTalking || dangerScore.current > 0) {
+        nextStatus = 'WASPADA_BICARA_MUTE';
       } else {
-        nextStatus = 'BAHAYA_OBS_MUTE';
+        nextStatus = 'STANDBY_MUTE';
       }
     } else if (clippingScore.current >= clippingDurationSec * 1000) {
       nextStatus = 'BAHAYA_AUDIO_PECAH';
-    } else if (dangerScore.current <= 0 && clippingScore.current <= 0 && (status === 'BAHAYA_OBS_MUTE' || status === 'BAHAYA_AUDIO_PECAH')) {
+    } else if (dangerScore.current <= 0 && clippingScore.current <= 0 && (status === 'BAHAYA_OBS_MUTE' || status === 'BAHAYA_AUDIO_PECAH' || status === 'WASPADA_BICARA_MUTE' || status === 'STANDBY_MUTE')) {
       nextStatus = 'AMAN';
     }
 
-    // Silence & Dead Mic Logic via tick score
-    if (currentMicLevel.current < 2 && currentObsLevel.current < 2) {
-      silenceScore.current += 100;
-      if (silenceScore.current >= deadMicTimeoutSec * 1000) {
-        if (nextStatus !== 'BAHAYA_OBS_MUTE' && nextStatus !== 'BAHAYA_AUDIO_PECAH') {
-          nextStatus = 'BAHAYA_MIC_MATI';
+    // Silence & Dead Mic Logic via tick score (hanya dievaluasi jika OBS tidak sedang di-mute)
+    if (!isActuallyMuted) {
+      if (currentMicLevel.current < 2 && currentObsLevel.current < 2) {
+        silenceScore.current += 100;
+        if (silenceScore.current >= deadMicTimeoutSec * 1000) {
+          if (!nextStatus.startsWith('BAHAYA')) {
+            nextStatus = 'BAHAYA_MIC_MATI';
+          }
+        } else if (silenceScore.current >= silenceTimeoutSec * 1000) {
+          if (!nextStatus.startsWith('BAHAYA')) {
+            nextStatus = 'STANDBY_DIAM';
+          }
         }
-      } else if (silenceScore.current >= silenceTimeoutSec * 1000) {
-        if (nextStatus !== 'BAHAYA_OBS_MUTE' && nextStatus !== 'BAHAYA_AUDIO_PECAH') {
-          nextStatus = 'STANDBY_DIAM';
+      } else {
+        silenceScore.current = 0;
+        if (nextStatus === 'STANDBY_DIAM' || nextStatus === 'BAHAYA_MIC_MATI') {
+          nextStatus = 'AMAN';
         }
       }
     } else {
       silenceScore.current = 0;
-      if (nextStatus === 'STANDBY_DIAM' || nextStatus === 'BAHAYA_MIC_MATI') {
-        nextStatus = 'AMAN';
-      }
     }
 
     if (status !== nextStatus) {
@@ -863,6 +873,8 @@ function App() {
       obsConnected,
       isObsMutedBtn,
       status,
+      muteDangerProgress: (isObsMutedBtn || (currentObsLevel.current < 0.5)) ? Math.min(100, Math.max(0, Math.round((dangerScore.current / (Math.max(1, obsMuteTimeoutSec) * 1000)) * 100))) : 0,
+      dangerScoreMs: Math.max(0, dangerScore.current),
       lufs: micLufs,
       truePeak: micTruePeak,
       noiseFloorDb: micNoiseFloor,
