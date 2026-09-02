@@ -269,14 +269,18 @@ class TelemetryHub {
       this.configManager.setPcName(data.uuid, candidateName);
     }
     
-    // Inisialisasi atau sinkronisasi status pengawasan per-PC
-    if (this.pcMonitoringState[data.uuid] === undefined && data.isMonitoringActive !== undefined) {
+    // Inisialisasi atau sinkronisasi status pengawasan per-PC dari telemetri Agent
+    if (data.isMonitoringActive !== undefined) {
+      const prevMonitoring = this.pcMonitoringState[data.uuid];
       this.pcMonitoringState[data.uuid] = data.isMonitoringActive;
+      if (prevMonitoring !== undefined && prevMonitoring !== data.isMonitoringActive) {
+        this.io.to('dashboards').emit('pc-monitoring-update', { uuid: data.uuid, active: data.isMonitoringActive });
+      }
     }
 
-    const isMonitoringActive = this.pcMonitoringState[data.uuid] !== undefined 
-      ? this.pcMonitoringState[data.uuid] 
-      : (data.isMonitoringActive !== undefined ? data.isMonitoringActive : true);
+    const isMonitoringActive = data.isMonitoringActive !== undefined 
+      ? data.isMonitoringActive 
+      : (this.pcMonitoringState[data.uuid] !== undefined ? this.pcMonitoringState[data.uuid] : true);
     
     const enrichedData = {
       ...data,

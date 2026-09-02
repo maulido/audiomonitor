@@ -2314,12 +2314,12 @@ function App() {
                               </div>
                               <div className="card-actions">
                                 <button 
-                                  className={`toggle-btn ${agent.isMonitoringActive ? '' : 'off'}`}
-                                  onClick={() => togglePcMonitoring(agent.uuid, !agent.isMonitoringActive)}
-                                  title={agent.isMonitoringActive ? 'Monitoring Aktif (Klik untuk Pause)' : 'Monitoring Nonaktif (Klik untuk Resume)'}
+                                  className={`toggle-btn ${agent.isMonitoringActive !== false ? '' : 'off'}`}
+                                  onClick={() => togglePcMonitoring(agent.uuid, agent.isMonitoringActive === false)}
+                                  title={agent.isMonitoringActive !== false ? 'Monitoring Aktif (Klik untuk Pause)' : 'Monitoring Nonaktif (Klik untuk Resume)'}
                                 >
-                                  {agent.isMonitoringActive ? <i className="fa-solid fa-pause" style={{marginRight: '3px'}}></i> : <i className="fa-solid fa-play" style={{marginRight: '3px'}}></i>}
-                                  {agent.isMonitoringActive ? 'ON' : 'OFF'}
+                                  {agent.isMonitoringActive !== false ? <i className="fa-solid fa-pause" style={{marginRight: '3px'}}></i> : <i className="fa-solid fa-play" style={{marginRight: '3px'}}></i>}
+                                  {agent.isMonitoringActive !== false ? 'ON' : 'OFF'}
                                 </button>
                                 <button className="icon-btn" title="Remote Config" onClick={() => { 
                                   setConfigModalAgent(agent); 
