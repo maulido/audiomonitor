@@ -1546,6 +1546,12 @@ label.btn-filter.disabled {
   border: 1px solid rgba(16, 185, 129, 0.25);
 }
 
+.transcript-status-badge.partial {
+  background: rgba(245, 158, 11, 0.12);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
 .transcript-status-badge.processing {
   background: rgba(245, 158, 11, 0.12);
   color: #fbbf24;

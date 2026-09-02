@@ -703,6 +703,7 @@ function App() {
       pcName,
       transcript: null,
       loading: true,
+      notFound: false,
       error: null
     });
 
@@ -711,19 +712,21 @@ function App() {
       const res = await apiFetch(`/api/records/transcript${query}`);
       if (res.ok) {
         const data = await res.json();
-        setActiveTranscriptModal(prev => prev ? { ...prev, transcript: data.transcript, loading: false } : null);
+        setActiveTranscriptModal(prev => prev ? { ...prev, transcript: data.transcript, loading: false, notFound: false, error: null } : null);
+      } else if (res.status === 404) {
+        setActiveTranscriptModal(prev => prev ? { ...prev, transcript: null, loading: false, notFound: true, error: null } : null);
       } else {
         const errData = await res.json().catch(() => ({}));
-        setActiveTranscriptModal(prev => prev ? { ...prev, loading: false, error: errData.error || 'Belum ada transkrip untuk rekaman ini.' } : null);
+        setActiveTranscriptModal(prev => prev ? { ...prev, transcript: null, loading: false, notFound: false, error: errData.error || 'Gagal memuat transkrip.' } : null);
       }
     } catch (err) {
-      setActiveTranscriptModal(prev => prev ? { ...prev, loading: false, error: err.message } : null);
+      setActiveTranscriptModal(prev => prev ? { ...prev, transcript: null, loading: false, notFound: false, error: err.message } : null);
     }
   };
 
   const handleManualTranscribe = async (folderName, fileName = null, pcName = '') => {
     try {
-      setActiveTranscriptModal(prev => prev ? { ...prev, loading: true, error: null } : null);
+      setActiveTranscriptModal(prev => prev ? { ...prev, loading: true, notFound: false, error: null } : null);
       const payload = { folder: folderName, pcName };
       if (fileName) payload.file = fileName;
 
@@ -733,13 +736,13 @@ function App() {
       });
       const data = await res.json();
       if (res.ok && data.success) {
-        setActiveTranscriptModal(prev => prev ? { ...prev, transcript: data.transcript, loading: false } : null);
+        setActiveTranscriptModal(prev => prev ? { ...prev, transcript: data.transcript, loading: false, notFound: false, error: null } : null);
         fetchRecords();
       } else {
-        setActiveTranscriptModal(prev => prev ? { ...prev, loading: false, error: data.error || 'Gagal mentranskripsi audio.' } : null);
+        setActiveTranscriptModal(prev => prev ? { ...prev, loading: false, notFound: false, error: data.error || 'Gagal mentranskripsi audio.' } : null);
       }
     } catch (err) {
-      setActiveTranscriptModal(prev => prev ? { ...prev, loading: false, error: err.message } : null);
+      setActiveTranscriptModal(prev => prev ? { ...prev, loading: false, notFound: false, error: err.message } : null);
     }
   };
 
@@ -3426,7 +3429,8 @@ function App() {
 
                   const totalPcParts = sessions.reduce((acc, s) => acc + s.parts.length, 0);
                   const totalPcStorage = sessions.reduce((acc, s) => acc + s.totalSize, 0);
-                  const totalPcTranscripts = sessions.filter(s => s.hasTranscript).length;
+                  const totalPcTranscripts = sessions.reduce((acc, s) => acc + s.parts.filter(p => p.hasTranscript).length, 0);
+                  const isPcAllTranscribed = totalPcParts > 0 && totalPcTranscripts === totalPcParts;
                   const totalPcAlerts = sessions.filter(s => s.hasAlertKeyword).length;
 
                   if (sessions.length === 0 && recordStatusFilter !== 'all') {
@@ -3448,89 +3452,233 @@ function App() {
                   return (
                     <div className="settings-card" key={pc} style={{ marginBottom: '24px' }}>
                       <div className="settings-card-accent purple"></div>
-                      <div className="settings-card-content" style={{ padding: '0' }}>
-                        {/* PC Header (Collapsible / Minimize Toggle) */}
-                        <div 
-                          className="pc-header-collapsible"
-                          onClick={() => setCollapsedPcs(prev => ({ ...prev, [pc]: !prev[pc] }))}
-                          title="Klik untuk memperluas / mengecilkan daftar rekaman PC ini"
-                        >
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-                            <h3 style={{ margin: 0, display: 'flex', alignItems: 'center' }}>
-                              <i className="fa-solid fa-desktop" style={{ marginRight: '8px', color: 'var(--accent)' }}></i> 
-                              {pc} 
-                            </h3>
-
-                            {/* Summary Pills on Header */}
-                            <div className="pc-summary-pills">
-                              <span className="pc-summary-pill">{totalSessions} Sesi</span>
-                              <span className="pc-summary-pill">{totalPcParts} Part</span>
-                              <span className="pc-summary-pill">{(totalPcStorage / 1024 / 1024).toFixed(2)} MB</span>
-                              {totalPcTranscripts > 0 && (
-                                <span className="pc-summary-pill ready"><i className="fa-solid fa-check"></i> {totalPcTranscripts} Transkrip</span>
-                              )}
-                              {totalPcAlerts > 0 && (
-                                <span className="pc-summary-pill alert"><i className="fa-solid fa-triangle-exclamation"></i> {totalPcAlerts} Bahaya</span>
-                              )}
-                            </div>
-                          </div>
-
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            {pcData.uuid && (
-                              <button
-                                className="btn-filter secondary"
-                                style={{ color: '#f87171', borderColor: 'rgba(248, 113, 113, 0.4)', padding: '3px 9px', fontSize: '0.75rem', height: '28px', display: 'flex', alignItems: 'center', gap: '5px' }}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleCleanHostStorage(pcData.uuid, pc);
-                                }}
-                                title={`Hapus file audio lokal di PC Host "${pc}" yang sudah terupload ke Server`}
-                              >
-                                <i className="fa-solid fa-trash-can"></i>
-                                <span>Hapus Audio di Host</span>
-                              </button>
+                      <div className="settings-card-header" style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => setCollapsedPcs(prev => ({ ...prev, [pc]: !prev[pc] }))}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                          <h3 style={{ margin: 0, fontSize: '1.05rem', color: 'var(--text-main)' }}>
+                            <i className="fa-solid fa-desktop" style={{ color: 'var(--accent)', marginRight: '8px' }}></i>
+                            {pc}
+                          </h3>
+                          <div className="pc-summary-pills">
+                            <span className="pc-summary-pill"><i className="fa-solid fa-layer-group"></i> {totalSessions} Sesi</span>
+                            <span className="pc-summary-pill"><i className="fa-solid fa-puzzle-piece"></i> {totalPcParts} Part</span>
+                            <span className="pc-summary-pill"><i className="fa-solid fa-hard-drive"></i> {(totalPcStorage / 1024 / 1024).toFixed(2)} MB</span>
+                            {totalPcTranscripts > 0 && (
+                              <span className={`pc-summary-pill ${isPcAllTranscribed ? 'ready' : 'partial'}`} style={!isPcAllTranscribed ? { background: 'rgba(245, 158, 11, 0.12)', color: '#fbbf24', borderColor: 'rgba(245, 158, 11, 0.3)' } : {}}>
+                                <i className={`fa-solid ${isPcAllTranscribed ? 'fa-check' : 'fa-file-pen'}`}></i> {totalPcTranscripts}/{totalPcParts} Transkrip
+                              </span>
                             )}
-                            <button 
-                              className="pc-collapse-btn"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setCollapsedPcs(prev => ({ ...prev, [pc]: !prev[pc] }));
-                              }}
-                            >
-                              <span>{isPcCollapsed ? 'Buka' : 'Tutup'}</span>
-                              <i className={`fa-solid fa-chevron-${isPcCollapsed ? 'down' : 'up'}`}></i>
-                            </button>
+                            {totalPcAlerts > 0 && (
+                              <span className="pc-summary-pill alert"><i className="fa-solid fa-triangle-exclamation"></i> {totalPcAlerts} Bahaya</span>
+                            )}
                           </div>
                         </div>
 
-                        {/* If not collapsed, render session list & pagination */}
-                        {!isPcCollapsed && (
-                          <>
-                            {/* Session Cards List */}
-                            <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: recordViewLayout === 'compact' ? '8px' : '14px' }}>
-                              {pagedSessions.map((session, sIdx) => {
-                                const isSessionActive = playingSession?.folderName === session.folderName;
-                                const sessionDurationSec = calculateSessionDuration(session);
-                                const hasProcessing = session.parts.some(p => transcribingFiles[`${session.folderName}/${p.fileName}`] === 'processing');
-                                const hasQueued = session.parts.some(p => transcribingFiles[`${session.folderName}/${p.fileName}`] === 'queued');
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          {pcData.uuid && (
+                            <button
+                              className="btn-filter secondary"
+                              style={{ color: '#f87171', borderColor: 'rgba(248, 113, 113, 0.4)', padding: '3px 9px', fontSize: '0.75rem', height: '28px', display: 'flex', alignItems: 'center', gap: '5px' }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleCleanHostStorage(pcData.uuid, pc);
+                              }}
+                              title={`Hapus file audio lokal di PC Host "${pc}" yang sudah terupload ke Server`}
+                            >
+                              <i className="fa-solid fa-trash-can"></i>
+                              <span>Hapus Audio di Host</span>
+                            </button>
+                          )}
+                          <button 
+                            className="pc-collapse-btn"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setCollapsedPcs(prev => ({ ...prev, [pc]: !prev[pc] }));
+                            }}
+                          >
+                            <span>{isPcCollapsed ? 'Buka' : 'Tutup'}</span>
+                            <i className={`fa-solid fa-chevron-${isPcCollapsed ? 'down' : 'up'}`}></i>
+                          </button>
+                        </div>
+                      </div>
 
-                                // COMPACT VIEW RENDERING
-                                if (recordViewLayout === 'compact') {
-                                  return (
-                                    <div 
-                                      key={session.folderName || sIdx} 
-                                      className={`record-session-compact ${isSessionActive ? 'active-playing' : ''}`}
-                                      style={session.hasAlertKeyword ? { borderColor: 'rgba(239, 68, 68, 0.4)', background: 'rgba(239, 68, 68, 0.04)' } : {}}
-                                    >
-                                      <div className="compact-left">
-                                        {/* Date & Time */}
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem' }}>
-                                          <i className="fa-solid fa-calendar-day" style={{ color: 'var(--accent)', fontSize: '0.8rem' }}></i>
-                                          <strong>{session.isParsed ? session.dateStr : new Date(session.createdAt).toLocaleDateString()}</strong>
-                                          <span className="session-time-badge" style={{ fontSize: '0.78rem', padding: '1px 6px' }}>
-                                            {session.isParsed ? session.timeStr : new Date(session.createdAt).toLocaleTimeString()}
-                                          </span>
-                                        </div>
+                      {/* If not collapsed, render session list & pagination */}
+                      {!isPcCollapsed && (
+                        <>
+                          {/* Session Cards List */}
+                          <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: recordViewLayout === 'compact' ? '8px' : '14px' }}>
+                            {pagedSessions.map((session, sIdx) => {
+                              const isSessionActive = playingSession?.folderName === session.folderName;
+                              const sessionDurationSec = calculateSessionDuration(session);
+                              const totalParts = session.parts.length;
+                              const transcribedParts = session.parts.filter(p => p.hasTranscript).length;
+                              const isFullyTranscribed = totalParts > 0 && transcribedParts === totalParts;
+                              const isPartiallyTranscribed = transcribedParts > 0 && transcribedParts < totalParts;
+                              const hasProcessing = session.parts.some(p => transcribingFiles[`${session.folderName}/${p.fileName}`] === 'processing');
+                              const hasQueued = session.parts.some(p => transcribingFiles[`${session.folderName}/${p.fileName}`] === 'queued');
+
+                              // COMPACT VIEW RENDERING
+                              if (recordViewLayout === 'compact') {
+                                return (
+                                  <div 
+                                    key={session.folderName || sIdx} 
+                                    className={`record-session-compact ${isSessionActive ? 'active-playing' : ''}`}
+                                    style={session.hasAlertKeyword ? { borderColor: 'rgba(239, 68, 68, 0.4)', background: 'rgba(239, 68, 68, 0.04)' } : {}}
+                                  >
+                                    <div className="compact-left">
+                                      {/* Date & Time */}
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem' }}>
+                                        <i className="fa-solid fa-calendar-day" style={{ color: 'var(--accent)', fontSize: '0.8rem' }}></i>
+                                        <strong>{session.isParsed ? session.dateStr : new Date(session.createdAt).toLocaleDateString()}</strong>
+                                        <span className="session-time-badge" style={{ fontSize: '0.78rem', padding: '1px 6px' }}>
+                                          {session.isParsed ? session.timeStr : new Date(session.createdAt).toLocaleTimeString()}
+                                        </span>
+                                      </div>
+
+                                      {/* Duration Pill */}
+                                      {sessionDurationSec > 0 && (
+                                        <span className="session-duration-pill" title="Estimasi / Durasi Rekaman Sesi">
+                                          <i className="fa-solid fa-stopwatch" style={{ color: 'var(--accent)' }}></i>
+                                          {formatDurationText(sessionDurationSec)}
+                                        </span>
+                                      )}
+
+                                      {/* Live Ongoing Badge */}
+                                      {!session.isCompleted && (
+                                        <span className="live-recording-badge" style={{ fontSize: '0.68rem', padding: '1px 6px' }}>
+                                          <span className="live-pulse-dot"></span> LIVE
+                                        </span>
+                                      )}
+
+                                      {/* Status Badge */}
+                                      {session.hasAlertKeyword ? (
+                                        <span className="transcript-status-badge alert" style={{ fontSize: '0.7rem' }}>
+                                          <i className="fa-solid fa-triangle-exclamation"></i> {session.keywordsFound.join(', ')}
+                                        </span>
+                                      ) : hasProcessing ? (
+                                        <span className="transcript-status-badge processing" style={{ fontSize: '0.7rem' }}>
+                                          <i className="fa-solid fa-spinner fa-spin"></i> Proses {transcribedParts}/{totalParts}
+                                        </span>
+                                      ) : hasQueued ? (
+                                        <span className="transcript-status-badge queued" style={{ fontSize: '0.7rem' }}>
+                                          <i className="fa-solid fa-clock-rotate-left"></i> Antre {transcribedParts}/{totalParts}
+                                        </span>
+                                      ) : isFullyTranscribed ? (
+                                        <span className="transcript-status-badge ready" style={{ fontSize: '0.7rem' }} title="Semua potongan audio telah ditranskrip">
+                                          <i className="fa-solid fa-check"></i> Siap ({totalParts}/{totalParts})
+                                        </span>
+                                      ) : isPartiallyTranscribed ? (
+                                        <span className="transcript-status-badge partial" style={{ fontSize: '0.7rem' }} title="Transkrip sebagian: beberapa potongan belum ditranskrip">
+                                          <i className="fa-solid fa-file-pen"></i> Sebagian ({transcribedParts}/{totalParts})
+                                        </span>
+                                      ) : (
+                                        <span className="transcript-status-badge none" style={{ fontSize: '0.7rem' }}>
+                                          Belum
+                                        </span>
+                                      )}
+
+                                      {/* Parts & Size count */}
+                                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                                        {session.parts.length} Part ({(session.totalSize / 1024 / 1024).toFixed(2)} MB)
+                                      </span>
+
+                                      {/* Snippet Preview on Compact */}
+                                      {session.transcriptSnippet && (
+                                        <span 
+                                          className="compact-snippet"
+                                          onClick={() => openTranscriptModal(session.folderName, null, session.pcName)}
+                                          title="Klik untuk membuka transkrip lengkap"
+                                        >
+                                          "{session.transcriptSnippet}"
+                                        </span>
+                                      )}
+                                    </div>
+
+                                    <div className="compact-right">
+                                      {session.hasTranscript && (
+                                        <>
+                                          <button 
+                                            className="btn-export-action" 
+                                            onClick={() => quickDownloadSessionTranscript(session, 'txt')}
+                                            title="Unduh TXT"
+                                          >
+                                            <i className="fa-solid fa-file-lines"></i>
+                                          </button>
+                                          <button 
+                                            className="btn-export-action" 
+                                            onClick={() => quickDownloadSessionTranscript(session, 'srt')}
+                                            title="Unduh SRT"
+                                          >
+                                            <i className="fa-solid fa-closed-captioning"></i>
+                                          </button>
+                                        </>
+                                      )}
+                                      <button 
+                                        className="btn-filter secondary" 
+                                        style={{ padding: '4px 10px', fontSize: '0.75rem' }} 
+                                        onClick={() => openTranscriptModal(session.folderName, null, session.pcName)}
+                                        title="Buka transkrip sesi ini"
+                                      >
+                                        <i className="fa-solid fa-file-lines"></i> Transkrip
+                                      </button>
+                                      {session.hasAudio !== false && !session.audioPurged && (
+                                        <button 
+                                          className="btn-export-action" 
+                                          style={{ color: '#f87171', borderColor: 'rgba(248, 113, 113, 0.35)' }}
+                                          onClick={() => handlePurgeSessionAudio(session)}
+                                          title="Hapus file audio (.webm) di server, simpan transkrip"
+                                        >
+                                          <i className="fa-solid fa-broom"></i>
+                                        </button>
+                                      )}
+                                      <button 
+                                        className="btn-filter primary" 
+                                        style={{ padding: '4px 10px', fontSize: '0.75rem', opacity: (session.audioPurged || session.hasAudio === false) ? 0.6 : 1 }}
+                                        onClick={() => {
+                                          if (session.audioPurged || session.hasAudio === false) {
+                                            customAlert('File audio untuk sesi ini telah dibersihkan dari server untuk menghemat storage. Anda tetap dapat membaca dan mengunduh transkrip percakapan ini.', 'Audio Telah Dibersihkan');
+                                            return;
+                                          }
+                                          if (playingSession?.folderName !== session.folderName) {
+                                            setPlayingSession(session);
+                                          }
+                                          pendingSeekOffsetRef.current = 0;
+                                          setCurrentPartIndex(0);
+                                          setLocalCurrentTime(0);
+                                        }}
+                                        title={session.audioPurged || session.hasAudio === false ? "Audio dibersihkan (Transkrip siap)" : "Putar sesi ini"}
+                                      >
+                                        <i className={`fa-solid ${session.audioPurged || session.hasAudio === false ? 'fa-file-lines' : 'fa-play'}`}></i> {session.audioPurged || session.hasAudio === false ? 'Transkrip' : 'Putar'}
+                                      </button>
+                                      <button 
+                                        className="btn-export-action" 
+                                        style={{ color: 'var(--text-muted)', borderColor: 'rgba(255, 255, 255, 0.1)' }}
+                                        onClick={() => handleDeleteFullSession(session)}
+                                        title="Hapus total sesi ini dari server"
+                                      >
+                                        <i className="fa-solid fa-trash"></i>
+                                      </button>
+                                    </div>
+                                  </div>
+                                );
+                              }
+
+                              // DETAILED VIEW RENDERING
+                              return (
+                                <div 
+                                  key={session.folderName || sIdx} 
+                                  className={`record-session-box ${isSessionActive ? 'active-playing' : ''}`}
+                                  style={session.hasAlertKeyword ? { borderColor: 'rgba(239, 68, 68, 0.4)', background: 'rgba(239, 68, 68, 0.03)' } : {}}
+                                >
+                                  <div className="session-box-header">
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                      <div className="session-time-title" style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                        <i className="fa-solid fa-calendar-day" style={{ color: 'var(--accent)' }}></i>
+                                        <strong>{session.isParsed ? session.dateStr : new Date(session.createdAt).toLocaleDateString()}</strong>
+                                        
+                                        <span className="session-time-badge">
+                                          <i className="fa-solid fa-clock" style={{ marginRight: '4px' }}></i>
+                                          {session.isParsed ? session.timeStr : new Date(session.createdAt).toLocaleTimeString()}
+                                        </span>
 
                                         {/* Duration Pill */}
                                         {sessionDurationSec > 0 && (
@@ -3540,173 +3688,43 @@ function App() {
                                           </span>
                                         )}
 
-                                        {/* Live Ongoing Badge */}
+                                        {/* Live Recording Badge if ongoing */}
                                         {!session.isCompleted && (
-                                          <span className="live-recording-badge" style={{ fontSize: '0.68rem', padding: '1px 6px' }}>
-                                            <span className="live-pulse-dot"></span> LIVE
+                                          <span className="live-recording-badge">
+                                            <span className="live-pulse-dot"></span>
+                                            MEREKAM (LIVE)
                                           </span>
                                         )}
 
-                                        {/* Status Badge */}
+                                        {/* Transcript Status Badge */}
                                         {session.hasAlertKeyword ? (
-                                          <span className="transcript-status-badge alert" style={{ fontSize: '0.7rem' }}>
-                                            <i className="fa-solid fa-triangle-exclamation"></i> {session.keywordsFound.join(', ')}
+                                          <span className="transcript-status-badge alert" title={`Kata bahaya: ${session.keywordsFound.join(', ')}`}>
+                                            <i className="fa-solid fa-triangle-exclamation"></i> Kata Bahaya: {session.keywordsFound.join(', ')}
                                           </span>
                                         ) : hasProcessing ? (
-                                          <span className="transcript-status-badge processing" style={{ fontSize: '0.7rem' }}>
-                                            <i className="fa-solid fa-spinner fa-spin"></i> Proses
+                                          <span className="transcript-status-badge processing" title="Transkripsi sedang aktif dikerjakan oleh Whisper AI">
+                                            <i className="fa-solid fa-spinner fa-spin"></i> Sedang Diproses ({transcribedParts}/{totalParts})...
                                           </span>
                                         ) : hasQueued ? (
-                                          <span className="transcript-status-badge queued" style={{ fontSize: '0.7rem' }}>
-                                            <i className="fa-solid fa-clock-rotate-left"></i> Antre
+                                          <span className="transcript-status-badge queued" title="Menunggu giliran antrean transkripsi Whisper">
+                                            <i className="fa-solid fa-clock-rotate-left"></i> Dalam Antrean Transkripsi ({transcribedParts}/{totalParts})
                                           </span>
-                                        ) : session.hasTranscript ? (
-                                          <span className="transcript-status-badge ready" style={{ fontSize: '0.7rem' }}>
-                                            <i className="fa-solid fa-check"></i> Siap
+                                        ) : isFullyTranscribed ? (
+                                          <span className="transcript-status-badge ready" title="Seluruh potongan audio pada sesi ini telah berhasil ditranskrip">
+                                            <i className="fa-solid fa-check"></i> Transkrip Lengkap ({totalParts}/{totalParts})
+                                          </span>
+                                        ) : isPartiallyTranscribed ? (
+                                          <span className="transcript-status-badge partial" title="Transkrip sebagian: beberapa potongan audio belum ditranskrip">
+                                            <i className="fa-solid fa-file-pen"></i> Transkrip Sebagian ({transcribedParts}/{totalParts})
                                           </span>
                                         ) : (
-                                          <span className="transcript-status-badge none" style={{ fontSize: '0.7rem' }}>
-                                            Belum
+                                          <span className="transcript-status-badge none" title="Belum ada potongan audio yang ditranskrip pada sesi ini">
+                                            <i className="fa-solid fa-circle-question"></i> Belum Ditranskrip
                                           </span>
                                         )}
 
-                                        {/* Parts & Size count */}
-                                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                                          {session.parts.length} Part ({(session.totalSize / 1024 / 1024).toFixed(2)} MB)
-                                        </span>
-
-                                        {/* Snippet Preview on Compact */}
-                                        {session.transcriptSnippet && (
-                                          <span 
-                                            className="compact-snippet"
-                                            onClick={() => openTranscriptModal(session.folderName, null, session.pcName)}
-                                            title="Klik untuk membuka transkrip lengkap"
-                                          >
-                                            "{session.transcriptSnippet}"
-                                          </span>
-                                        )}
+                                        {!session.isParsed && <span style={{ fontSize: "0.75rem", color: "var(--warning)" }}>Format lama</span>}
                                       </div>
-
-                                      {/* Compact Actions */}
-                                      <div className="compact-actions">
-                                        {session.hasTranscript && (
-                                          <button 
-                                            className="btn-export-action"
-                                            onClick={() => quickDownloadSessionTranscript(session, 'txt')}
-                                            title="Unduh transkrip teks (.txt)"
-                                          >
-                                            TXT
-                                          </button>
-                                        )}
-                                        <button 
-                                          className="btn-filter secondary" 
-                                          style={{ padding: '4px 10px', fontSize: '0.75rem' }} 
-                                          onClick={() => openTranscriptModal(session.folderName, null, session.pcName)}
-                                          title="Buka transkrip sesi ini"
-                                        >
-                                          <i className="fa-solid fa-file-lines"></i> Transkrip
-                                        </button>
-                                        {session.hasAudio !== false && !session.audioPurged && (
-                                          <button 
-                                            className="btn-export-action" 
-                                            style={{ color: '#f87171', borderColor: 'rgba(248, 113, 113, 0.35)' }}
-                                            onClick={() => handlePurgeSessionAudio(session)}
-                                            title="Hapus file audio (.webm) di server, simpan transkrip"
-                                          >
-                                            <i className="fa-solid fa-broom"></i>
-                                          </button>
-                                        )}
-                                        <button 
-                                          className="btn-filter primary" 
-                                          style={{ padding: '4px 10px', fontSize: '0.75rem', opacity: (session.audioPurged || session.hasAudio === false) ? 0.6 : 1 }}
-                                          onClick={() => {
-                                            if (session.audioPurged || session.hasAudio === false) {
-                                              customAlert('File audio untuk sesi ini telah dibersihkan dari server untuk menghemat storage. Anda tetap dapat membaca dan mengunduh transkrip percakapan ini.', 'Audio Telah Dibersihkan');
-                                              return;
-                                            }
-                                            if (playingSession?.folderName !== session.folderName) {
-                                              setPlayingSession(session);
-                                            }
-                                            pendingSeekOffsetRef.current = 0;
-                                            setCurrentPartIndex(0);
-                                            setLocalCurrentTime(0);
-                                          }}
-                                          title={session.audioPurged || session.hasAudio === false ? "Audio dibersihkan (Transkrip siap)" : "Putar sesi ini"}
-                                        >
-                                          <i className={`fa-solid ${session.audioPurged || session.hasAudio === false ? 'fa-file-lines' : 'fa-play'}`}></i> {session.audioPurged || session.hasAudio === false ? 'Transkrip' : 'Putar'}
-                                        </button>
-                                        <button 
-                                          className="btn-export-action" 
-                                          style={{ color: 'var(--text-muted)', borderColor: 'rgba(255, 255, 255, 0.1)' }}
-                                          onClick={() => handleDeleteFullSession(session)}
-                                          title="Hapus total sesi ini dari server"
-                                        >
-                                          <i className="fa-solid fa-trash"></i>
-                                        </button>
-                                      </div>
-                                    </div>
-                                  );
-                                }
-
-                                // DETAILED VIEW RENDERING
-                                return (
-                                  <div 
-                                    key={session.folderName || sIdx} 
-                                    className={`record-session-box ${isSessionActive ? 'active-playing' : ''}`}
-                                    style={session.hasAlertKeyword ? { borderColor: 'rgba(239, 68, 68, 0.4)', background: 'rgba(239, 68, 68, 0.03)' } : {}}
-                                  >
-                                    <div className="session-box-header">
-                                      <div style={{ flex: 1, minWidth: 0 }}>
-                                        <div className="session-time-title" style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                                          <i className="fa-solid fa-calendar-day" style={{ color: 'var(--accent)' }}></i>
-                                          <strong>{session.isParsed ? session.dateStr : new Date(session.createdAt).toLocaleDateString()}</strong>
-                                          
-                                          <span className="session-time-badge">
-                                            <i className="fa-solid fa-clock" style={{ marginRight: '4px' }}></i>
-                                            {session.isParsed ? session.timeStr : new Date(session.createdAt).toLocaleTimeString()}
-                                          </span>
-
-                                          {/* Duration Pill */}
-                                          {sessionDurationSec > 0 && (
-                                            <span className="session-duration-pill" title="Estimasi / Durasi Rekaman Sesi">
-                                              <i className="fa-solid fa-stopwatch" style={{ color: 'var(--accent)' }}></i>
-                                              {formatDurationText(sessionDurationSec)}
-                                            </span>
-                                          )}
-
-                                          {/* Live Recording Badge if ongoing */}
-                                          {!session.isCompleted && (
-                                            <span className="live-recording-badge">
-                                              <span className="live-pulse-dot"></span>
-                                              MEREKAM (LIVE)
-                                            </span>
-                                          )}
-
-                                          {/* Transcript Status Badge */}
-                                          {session.hasAlertKeyword ? (
-                                            <span className="transcript-status-badge alert" title={`Kata bahaya: ${session.keywordsFound.join(', ')}`}>
-                                              <i className="fa-solid fa-triangle-exclamation"></i> Kata Bahaya: {session.keywordsFound.join(', ')}
-                                            </span>
-                                          ) : hasProcessing ? (
-                                            <span className="transcript-status-badge processing">
-                                              <i className="fa-solid fa-spinner fa-spin"></i> Sedang Diproses...
-                                            </span>
-                                          ) : hasQueued ? (
-                                            <span className="transcript-status-badge queued">
-                                              <i className="fa-solid fa-clock-rotate-left"></i> Dalam Antrean Transkripsi
-                                            </span>
-                                          ) : session.hasTranscript ? (
-                                            <span className="transcript-status-badge ready">
-                                              <i className="fa-solid fa-check"></i> Transkrip Siap
-                                            </span>
-                                          ) : (
-                                            <span className="transcript-status-badge none">
-                                              <i className="fa-solid fa-circle-question"></i> Belum Ditranskrip
-                                            </span>
-                                          )}
-
-                                          {!session.isParsed && <span style={{ fontSize: "0.75rem", color: "var(--warning)" }}>Format lama</span>}
-                                        </div>
 
                                         <div className="session-meta" style={{ marginTop: '4px' }}>
                                           Total: {session.parts.length} Potongan &bull; {(session.totalSize / 1024 / 1024).toFixed(2)} MB
@@ -3927,9 +3945,8 @@ function App() {
                           </>
                         )}
                       </div>
-                    </div>
-                  );
-                })
+                    );
+                  })
               )}
             </div>
           );
@@ -5281,21 +5298,58 @@ function App() {
                   );
                 }
 
-                if (activeTranscriptModal.error) {
+                if (activeTranscriptModal.notFound && !activeTranscriptModal.transcript) {
                   return (
-                    <div style={{ textAlign: 'center', padding: '30px 20px' }}>
-                      <div style={{ color: 'var(--text-muted)', marginBottom: '16px', fontSize: '0.9rem' }}>
-                        {activeTranscriptModal.error}
+                    <div style={{ textAlign: 'center', padding: '36px 20px' }}>
+                      <i className="fa-solid fa-file-audio" style={{ fontSize: '2.5rem', color: 'var(--accent)', marginBottom: '14px', opacity: 0.85 }}></i>
+                      <div style={{ fontSize: '1.1rem', fontWeight: 600, color: 'var(--text-main)', marginBottom: '6px' }}>
+                        Belum Ada Transkrip
+                      </div>
+                      <div style={{ color: 'var(--text-muted)', marginBottom: '20px', fontSize: '0.88rem', maxWidth: '460px', margin: '0 auto 20px', lineHeight: 1.5 }}>
+                        {activeTranscriptModal.fileName 
+                          ? `Potongan audio "${activeTranscriptModal.fileName}" ini belum dikonversi menjadi teks.`
+                          : 'Sesi rekaman ini belum memiliki transkrip teks percakapan.'}
+                        <br />Klik tombol di bawah untuk memulai transkripsi via Whisper AI.
                       </div>
                       {transcriptionConfig.enabled && transcriptionConfig.apiUrl && (
                         <button 
                           className="btn btn-primary"
+                          style={{ padding: '10px 22px', fontSize: '0.9rem' }}
                           onClick={() => {
                             handleManualTranscribe(activeTranscriptModal.folderName, activeTranscriptModal.fileName, activeTranscriptModal.pcName);
                           }}
                         >
-                          <i className="fa-solid fa-wand-magic-sparkles" style={{ marginRight: '6px' }}></i>
+                          <i className="fa-solid fa-wand-magic-sparkles" style={{ marginRight: '8px' }}></i>
                           {activeTranscriptModal.fileName ? 'Transkrip Potongan Ini Sekarang' : 'Transkrip Seluruh Sesi Sekarang'}
+                        </button>
+                      )}
+                    </div>
+                  );
+                }
+
+                if (activeTranscriptModal.error) {
+                  return (
+                    <div style={{ textAlign: 'center', padding: '30px 20px' }}>
+                      <i className="fa-solid fa-triangle-exclamation" style={{ fontSize: '2.4rem', color: '#f87171', marginBottom: '12px' }}></i>
+                      <div style={{ fontSize: '1.05rem', fontWeight: 600, color: '#fca5a5', marginBottom: '10px' }}>
+                        Gagal Memproses Transkripsi
+                      </div>
+                      <div style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.25)', borderRadius: '8px', padding: '12px 16px', color: '#fca5a5', fontSize: '0.88rem', margin: '0 auto 16px', maxWidth: '520px', textAlign: 'left', wordBreak: 'break-word' }}>
+                        <strong>Pesan Kendala:</strong> {activeTranscriptModal.error}
+                      </div>
+                      <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: '18px' }}>
+                        Pastikan server Whisper API aktif dan dapat diakses, lalu coba lakukan transkripsi ulang.
+                      </div>
+                      {transcriptionConfig.enabled && transcriptionConfig.apiUrl && (
+                        <button 
+                          className="btn btn-primary"
+                          style={{ padding: '9px 20px', fontSize: '0.88rem' }}
+                          onClick={() => {
+                            handleManualTranscribe(activeTranscriptModal.folderName, activeTranscriptModal.fileName, activeTranscriptModal.pcName);
+                          }}
+                        >
+                          <i className="fa-solid fa-arrow-rotate-right" style={{ marginRight: '8px' }}></i>
+                          Coba Transkrip Ulang Sekarang
                         </button>
                       )}
                     </div>
