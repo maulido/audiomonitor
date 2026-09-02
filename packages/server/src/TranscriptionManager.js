@@ -17,8 +17,11 @@ class TranscriptionManager {
 
     this.queue = [];
     this.isProcessing = false;
+    this.maxConcurrency = 2;
+    this.activeWorkers = 0;
     this.currentTask = null;
     this.activeTasks = new Map();
+    this.onTranscriptionComplete = null;
   }
 
   /**
@@ -37,8 +40,8 @@ class TranscriptionManager {
       return false;
     }
 
-    this.queue.push({ filePath, sessionFolder, fileName, pcName, enqueuedAt: Date.now() });
-    logger.info(`[Whisper] File ditambahkan ke antrean transkripsi: ${fileName} (${this.queue.length} antre)`);
+    this.queue.push({ filePath, sessionFolder, fileName, pcName, retryCount: 0, enqueuedAt: Date.now() });
+    logger.info(`[Whisper] File ditambahkan ke antrean transkripsi: ${fileName} (${this.queue.length} antre, ${this.activeWorkers} aktif)`);
     
     this.broadcastStatus(sessionFolder, fileName, 'queued');
     this.processQueue();
@@ -46,33 +49,67 @@ class TranscriptionManager {
   }
 
   /**
-   * Pemrosesan antrean transkripsi berurutan (FIFO).
+   * Pemrosesan antrean transkripsi dengan worker pool konkruen (hingga maxConcurrency pekerja simultan)
+   * serta mekanisme percobaan ulang (retry backoff).
    */
   async processQueue() {
-    if (this.isProcessing || this.queue.length === 0) return;
+    if (this.queue.length === 0 || this.activeWorkers >= this.maxConcurrency) {
+      this.isProcessing = this.activeWorkers > 0;
+      return;
+    }
 
-    this.isProcessing = true;
-    const task = this.queue.shift();
-    this.currentTask = task;
+    while (this.activeWorkers < this.maxConcurrency && this.queue.length > 0) {
+      const task = this.queue.shift();
+      this.activeWorkers++;
+      this.isProcessing = true;
+      this.currentTask = task;
 
-    try {
-      this.activeTasks.set(task.filePath, 'processing');
-      this.broadcastStatus(task.sessionFolder, task.fileName, 'processing');
+      // Jalankan worker secara asinkron tanpa memblokir worker lain
+      (async (currentWorkerTask) => {
+        try {
+          this.activeTasks.set(currentWorkerTask.filePath, 'processing');
+          this.broadcastStatus(currentWorkerTask.sessionFolder, currentWorkerTask.fileName, 'processing');
 
-      await this.transcribeFile(task.filePath, task.sessionFolder, task.fileName, task.pcName);
-      
-      this.activeTasks.delete(task.filePath);
-      this.broadcastStatus(task.sessionFolder, task.fileName, 'completed');
-    } catch (err) {
-      logger.error(`[Whisper] Gagal mentranskripsi ${task.fileName}: ${err.message}`);
-      this.activeTasks.delete(task.filePath);
-      this.broadcastStatus(task.sessionFolder, task.fileName, 'failed', err.message);
-    } finally {
-      this.currentTask = null;
-      this.isProcessing = false;
-      if (this.queue.length > 0) {
-        setTimeout(() => this.processQueue(), 500);
-      }
+          await this.transcribeFile(currentWorkerTask.filePath, currentWorkerTask.sessionFolder, currentWorkerTask.fileName, currentWorkerTask.pcName);
+          
+          this.activeTasks.delete(currentWorkerTask.filePath);
+          this.broadcastStatus(currentWorkerTask.sessionFolder, currentWorkerTask.fileName, 'completed');
+
+          if (typeof this.onTranscriptionComplete === 'function') {
+            try {
+              this.onTranscriptionComplete(currentWorkerTask);
+            } catch (cbErr) {}
+          }
+        } catch (err) {
+          const maxRetries = 2;
+          const currentRetries = currentWorkerTask.retryCount || 0;
+
+          if (currentRetries < maxRetries && (err.message.includes('timeout') || err.message.includes('ECONNREFUSED') || err.message.includes('503'))) {
+            currentWorkerTask.retryCount = currentRetries + 1;
+            const backoffMs = (currentWorkerTask.retryCount * 1500);
+            logger.warn(`[Whisper] Percobaan ke-${currentWorkerTask.retryCount} gagal untuk ${currentWorkerTask.fileName} (${err.message}). Mengantrekan ulang dalam ${backoffMs}ms...`);
+            
+            setTimeout(() => {
+              this.queue.unshift(currentWorkerTask);
+              this.processQueue();
+            }, backoffMs);
+          } else {
+            logger.error(`[Whisper] Gagal mentranskripsi ${currentWorkerTask.fileName}: ${err.message}`);
+            this.broadcastStatus(currentWorkerTask.sessionFolder, currentWorkerTask.fileName, 'failed', err.message);
+          }
+
+          this.activeTasks.delete(currentWorkerTask.filePath);
+        } finally {
+          this.activeWorkers = Math.max(0, this.activeWorkers - 1);
+          this.isProcessing = this.activeWorkers > 0;
+          if (this.currentTask === currentWorkerTask) {
+            this.currentTask = null;
+          }
+          if (this.queue.length > 0) {
+            setTimeout(() => this.processQueue(), 250);
+          }
+        }
+      })(task);
     }
   }
 

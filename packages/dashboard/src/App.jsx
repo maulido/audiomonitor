@@ -318,6 +318,7 @@ function App() {
   const [isSavingStorageConfig, setIsSavingStorageConfig] = useState(false);
   const [isTriggeringSync, setIsTriggeringSync] = useState(false);
   const [isTriggeringArchive, setIsTriggeringArchive] = useState(false);
+  const [isPurgingOldAudio, setIsPurgingOldAudio] = useState(false);
   const [syncStatusMsg, setSyncStatusMsg] = useState(null);
 
   const searchDebounceRef = useRef(null);
@@ -532,6 +533,40 @@ function App() {
       await customAlert(err.message, 'Error');
     } finally {
       setIsTriggeringArchive(false);
+    }
+  };
+
+  const triggerManualAutoPurgeAudio = async () => {
+    const authPin = await ensurePin();
+    if (!authPin) return;
+    const targetDays = storageConfig.autoPurgeAudioDays || 30;
+    const confirmed = await customConfirm(
+      `Apakah Anda yakin ingin memproses pembersihan audio lama (> ${targetDays} hari) pada server?\n\nFile audio fisik (.webm) sesi lama akan dihapus untuk menghemat ruang harddisk, namun SELURUH transkrip percakapan (.transcript.json) akan TETAP tersimpan aman selamanya.`,
+      'Konfirmasi Bersihkan Audio Lawas'
+    );
+    if (!confirmed) return;
+
+    setIsPurgingOldAudio(true);
+    try {
+      const res = await apiFetch('/api/storage/auto-purge-audio', {
+        method: 'POST',
+        body: JSON.stringify({ days: targetDays })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        await customAlert(
+          `Pembersihan audio server selesai:\n- ${data.purgedSessions} sesi dibersihkan\n- ${data.freedMb} MB ruang disk dibebaskan\n- ${data.preservedTranscriptsCount} berkas transkrip teks tetap dipertahankan.`,
+          'Pembersihan Selesai'
+        );
+        fetchStorageAutomationStatus();
+        fetchRecords();
+      } else {
+        await customAlert(data.message || data.error || 'Gagal menjalankan pembersihan audio lama.', 'Info');
+      }
+    } catch (err) {
+      await customAlert(err.message, 'Error');
+    } finally {
+      setIsPurgingOldAudio(false);
     }
   };
 
@@ -4352,7 +4387,7 @@ function App() {
                   </div>
                 )}
 
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px', marginBottom: '16px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '16px', marginBottom: '16px' }}>
                   <div className="form-group" style={{ margin: 0 }}>
                     <label className="form-label">Direktori Cadangan Sekunder (NAS / External Drive)</label>
                     <input 
@@ -4363,6 +4398,19 @@ function App() {
                       onChange={(e) => setStorageConfig(prev => ({ ...prev, backupDirectory: e.target.value }))}
                     />
                     <span className="form-help">Jika diisi, server akan mencadangkan file rekaman ke folder ini.</span>
+                  </div>
+
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label className="form-label">Otomatis Bersihkan Audio Server (&gt; X Hari)</label>
+                    <input 
+                      type="number" 
+                      min="0" 
+                      max="365" 
+                      className="form-input" 
+                      value={storageConfig.autoPurgeAudioDays || 0} 
+                      onChange={(e) => setStorageConfig(prev => ({ ...prev, autoPurgeAudioDays: parseInt(e.target.value, 10) || 0 }))}
+                    />
+                    <span className="form-help">Hapus raw audio server setelah X hari untuk hemat storage. <strong>Transkrip teks tetap tersimpan</strong> (0 = Nonaktif).</span>
                   </div>
 
                   <div className="form-group" style={{ margin: 0 }}>
@@ -4418,6 +4466,10 @@ function App() {
                     <button className="btn-filter secondary" onClick={triggerManualBackupSync} disabled={isTriggeringSync} style={{ padding: '8px 14px' }}>
                       <i className={`fa-solid ${isTriggeringSync ? 'fa-spinner fa-spin' : 'fa-arrows-rotate'}`}></i>
                       <span>{isTriggeringSync ? 'Menyinkronkan...' : 'Sinkronkan Cadangan ke NAS'}</span>
+                    </button>
+                    <button className="btn-filter secondary" onClick={triggerManualAutoPurgeAudio} disabled={isPurgingOldAudio} style={{ padding: '8px 14px', color: '#38bdf8', borderColor: 'rgba(56, 189, 248, 0.35)' }}>
+                      <i className={`fa-solid ${isPurgingOldAudio ? 'fa-spinner fa-spin' : 'fa-broom'}`}></i>
+                      <span>{isPurgingOldAudio ? 'Membersihkan Audio...' : 'Bersihkan Audio Server Lawas'}</span>
                     </button>
                     <button className="btn-filter secondary" onClick={triggerManualArchive} disabled={isTriggeringArchive} style={{ padding: '8px 14px', color: '#fbbf24', borderColor: 'rgba(251, 191, 36, 0.35)' }}>
                       <i className={`fa-solid ${isTriggeringArchive ? 'fa-spinner fa-spin' : 'fa-box-archive'}`}></i>

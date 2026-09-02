@@ -44,6 +44,7 @@ class ConfigManager {
       },
       storageAutomation: {
         autoArchiveDays: 14,
+        autoPurgeAudioDays: 0,
         minFreeDiskGb: 5,
         cloudSyncEnabled: false,
         cloudSyncUrl: '',

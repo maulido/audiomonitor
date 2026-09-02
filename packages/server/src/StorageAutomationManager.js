@@ -228,6 +228,115 @@ class StorageAutomationManager {
       return { success: false, error: err.message };
     }
   }
+
+  /**
+   * Menjalankan pembersihan berkas audio (.webm, .wav, .mp3, dll) lawas secara otomatis
+   * berdasarkan usia hari (autoPurgeAudioDays), namun TETAP MEMPERTAHANKAN berkas transkrip teks (.transcript.json, .txt, .srt).
+   * @param {string} recordDir - Direktori rekaman server
+   * @param {number|null} customDays - Kustom hari retensi (opsional)
+   */
+  async runAutoPurgeRawAudio(recordDir, customDays = null) {
+    const config = this.configManager ? this.configManager.getStorageAutomationConfig() : {};
+    const targetDays = customDays !== null && !isNaN(customDays) ? parseInt(customDays) : (parseInt(config.autoPurgeAudioDays) || 0);
+
+    if (targetDays <= 0) {
+      return { success: false, message: 'Auto-purge audio dinonaktifkan (hari <= 0)', purgedSessions: 0, freedBytes: 0 };
+    }
+
+    const sourceDir = recordDir || path.join(process.cwd(), 'records');
+    if (!fs.existsSync(sourceDir)) {
+      return { success: false, message: 'Direktori sumber rekaman tidak ditemukan', purgedSessions: 0, freedBytes: 0 };
+    }
+
+    const cutoffTime = Date.now() - (targetDays * 24 * 60 * 60 * 1000);
+    const AUDIO_EXTS = new Set(['.webm', '.ogg', '.wav', '.mp3', '.m4a']);
+    let purgedSessions = 0;
+    let deletedFilesCount = 0;
+    let preservedTranscriptsCount = 0;
+    let totalFreedBytes = 0;
+
+    try {
+      const entries = fs.readdirSync(sourceDir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue;
+        const sessionFolder = entry.name;
+        const sessionPath = path.join(sourceDir, sessionFolder);
+        const purgeMarker = path.join(sessionPath, '.audio_purged.json');
+
+        if (fs.existsSync(purgeMarker)) continue;
+
+        try {
+          const stat = fs.statSync(sessionPath);
+          let sessionAgeMs = stat.mtimeMs;
+
+          // Parse tanggal dari nama folder jika tersedia: PC_Testing_uuid_2026-08-01_...
+          const dateMatch = sessionFolder.match(/_(\d{4}-\d{2}-\d{2})_/);
+          if (dateMatch) {
+            const parsedTime = Date.parse(dateMatch[1]);
+            if (!isNaN(parsedTime)) {
+              sessionAgeMs = parsedTime;
+            }
+          }
+
+          if (sessionAgeMs < cutoffTime) {
+            const files = fs.readdirSync(sessionPath);
+            let sessionFreedBytes = 0;
+            let sessionDeletedFiles = 0;
+            let sessionPreservedTranscripts = 0;
+
+            for (const file of files) {
+              const ext = path.extname(file).toLowerCase();
+              const fullFilePath = path.join(sessionPath, file);
+              try {
+                const fStat = fs.statSync(fullFilePath);
+                if (AUDIO_EXTS.has(ext) && fStat.isFile()) {
+                  sessionFreedBytes += fStat.size;
+                  fs.unlinkSync(fullFilePath);
+                  sessionDeletedFiles++;
+                } else if (file.endsWith('.transcript.json') || file.endsWith('.txt') || file.endsWith('.srt')) {
+                  sessionPreservedTranscripts++;
+                }
+              } catch (fErr) {}
+            }
+
+            if (sessionDeletedFiles > 0) {
+              fs.writeFileSync(purgeMarker, JSON.stringify({
+                purgedAt: new Date().toISOString(),
+                autoPurgeDays: targetDays,
+                freedBytes: sessionFreedBytes,
+                deletedFiles: sessionDeletedFiles,
+                preservedTranscripts: sessionPreservedTranscripts
+              }));
+              try {
+                fs.writeFileSync(path.join(sessionPath, '.audio_purged'), 'purged', 'utf8');
+              } catch (mErr) {}
+
+              purgedSessions++;
+              deletedFilesCount += sessionDeletedFiles;
+              preservedTranscriptsCount += sessionPreservedTranscripts;
+              totalFreedBytes += sessionFreedBytes;
+            }
+          }
+        } catch (sErr) {}
+      }
+
+      const totalFreedMb = (totalFreedBytes / (1024 * 1024)).toFixed(2);
+      if (purgedSessions > 0) {
+        logger.audit(`[AutoPurgeAudio] Otomatisasi pembersihan audio lawas (> ${targetDays} hari) selesai: ${purgedSessions} sesi dipurged, ${totalFreedMb} MB dibebaskan, ${preservedTranscriptsCount} transkrip dipertahankan.`);
+      }
+      return {
+        success: true,
+        purgedSessions,
+        deletedFilesCount,
+        preservedTranscriptsCount,
+        freedBytes: totalFreedBytes,
+        freedMb: totalFreedMb
+      };
+    } catch (err) {
+      logger.error(`[AutoPurgeAudio] Gagal mengeksekusi auto-purge raw audio: ${err.message}`);
+      return { success: false, error: err.message, purgedSessions: 0, freedBytes: 0 };
+    }
+  }
 }
 
 module.exports = StorageAutomationManager;

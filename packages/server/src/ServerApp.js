@@ -49,8 +49,33 @@ class ServerApp {
     // StorageAutomationManager mengelola Smart Storage, Archiving, dan Cloud / NAS Sync
     this.storageAutomationManager = new StorageAutomationManager(this.configManager, this.dbManager);
 
+    // In-Memory Cache untuk optimasi /api/records
+    this._recordsCache = null;
+    this._recordsCacheTime = 0;
+    this._recordsCacheTtlMs = 3000;
+    this._recordsCacheVersion = 1;
+
+    // Tracker proteksi brute-force PIN
+    this._failedPinAttempts = new Map();
+
+    // Hook invalidasi cache otomatis saat transkripsi selesai
+    if (this.transcriptionManager) {
+      this.transcriptionManager.onTranscriptionComplete = () => {
+        this.invalidateRecordsCache();
+      };
+    }
+
     this.setupMiddleware();
     this.setupRoutes();
+  }
+
+  /**
+   * Mengosongkan cache in-memory data rekaman saat terjadi perubahan data (upload, delete, purge, transkrip).
+   */
+  invalidateRecordsCache() {
+    this._recordsCache = null;
+    this._recordsCacheTime = 0;
+    this._recordsCacheVersion = (this._recordsCacheVersion || 1) + 1;
   }
 
   /**
@@ -358,6 +383,7 @@ class ServerApp {
         
         writeStream.on('finish', () => {
           logger.info(`[Upload] Berhasil menerima file rekaman dari ${agentName}: ${fileName} -> ${filePath}`);
+          this.invalidateRecordsCache();
           if (this.transcriptionManager) {
             try {
               if (filePath.endsWith('.webm')) {
@@ -546,6 +572,11 @@ class ServerApp {
 
     // API: Mengambil daftar file rekaman (Termasuk sesi yang audionya telah dibersihkan namun transkrip tetap ada)
     this.app.get('/api/records', (req, res) => {
+      // In-Memory Cache Check: Kembalikan cache jika masih valid dalam rentang TTL
+      if (this._recordsCache && (Date.now() - this._recordsCacheTime < this._recordsCacheTtlMs)) {
+        return res.json(this._recordsCache);
+      }
+
       const fs = require('fs');
       const path = require('path');
       const recordDir = this.getRecordsDir();
@@ -753,6 +784,8 @@ class ServerApp {
       
       // Urutkan dari yang terbaru
       records.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+      this._recordsCache = records;
+      this._recordsCacheTime = Date.now();
       res.json(records);
     });
 
@@ -789,6 +822,7 @@ class ServerApp {
           if (fs.existsSync(transcriptPath)) {
             try { fs.unlinkSync(transcriptPath); } catch (e) {}
           }
+          this.invalidateRecordsCache();
           logger.audit(`[RecordManager] Administrator menghapus file rekaman ${safePcName}/${safeFileName}`);
           res.json({ success: true });
         } catch (e) {
@@ -864,6 +898,7 @@ class ServerApp {
         } catch (mErr) {}
 
         const freedMb = (freedBytes / (1024 * 1024)).toFixed(2);
+        this.invalidateRecordsCache();
         logger.audit(`[PurgeAudio] Administrator membersihkan audio sesi ${safeFolder} (${freedMb} MB dibebaskan, ${deletedFiles} file dihapus, ${preservedTranscripts} transkrip dipertahankan)`);
         res.json({
           success: true,
@@ -904,6 +939,7 @@ class ServerApp {
       if (fs.existsSync(folderPath)) {
         try {
           fs.rmSync(folderPath, { recursive: true, force: true });
+          this.invalidateRecordsCache();
           logger.audit(`[RecordManager] Administrator menghapus seluruh sesi rekaman ${safeFolder} beserta transkripnya`);
           res.json({ success: true, message: 'Seluruh sesi rekaman dan transkrip berhasil dihapus.' });
         } catch (err) {
@@ -1409,6 +1445,23 @@ class ServerApp {
         res.json(result);
       } catch (err) {
         logger.error(`[SmartStorage] Error trigger sync: ${err.message}`);
+        res.status(500).json({ success: false, error: err.message });
+      }
+    });
+
+    // API: Memicu pembersihan otomatis audio lawas server berbasis hari (transkrip tetap dipertahankan)
+    this.app.post('/api/storage/auto-purge-audio', async (req, res) => {
+      try {
+        const { days } = req.body || {};
+        const recordsDir = this.getRecordsDir();
+        logger.info(`[AutoPurgeAudio] Memicu pembersihan audio lawas server (hari: ${days !== undefined ? days : 'sesuai konfigurasi'})`);
+        const result = await this.storageAutomationManager.runAutoPurgeRawAudio(recordsDir, days);
+        if (result.purgedSessions > 0) {
+          this.invalidateRecordsCache();
+        }
+        res.json(result);
+      } catch (err) {
+        logger.error(`[AutoPurgeAudio] Error auto purge audio: ${err.message}`);
         res.status(500).json({ success: false, error: err.message });
       }
     });

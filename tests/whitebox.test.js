@@ -25,6 +25,7 @@ const DatabaseManager = require('../packages/server/src/DatabaseManager');
 const AlertManager = require('../packages/server/src/AlertManager');
 const TelemetryHub = require('../packages/server/src/TelemetryHub');
 const TranscriptionManager = require('../packages/server/src/TranscriptionManager');
+const StorageAutomationManager = require('../packages/server/src/StorageAutomationManager');
 const ServerApp = require('../packages/server/src/ServerApp');
 
 // Test Utilities
@@ -2324,6 +2325,7 @@ async function main() {
 
     // 2. Mock transcribeFile to test FIFO queue execution
     const processedOrder = [];
+    tm.maxConcurrency = 1;
     tm.transcribeFile = async (filePath, sessionFolder, fileName, pcName) => {
       processedOrder.push(filePath);
       await new Promise(r => setTimeout(r, 60));
@@ -3648,6 +3650,7 @@ async function main() {
     const completedPath = path.join(concurrentDir, completedFolderName);
     fs.renameSync(ongoingPath, completedPath);
     fs.writeFileSync(path.join(completedPath, 'part_2.webm'), Buffer.alloc(2000));
+    serverApp.invalidateRecordsCache();
 
     // Verify scan after rename
     const res2 = await fetch('http://localhost:4488/api/records');
@@ -4410,6 +4413,156 @@ async function main() {
     const p3RawAfter = fs.readFileSync(p3Path);
     assertEqual(p3RawAfter.slice(0, 4).toString('hex'), '1a45dfa3', 'Part 3 after synthesis starts with EBML magic');
     assert(p3RawAfter.length > pureClusterData.length, 'Part 3 size increased by synthesized header size');
+  });
+
+  // =========================================================================
+  // SUITE 63: Server In-Memory Records Caching & Invalidation Invariants
+  // =========================================================================
+  await runSuite('63. Server In-Memory Records Caching & Invalidation Invariants', async () => {
+    const cacheDir = path.join(TEST_DIR, 'cache_test_vault');
+    fs.mkdirSync(cacheDir, { recursive: true });
+
+    const serverPort = 5088;
+    const cm = new ConfigManager(path.join(cacheDir, 'config.json'));
+    cm.config.recordDir = cacheDir;
+    cm.saveConfig();
+    const dbm = new DatabaseManager(path.join(cacheDir, 'incidents.json'));
+    const am = new AlertManager(cm, dbm);
+    const sApp = new ServerApp(cm, dbm, am, serverPort);
+
+    await new Promise((resolve) => sApp.server.listen(serverPort, resolve));
+
+    try {
+      // 1. Buat folder rekaman awal
+      const sessionFolder = 'PC_Alpha_11111111-1111-1111-1111-111111111111_2026-09-01_10-00-00_to_10-10-00';
+      const sessionPath = path.join(cacheDir, sessionFolder);
+      fs.mkdirSync(sessionPath, { recursive: true });
+      fs.writeFileSync(path.join(sessionPath, 'Part_001.webm'), Buffer.alloc(100));
+
+      // Request pertama -> cache miss, populate cache
+      const res1 = await fetch(`http://localhost:${serverPort}/api/records`);
+      const data1 = await res1.json();
+      assertEqual(data1.length, 1, 'First fetch returned 1 record');
+      assert(sApp._recordsCache !== null, 'Server cache populated on first fetch');
+      const cacheVersionBefore = sApp._recordsCacheVersion;
+
+      // Request kedua -> cache hit
+      const res2 = await fetch(`http://localhost:${serverPort}/api/records`);
+      const data2 = await res2.json();
+      assertEqual(data2.length, 1, 'Second fetch returned 1 record from cache');
+
+      // Test Invalidation saat upload
+      sApp.invalidateRecordsCache();
+      assertEqual(sApp._recordsCache, null, 'Cache cleared after invalidation');
+      assert(sApp._recordsCacheVersion > cacheVersionBefore, 'Cache version incremented');
+
+      // Tambah file kedua dan fetch ulang
+      fs.writeFileSync(path.join(sessionPath, 'Part_002.webm'), Buffer.alloc(100));
+      const res3 = await fetch(`http://localhost:${serverPort}/api/records`);
+      const data3 = await res3.json();
+      assertEqual(data3.length, 2, 'Third fetch after invalidation returned updated 2 records');
+    } finally {
+      await new Promise((resolve) => sApp.server.close(resolve));
+    }
+  });
+
+  // =========================================================================
+  // SUITE 64: Automated Storage Retention & Auto-Purge Raw Audio Invariants
+  // =========================================================================
+  await runSuite('64. Automated Storage Retention & Auto-Purge Raw Audio Invariants', async () => {
+    const storageDir = path.join(TEST_DIR, 'storage_retention_vault');
+    fs.mkdirSync(storageDir, { recursive: true });
+
+    const cm = new ConfigManager(path.join(storageDir, 'config.json'));
+    cm.config.recordDir = storageDir;
+    cm.setStorageAutomationConfig({
+      autoPurgeAudioDays: 10
+    });
+
+    const sam = new StorageAutomationManager(cm, null);
+
+    // 1. Buat sesi lawas (tanggal 2026-08-01, > 10 hari)
+    const oldSession = 'PC_Old_11111111-1111-1111-1111-111111111111_2026-08-01_10-00-00_to_10-10-00';
+    const oldPath = path.join(storageDir, oldSession);
+    fs.mkdirSync(oldPath, { recursive: true });
+    const oldAudioPath = path.join(oldPath, 'Part_001.webm');
+    const oldTranscriptPath = path.join(oldPath, 'Part_001.webm.transcript.json');
+    fs.writeFileSync(oldAudioPath, Buffer.alloc(5000));
+    fs.writeFileSync(oldTranscriptPath, JSON.stringify({ text: 'Percakapan sesi lawas tersimpan abadi', duration: 60 }));
+
+    // 2. Buat sesi baru (tanggal 2026-09-01, < 10 hari)
+    const newSession = 'PC_New_22222222-2222-2222-2222-222222222222_2026-09-01_10-00-00_to_10-10-00';
+    const newPath = path.join(storageDir, newSession);
+    fs.mkdirSync(newPath, { recursive: true });
+    const newAudioPath = path.join(newPath, 'Part_001.webm');
+    const newTranscriptPath = path.join(newPath, 'Part_001.webm.transcript.json');
+    fs.writeFileSync(newAudioPath, Buffer.alloc(5000));
+    fs.writeFileSync(newTranscriptPath, JSON.stringify({ text: 'Percakapan sesi baru', duration: 60 }));
+
+    // Jalankan auto-purge raw audio
+    const purgeResult = await sam.runAutoPurgeRawAudio(storageDir, 10);
+    assertEqual(purgeResult.success, true, 'Auto-purge executed successfully');
+    assertEqual(purgeResult.purgedSessions, 1, 'Exactly 1 old session purged');
+    assertEqual(purgeResult.deletedFilesCount, 1, 'Exactly 1 raw audio file deleted');
+    assertEqual(purgeResult.preservedTranscriptsCount, 1, 'Transcript file preserved');
+
+    // Verifikasi fisik file
+    assertEqual(fs.existsSync(oldAudioPath), false, 'Old audio file Part_001.webm deleted');
+    assertEqual(fs.existsSync(oldTranscriptPath), true, 'Old transcript JSON preserved on disk');
+    assertEqual(fs.existsSync(path.join(oldPath, '.audio_purged.json')), true, '.audio_purged.json marker created');
+
+    // Verifikasi sesi baru tidak disentuh
+    assertEqual(fs.existsSync(newAudioPath), true, 'New audio file remains untouched');
+    assertEqual(fs.existsSync(newTranscriptPath), true, 'New transcript file remains untouched');
+  });
+
+  // =========================================================================
+  // SUITE 65: Concurrent Whisper Transcription Worker Pool & Retry Mechanism
+  // =========================================================================
+  await runSuite('65. Concurrent Whisper Transcription Worker Pool & Retry Mechanism', async () => {
+    const queueDir = path.join(TEST_DIR, 'whisper_queue_vault');
+    fs.mkdirSync(queueDir, { recursive: true });
+
+    const cm = new ConfigManager(path.join(queueDir, 'config.json'));
+    cm.setTranscriptionConfig({
+      enabled: true,
+      apiUrl: 'http://localhost:9999/mock-whisper',
+      autoTranscribe: true
+    });
+
+    const tm = new TranscriptionManager(cm, null, null, null);
+    assertEqual(tm.maxConcurrency, 2, 'Default maxConcurrency is 2 workers');
+    assertEqual(tm.activeWorkers, 0, 'Initial active workers is 0');
+
+    let completedCallbackCalled = 0;
+    tm.onTranscriptionComplete = () => {
+      completedCallbackCalled++;
+    };
+
+    // Mock transcribeFile untuk simulasi eksekusi cepat
+    tm.transcribeFile = async (filePath, sessionFolder, fileName, pcName) => {
+      await new Promise(r => setTimeout(r, 50));
+      return { text: 'Hasil transkripsi simulasi worker', segments: [] };
+    };
+
+    const task1File = path.join(queueDir, 'task1.webm');
+    const task2File = path.join(queueDir, 'task2.webm');
+    const task3File = path.join(queueDir, 'task3.webm');
+    fs.writeFileSync(task1File, Buffer.alloc(100));
+    fs.writeFileSync(task2File, Buffer.alloc(100));
+    fs.writeFileSync(task3File, Buffer.alloc(100));
+
+    // Enqueue 3 tasks
+    tm.enqueueFile(task1File, 'Session1', 'task1.webm', 'PC 1');
+    tm.enqueueFile(task2File, 'Session2', 'task2.webm', 'PC 2');
+    tm.enqueueFile(task3File, 'Session3', 'task3.webm', 'PC 3');
+
+    // Tunggu antrean selesai diproses
+    await new Promise(r => setTimeout(r, 400));
+
+    assertEqual(completedCallbackCalled, 3, 'All 3 tasks completed via concurrent worker pool');
+    assertEqual(tm.activeWorkers, 0, 'All workers returned to idle state');
+    assertEqual(tm.queue.length, 0, 'Queue is completely empty');
   });
 
   // Clean up test directory
