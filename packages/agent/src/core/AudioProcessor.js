@@ -34,14 +34,24 @@ class AudioProcessor {
     }
     this.stop(); // Bersihkan context dan stream lama sebelum membuat yang baru
     try {
-      // Mendefinisikan aturan permintaan media (hanya audio)
-      const constraints = {
-        audio: deviceId ? { deviceId: { exact: deviceId } } : true,
-        video: false
-      };
-      
-      // Meminta akses aliran (stream) mikrofon dari sistem operasi
-      this.stream = await navigator.mediaDevices.getUserMedia(constraints);
+      let stream = null;
+      if (deviceId) {
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            audio: { deviceId: { ideal: deviceId } },
+            video: false
+          });
+        } catch (e) {
+          console.warn('[AudioProcessor] Gagal membuka deviceId ideal, mencoba fallback ke default:', e);
+        }
+      }
+      if (!stream) {
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: true,
+          video: false
+        });
+      }
+      this.stream = stream;
       this.isDeviceDisconnected = false;
       this.stream.getTracks().forEach(track => {
         track.onended = () => {
@@ -62,7 +72,22 @@ class AudioProcessor {
                   }
                 }
               } catch (e) {}
-            }, 2000);
+            }, 1500);
+          }
+        };
+
+        track.onmute = () => {
+          if (typeof this.onDeviceDisconnected === 'function') {
+            try { this.onDeviceDisconnected(); } catch (e) {}
+          }
+        };
+
+        track.onunmute = async () => {
+          if (this.audioContext && this.audioContext.state === 'suspended') {
+            try { await this.audioContext.resume(); } catch (e) {}
+          }
+          if (typeof this.onDeviceReconnected === 'function') {
+            try { this.onDeviceReconnected(); } catch (e) {}
           }
         };
       });
@@ -99,6 +124,11 @@ class AudioProcessor {
       const updateLevel = () => {
         if (!this.isRunning) return;
         
+        // Auto-resume jika audioContext disuspend oleh OS
+        if (this.audioContext && this.audioContext.state === 'suspended') {
+          this.audioContext.resume().catch(() => {});
+        }
+
         // Memasukkan data gelombang suara (time-domain) dan spektrum frekuensi
         this.analyser.getFloatTimeDomainData(pcmData);
         this.analyser.getByteFrequencyData(freqData);

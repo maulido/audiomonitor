@@ -762,6 +762,7 @@ function App() {
   const dangerScore = useRef(0);
   const lastTickRef = useRef(0);
   const clippingScore = useRef(0);
+  const stalledMicCount = useRef(0);
 
   const currentMicLevel = useRef(0);
   const currentObsLevel = useRef(0);
@@ -837,6 +838,18 @@ function App() {
 
     // Silence & Dead Mic Logic via tick score (hanya dievaluasi jika OBS tidak sedang di-mute)
     const hasAudioActivity = currentMicLevel.current >= 2 || currentRawMicLevel.current >= 2 || currentObsLevel.current >= 2;
+
+    // Watchdog: jika OBS menerima audio (currentObsLevel >= 2) tapi Web Audio MIC stuck < 0.5 selama 1 detik (10 ticks)
+    if (currentObsLevel.current >= 2 && currentRawMicLevel.current < 0.5) {
+      stalledMicCount.current += 1;
+      if (stalledMicCount.current === 10) {
+        if (audioProcessor.current) {
+          audioProcessor.current.start(selectedMicIdRef.current).catch(console.error);
+        }
+      }
+    } else {
+      stalledMicCount.current = 0;
+    }
 
     if (hasAudioActivity) {
       silenceScore.current = 0;
