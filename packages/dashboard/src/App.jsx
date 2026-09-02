@@ -2051,7 +2051,7 @@ function App() {
     .filter(agent => {
       if (filterStatus === 'ALL') return true;
       if (filterStatus === 'BAHAYA') return agent.status?.startsWith('BAHAYA');
-      if (filterStatus === 'MUTE') return agent.isObsMutedBtn || agent.status === 'STANDBY_MUTE' || agent.status === 'WASPADA_BICARA_MUTE' || agent.status === 'BAHAYA_OBS_MUTE' || (agent.obsDb !== undefined && agent.obsDb <= -90);
+      if (filterStatus === 'MUTE') return agent.isObsMutedBtn || agent.status === 'STANDBY_MUTE' || agent.status === 'WASPADA_BICARA_MUTE' || agent.status === 'BAHAYA_OBS_MUTE';
       if (filterStatus === 'AMAN') return agent.status === 'AMAN';
       return agent.status === filterStatus;
     })
@@ -2227,7 +2227,7 @@ function App() {
                   <div className="summary-value">
                     <span style={{color: 'var(--danger)'}}>{Object.values(agents).filter(a => a.status !== 'OFFLINE' && a.status && a.status.startsWith('BAHAYA')).length}</span>
                     <span style={{fontSize: '1.2rem', color: '#444', margin: '0 8px'}}>/</span>
-                    <span style={{color: 'var(--warning)'}}>{Object.values(agents).filter(a => a.status !== 'OFFLINE' && (a.isObsMutedBtn || a.status === 'STANDBY_MUTE' || a.status === 'WASPADA_BICARA_MUTE' || a.status === 'BAHAYA_OBS_MUTE' || (a.obsDb !== undefined && a.obsDb <= -90 && a.obsConnected))).length}</span>
+                    <span style={{color: 'var(--warning)'}}>{Object.values(agents).filter(a => a.status !== 'OFFLINE' && (a.isObsMutedBtn || a.status === 'STANDBY_MUTE' || a.status === 'WASPADA_BICARA_MUTE' || a.status === 'BAHAYA_OBS_MUTE')).length}</span>
                   </div>
                   <div className="summary-label">Bahaya / Mute</div>
                 </div>

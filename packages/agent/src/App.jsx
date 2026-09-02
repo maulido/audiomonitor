@@ -614,6 +614,11 @@ function App() {
         setObsConnected(true);
         if (window.electronAPI && window.electronAPI.writeLog) window.electronAPI.writeLog('INFO', 'OBS Terhubung');
         obsClient.current.getAudioInputs().then(inputs => setObsInputs(inputs)).catch(console.error);
+        obsClient.current.getDetailedSources().then(sources => {
+          setObsSources(sources);
+          const currentSource = sources.find(s => s.name === obsSourceNameRef.current);
+          if (currentSource) setIsObsMutedBtn(currentSource.muted);
+        }).catch(console.error);
         obsClient.current.getStreamStatus().then(status => {
 
           if (obsSyncStreamingRef.current) {
@@ -762,17 +767,8 @@ function App() {
 
     let nextStatus = status;
     const isTalking = currentMicLevel.current > speakingThreshold;
-    const isObsMuted = currentObsLevel.current < 0.5;
-
-    // Clipping Logic (build score if rawMicLevel exceeds threshold)
-    if (currentRawMicLevel.current >= clippingThreshold) {
-      clippingScore.current += 100;
-    } else {
-      clippingScore.current = Math.max(0, clippingScore.current - 100);
-    }
-
-    // Build up danger score if talking while OBS is muted. Drain it if not.
-    const isActuallyMuted = isObsMutedBtn || isObsMuted;
+    // True OBS Mute State: strictly follows the physical mute state from OBS WebSocket
+    const isActuallyMuted = obsConnected && Boolean(isObsMutedBtn);
     if (!obsConnected) {
       dangerScore.current = 0;
     } else if (isTalking && isActuallyMuted) {
@@ -789,6 +785,13 @@ function App() {
       } else {
         dangerScore.current = 0;
       }
+    }
+
+    // Clipping Logic (build score if rawMicLevel exceeds threshold)
+    if (currentRawMicLevel.current >= clippingThreshold) {
+      clippingScore.current += 100;
+    } else {
+      clippingScore.current = Math.max(0, clippingScore.current - 100);
     }
 
     if (isActuallyMuted && obsConnected) {
@@ -911,7 +914,7 @@ function App() {
       obsConnected,
       isObsMutedBtn,
       status,
-      muteDangerProgress: (isObsMutedBtn || (currentObsLevel.current < 0.5)) ? Math.min(100, Math.max(0, Math.round((dangerScore.current / (Math.max(1, obsMuteTimeoutSec) * 1000)) * 100))) : 0,
+      muteDangerProgress: isActuallyMuted ? Math.min(100, Math.max(0, Math.round((dangerScore.current / (Math.max(1, obsMuteTimeoutSec) * 1000)) * 100))) : 0,
       dangerScoreMs: Math.max(0, dangerScore.current),
       silenceDurationSec: Math.round(silenceScore.current / 1000),
       deadMicProgress: Math.min(100, Math.max(0, Math.round((silenceScore.current / (Math.max(1, deadMicTimeoutSec) * 1000)) * 100))),
