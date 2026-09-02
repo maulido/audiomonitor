@@ -214,9 +214,29 @@ if (!gotTheLock) {
   });
 
   app.whenReady().then(() => {
-    // Daftarkan AppUserModelId agar Notifikasi Toast Windows dikenali dengan benar
+    // Daftarkan AppUserModelId dan Shortcut Start Menu agar Notifikasi Toast Windows 10/11 muncul
+    const APP_ID = 'com.audiomonitor.agent';
     if (process.platform === 'win32') {
-      app.setAppUserModelId('com.audiomonitor.agent');
+      app.setAppUserModelId(APP_ID);
+      try {
+        const { shell } = require('electron');
+        const startMenuDir = path.join(app.getPath('appData'), 'Microsoft', 'Windows', 'Start Menu', 'Programs');
+        const shortcutPath = path.join(startMenuDir, 'Audio Monitor Agent.lnk');
+        let iconPath = path.join(__dirname, '../public/icon.ico');
+        if (!isDev) iconPath = path.join(__dirname, '../dist/icon.ico');
+
+        if (!fs.existsSync(shortcutPath) || isDev) {
+          shell.writeShortcutLink(shortcutPath, {
+            target: process.execPath,
+            args: isDev ? `"${path.join(__dirname, '..')}"` : '',
+            appUserModelId: APP_ID,
+            description: 'Audio Monitor Agent',
+            icon: fs.existsSync(iconPath) ? iconPath : undefined
+          });
+        }
+      } catch (sErr) {
+        console.warn('Gagal mendaftarkan shortcut Start Menu untuk notifikasi:', sErr);
+      }
     }
 
     // Setup Auto Updater

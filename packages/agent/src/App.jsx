@@ -439,6 +439,25 @@ function App() {
   const telemetryClient = useRef(null);
   const lastNotificationTime = useRef(0);
 
+  const triggerNotification = (title, body) => {
+    // 1. Electron IPC Native Windows Toast
+    if (window.electronAPI && window.electronAPI.showNotification) {
+      window.electronAPI.showNotification(title, body);
+    }
+    // 2. HTML5 Web Notification API
+    try {
+      if (typeof window.Notification !== 'undefined') {
+        if (window.Notification.permission === 'granted') {
+          new window.Notification(title, { body });
+        } else if (window.Notification.permission !== 'denied') {
+          window.Notification.requestPermission().then(perm => {
+            if (perm === 'granted') new window.Notification(title, { body });
+          });
+        }
+      }
+    } catch (e) {}
+  };
+
   // Initial Hardware UUID Fetch
   useEffect(() => {
     if (window.electronAPI) {
@@ -909,28 +928,28 @@ function App() {
     }
 
     // Telemetry/Desktop Notification Throttle
-    if ((nextStatus === 'BAHAYA_OBS_MUTE' || nextStatus === 'WASPADA_BICARA_MUTE') && window.electronAPI) {
+    if ((nextStatus === 'BAHAYA_OBS_MUTE' || nextStatus === 'WASPADA_BICARA_MUTE')) {
       const now = Date.now();
       if (now - lastNotificationTime.current > 8000 && enableWindowsNotifRef.current) { // 8 seconds throttle
-        window.electronAPI.showNotification(
+        triggerNotification(
           'Peringatan: OBS Sedang di-MUTE!',
           'Suara mikrofon terdeteksi aktif, namun input OBS dalam keadaan MUTE. Segera buka mute di OBS!'
         );
         lastNotificationTime.current = now;
       }
-    } else if (nextStatus === 'BAHAYA_AUDIO_PECAH' && window.electronAPI) {
+    } else if (nextStatus === 'BAHAYA_AUDIO_PECAH') {
       const now = Date.now();
       if (now - lastNotificationTime.current > 8000 && enableWindowsNotifRef.current) {
-        window.electronAPI.showNotification(
+        triggerNotification(
           'Audio Clipping / Suara Pecah!',
           'Volume mikrofon melebihi batas toleransi aman dan berisiko distorsi di siaran.'
         );
         lastNotificationTime.current = now;
       }
-    } else if (nextStatus === 'BAHAYA_MIC_MATI' && window.electronAPI) {
+    } else if (nextStatus === 'BAHAYA_MIC_MATI') {
       const now = Date.now();
       if (now - lastNotificationTime.current > 8000 && enableWindowsNotifRef.current) {
-        window.electronAPI.showNotification(
+        triggerNotification(
           'Hardware Mic Tidak Merespons!',
           'Tidak ada sinyal suara fisik dari mikrofon selama batas waktu yang ditentukan. Periksa kabel atau mute fisik!'
         );
@@ -1431,12 +1450,10 @@ function App() {
                     <button
                       type="button"
                       onClick={() => {
-                        if (window.electronAPI && window.electronAPI.showNotification) {
-                          window.electronAPI.showNotification(
-                            'Uji Notifikasi Windows',
-                            'Notifikasi Windows Audio Monitor Agent berfungsi dengan baik dan siap memberikan peringatan!'
-                          );
-                        }
+                        triggerNotification(
+                          'Uji Notifikasi Windows',
+                          'Notifikasi Windows Audio Monitor Agent berfungsi dengan baik dan siap memberikan peringatan!'
+                        );
                       }}
                       style={{
                         background: '#2c3e50',
