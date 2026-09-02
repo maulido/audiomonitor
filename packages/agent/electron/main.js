@@ -31,6 +31,11 @@ let mainWindow = null;
 let tray = null;
 let isQuitting = false;
 
+// Daftarkan AppUserModelId agar Notifikasi Toast Windows 10/11 berfungsi dengan benar
+if (process.platform === 'win32') {
+  app.setAppUserModelId(process.execPath);
+}
+
 const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
   app.quit();
@@ -916,15 +921,12 @@ if (!gotTheLock) {
 
   // Menampilkan Pop-Up Notifikasi Windows Host
   ipcMain.on('show-notification', (event, { title, body, sound = true, urgency = 'normal' }) => {
-    if (!Notification.isSupported()) {
-      writeAgentLog('WARN', 'Notifikasi sistem tidak didukung di lingkungan ini');
-      return;
-    }
-
     try {
-      let iconPath = path.join(__dirname, '../public/icon.png');
-      if (!isDev) {
-        iconPath = path.join(__dirname, '../dist/icon.png');
+      let iconPath = path.join(__dirname, '../public/icon.ico');
+      if (!isDev) iconPath = path.join(__dirname, '../dist/icon.ico');
+      if (!fs.existsSync(iconPath)) {
+        iconPath = path.join(__dirname, '../public/icon.png');
+        if (!isDev) iconPath = path.join(__dirname, '../dist/icon.png');
       }
 
       const notifOptions = {
@@ -935,7 +937,9 @@ if (!gotTheLock) {
       };
 
       if (fs.existsSync(iconPath)) {
-        notifOptions.icon = iconPath;
+        try {
+          notifOptions.icon = nativeImage.createFromPath(iconPath);
+        } catch (iErr) {}
       }
 
       const notif = new Notification(notifOptions);

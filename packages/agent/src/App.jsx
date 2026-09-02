@@ -909,18 +909,18 @@ function App() {
     }
 
     // Telemetry/Desktop Notification Throttle
-    if (nextStatus === 'BAHAYA_OBS_MUTE' && window.electronAPI) {
+    if ((nextStatus === 'BAHAYA_OBS_MUTE' || nextStatus === 'WASPADA_BICARA_MUTE') && window.electronAPI) {
       const now = Date.now();
-      if (now - lastNotificationTime.current > 10000 && enableWindowsNotifRef.current) { // 10 seconds throttle
+      if (now - lastNotificationTime.current > 8000 && enableWindowsNotifRef.current) { // 8 seconds throttle
         window.electronAPI.showNotification(
-          'Bahaya Audio: OBS Mute!',
-          'Suara mikrofon terdeteksi aktif, namun input OBS dalam keadaan MUTE. Buka mute di OBS!'
+          'Peringatan: OBS Sedang di-MUTE!',
+          'Suara mikrofon terdeteksi aktif, namun input OBS dalam keadaan MUTE. Segera buka mute di OBS!'
         );
         lastNotificationTime.current = now;
       }
     } else if (nextStatus === 'BAHAYA_AUDIO_PECAH' && window.electronAPI) {
       const now = Date.now();
-      if (now - lastNotificationTime.current > 10000 && enableWindowsNotifRef.current) {
+      if (now - lastNotificationTime.current > 8000 && enableWindowsNotifRef.current) {
         window.electronAPI.showNotification(
           'Audio Clipping / Suara Pecah!',
           'Volume mikrofon melebihi batas toleransi aman dan berisiko distorsi di siaran.'
@@ -929,7 +929,7 @@ function App() {
       }
     } else if (nextStatus === 'BAHAYA_MIC_MATI' && window.electronAPI) {
       const now = Date.now();
-      if (now - lastNotificationTime.current > 10000 && enableWindowsNotifRef.current) {
+      if (now - lastNotificationTime.current > 8000 && enableWindowsNotifRef.current) {
         window.electronAPI.showNotification(
           'Hardware Mic Tidak Merespons!',
           'Tidak ada sinyal suara fisik dari mikrofon selama batas waktu yang ditentukan. Periksa kabel atau mute fisik!'
