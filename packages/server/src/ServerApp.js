@@ -1059,12 +1059,29 @@ class ServerApp {
         }
 
         try {
+          if (this.transcriptionManager) {
+            this.transcriptionManager.activeWorkers++;
+            this.transcriptionManager.activeTasks.set(filePath, { sessionFolder: safeFolder, fileName: safeFile, pcName });
+            this.transcriptionManager.broadcastStatus(safeFolder, safeFile, 'processing');
+          }
+
           const result = await this.transcriptionManager.transcribeFile(filePath, safeFolder, safeFile, pcName);
+          if (this.transcriptionManager) {
+            this.transcriptionManager.broadcastStatus(safeFolder, safeFile, 'completed');
+          }
           this.invalidateRecordsCache();
           return res.json({ success: true, transcript: result });
         } catch (err) {
+          if (this.transcriptionManager) {
+            this.transcriptionManager.broadcastStatus(safeFolder, safeFile, 'failed', err.message);
+          }
           logger.error(`[Whisper] Gagal transkripsi manual ${safeFile}: ${err.message}`);
           return res.status(500).json({ success: false, error: err.message });
+        } finally {
+          if (this.transcriptionManager) {
+            this.transcriptionManager.activeTasks.delete(filePath);
+            this.transcriptionManager.activeWorkers = Math.max(0, this.transcriptionManager.activeWorkers - 1);
+          }
         }
       } else {
         // Transkripsi SELURUH part audio dalam folder sesi
@@ -1080,9 +1097,26 @@ class ServerApp {
           for (const f of files) {
             const fPath = path.join(folderPath, f);
             try {
+              if (this.transcriptionManager) {
+                this.transcriptionManager.activeWorkers++;
+                this.transcriptionManager.activeTasks.set(fPath, { sessionFolder: safeFolder, fileName: f, pcName });
+                this.transcriptionManager.broadcastStatus(safeFolder, f, 'processing');
+              }
+
               await this.transcriptionManager.transcribeFile(fPath, safeFolder, f, pcName);
+              if (this.transcriptionManager) {
+                this.transcriptionManager.broadcastStatus(safeFolder, f, 'completed');
+              }
             } catch (pErr) {
+              if (this.transcriptionManager) {
+                this.transcriptionManager.broadcastStatus(safeFolder, f, 'failed', pErr.message);
+              }
               logger.warn(`[Whisper] Gagal transkripsi ${f}: ${pErr.message}`);
+            } finally {
+              if (this.transcriptionManager) {
+                this.transcriptionManager.activeTasks.delete(fPath);
+                this.transcriptionManager.activeWorkers = Math.max(0, this.transcriptionManager.activeWorkers - 1);
+              }
             }
           }
 

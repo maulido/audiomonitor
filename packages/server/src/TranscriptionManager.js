@@ -41,7 +41,12 @@ class TranscriptionManager {
     }
 
     this.queue.push({ filePath, sessionFolder, fileName, pcName, retryCount: 0, enqueuedAt: Date.now() });
-    logger.info(`[Whisper] File ditambahkan ke antrean transkripsi: ${fileName} (${this.queue.length} antre, ${this.activeWorkers} aktif)`);
+    
+    if (this.activeWorkers > 0) {
+      logger.info(`[Whisper] File ditambahkan ke antrean transkripsi: ${fileName} (${this.queue.length} antre, ${this.activeWorkers} pekerja aktif)`);
+    } else {
+      logger.info(`[Whisper] File ditambahkan ke antrean transkripsi: ${fileName} (${this.queue.length} antre, siap diproses)`);
+    }
     
     this.broadcastStatus(sessionFolder, fileName, 'queued');
     this.processQueue();
@@ -63,11 +68,13 @@ class TranscriptionManager {
       this.activeWorkers++;
       this.isProcessing = true;
       this.currentTask = task;
+      this.activeTasks.set(task.filePath, task);
+
+      logger.info(`[Whisper] Worker aktif memulai transkripsi: ${task.fileName} (Pekerja: ${this.activeWorkers}/${this.maxConcurrency}, sisa antrean: ${this.queue.length})`);
 
       // Jalankan worker secara asinkron tanpa memblokir worker lain
       (async (currentWorkerTask) => {
         try {
-          this.activeTasks.set(currentWorkerTask.filePath, 'processing');
           this.broadcastStatus(currentWorkerTask.sessionFolder, currentWorkerTask.fileName, 'processing');
 
           await this.transcribeFile(currentWorkerTask.filePath, currentWorkerTask.sessionFolder, currentWorkerTask.fileName, currentWorkerTask.pcName);
@@ -670,12 +677,19 @@ class TranscriptionManager {
 
   getQueueStatus() {
     return {
-      isProcessing: this.isProcessing,
+      isProcessing: this.activeWorkers > 0 || this.isProcessing,
+      activeWorkers: this.activeWorkers,
+      maxConcurrency: this.maxConcurrency,
       currentTask: this.currentTask ? {
         sessionFolder: this.currentTask.sessionFolder,
         fileName: this.currentTask.fileName,
         pcName: this.currentTask.pcName
       } : null,
+      activeTasks: Array.from(this.activeTasks.values()).map(t => typeof t === 'object' ? {
+        sessionFolder: t.sessionFolder,
+        fileName: t.fileName,
+        pcName: t.pcName
+      } : t),
       queue: this.queue.map((item, idx) => ({
         position: idx + 1,
         sessionFolder: item.sessionFolder,
