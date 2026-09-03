@@ -1,14 +1,109 @@
+# =======================================================
+# Dependencies
+# =======================================================
 node_modules/
+**/node_modules/
+.pnpm-store/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# =======================================================
+# Build & Distribution Artifacts
+# =======================================================
 dist/
+**/dist/
 dist-electron/
-.vite/
-.DS_Store
-*.log
-config.json
-packages/agent/out/
+**/dist-electron/
+out/
+**/out/
+packages/*/dist/
+packages/*/out/
 packages/server/dashboard-dist/
+.vite/
+**/.vite/
+
+# =======================================================
+# Executables, Installers & Binaries
+# =======================================================
+*.exe
+*.exe.blockmap
+*.dmg
+*.AppImage
+*.deb
+*.rpm
+*.zip
+*.tar.gz
+*.iso
+*.msi
+
+# =======================================================
+# Test Scratch & Temporary Directories
+# =======================================================
+test_scratch_*/
+**/test_scratch_*/
+tests/test_scratch_*/
+tests/scratch/
+scratch/
+coverage/
+.nyc_output/
+
+# =======================================================
+# Runtime Data, Databases & Local Configurations
+# =======================================================
+*.log
+logs/
+**/logs/
 packages/server/logs/
-audio_monitor.db
 data/
+**/data/
 packages/server/data/
-packages/server/out/
+audio_monitor.db
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+database.json
+incidents.json
+config.json
+
+# =======================================================
+# Audio Recordings & Media Vaults
+# =======================================================
+recordings/
+**/recordings/
+audio_vault/
+**/audio_vault/
+AudioMonitor_Recordings/
+*.webm
+*.wav
+*.mp3
+*.ogg
+*.m4a
+*.flac
+*.aac
+
+# =======================================================
+# Environment Variables & Secrets
+# =======================================================
+.env
+.env.local
+.env.*.local
+*.env
+
+# =======================================================
+# OS & IDE Metadata
+# =======================================================
+.DS_Store
+Thumbs.db
+Desktop.ini
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+*.swo
+
