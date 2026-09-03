@@ -437,16 +437,15 @@ function App() {
   const audioProcessor = useRef(null);
   const obsClient = useRef(null);
   const telemetryClient = useRef(null);
-  const lastNotificationTime = useRef(0);
+  const lastDesktopNotifState = useRef({ status: '', time: 0 });
 
   const triggerNotification = (title, body) => {
-    // 1. Electron IPC Native Windows Toast
+    // 1. Electron IPC Native Windows Toast (Prioritas Utama untuk Aplikasi Desktop)
     if (window.electronAPI && window.electronAPI.showNotification) {
       window.electronAPI.showNotification(title, body);
-    }
-    // 2. HTML5 Web Notification API
-    try {
-      if (typeof window.Notification !== 'undefined') {
+    } else if (typeof window.Notification !== 'undefined') {
+      // 2. HTML5 Web Notification API fallback (Hanya saat berjalan di Web Browser Dev)
+      try {
         if (window.Notification.permission === 'granted') {
           new window.Notification(title, { body });
         } else if (window.Notification.permission !== 'denied') {
@@ -454,8 +453,8 @@ function App() {
             if (perm === 'granted') new window.Notification(title, { body });
           });
         }
-      }
-    } catch (e) {}
+      } catch (e) {}
+    }
   };
 
   // Initial Hardware UUID Fetch
@@ -831,6 +830,7 @@ function App() {
       dangerScore.current = 0;
       clippingScore.current = 0;
       silenceScore.current = 0;
+      lastDesktopNotifState.current = { status: '', time: 0 };
       return;
     }
 
@@ -927,33 +927,44 @@ function App() {
       setStatus(nextStatus);
     }
 
-    // Telemetry/Desktop Notification Throttle
-    if ((nextStatus === 'BAHAYA_OBS_MUTE' || nextStatus === 'WASPADA_BICARA_MUTE')) {
+    // Desktop Notification Logic: Hanya jika Monitoring AKTIF dan Windows Notif diaktifkan
+    const isDangerOrWarning = nextStatus === 'BAHAYA_OBS_MUTE' || nextStatus === 'WASPADA_BICARA_MUTE' || nextStatus === 'BAHAYA_AUDIO_PECAH' || nextStatus === 'BAHAYA_MIC_MATI';
+
+    if (isDangerOrWarning && isMonitoringActive && enableWindowsNotifRef.current) {
       const now = Date.now();
-      if (now - lastNotificationTime.current > 8000 && enableWindowsNotifRef.current) { // 8 seconds throttle
-        triggerNotification(
-          'Peringatan: OBS Sedang di-MUTE!',
-          'Suara mikrofon terdeteksi aktif, namun input OBS dalam keadaan MUTE. Segera buka mute di OBS!'
-        );
-        lastNotificationTime.current = now;
+      const isNewIncident = lastDesktopNotifState.current.status !== nextStatus;
+      const cooldownMs = 60000; // Cooldown 60 detik agar tidak spam terus-menerus
+      const canNotify = isNewIncident || (now - lastDesktopNotifState.current.time > cooldownMs);
+
+      if (canNotify) {
+        lastDesktopNotifState.current = { status: nextStatus, time: now };
+
+        if (nextStatus === 'BAHAYA_OBS_MUTE') {
+          triggerNotification(
+            'Bahaya Audio: OBS Sedang di-MUTE!',
+            'Suara mikrofon terdeteksi aktif, namun input OBS dalam keadaan MUTE. Segera buka mute di OBS!'
+          );
+        } else if (nextStatus === 'WASPADA_BICARA_MUTE') {
+          triggerNotification(
+            'Peringatan: OBS Sedang di-MUTE!',
+            'Suara mikrofon terdeteksi aktif saat input OBS di-mute.'
+          );
+        } else if (nextStatus === 'BAHAYA_AUDIO_PECAH') {
+          triggerNotification(
+            'Audio Clipping / Suara Pecah!',
+            'Volume mikrofon melebihi batas toleransi aman dan berisiko distorsi di siaran.'
+          );
+        } else if (nextStatus === 'BAHAYA_MIC_MATI') {
+          triggerNotification(
+            'Hardware Mic Tidak Merespons!',
+            'Tidak ada sinyal suara fisik dari mikrofon selama batas waktu yang ditentukan. Periksa kabel atau mute fisik!'
+          );
+        }
       }
-    } else if (nextStatus === 'BAHAYA_AUDIO_PECAH') {
-      const now = Date.now();
-      if (now - lastNotificationTime.current > 8000 && enableWindowsNotifRef.current) {
-        triggerNotification(
-          'Audio Clipping / Suara Pecah!',
-          'Volume mikrofon melebihi batas toleransi aman dan berisiko distorsi di siaran.'
-        );
-        lastNotificationTime.current = now;
-      }
-    } else if (nextStatus === 'BAHAYA_MIC_MATI') {
-      const now = Date.now();
-      if (now - lastNotificationTime.current > 8000 && enableWindowsNotifRef.current) {
-        triggerNotification(
-          'Hardware Mic Tidak Merespons!',
-          'Tidak ada sinyal suara fisik dari mikrofon selama batas waktu yang ditentukan. Periksa kabel atau mute fisik!'
-        );
-        lastNotificationTime.current = now;
+    } else if (!isDangerOrWarning) {
+      // Kondisi sudah normal / aman / standby -> Reset status notifikasi agar insiden berhenti dan siap untuk insiden berikutnya
+      if (lastDesktopNotifState.current.status !== '') {
+        lastDesktopNotifState.current = { status: '', time: 0 };
       }
     }
   }, [obsConnected, status, silenceTimeoutSec, deadMicTimeoutSec, isMonitoringActive, tick, clippingThreshold, clippingDurationSec, isObsMutedBtn, speakingThreshold, obsMuteTimeoutSec, autoRecoveryUnmute]);
