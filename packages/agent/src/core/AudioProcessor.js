@@ -237,12 +237,13 @@ class AudioProcessor {
     }
   }
 
-  startRecording(agentName, recordDir, agentId, serverIp) {
+  startRecording(agentName, recordDir, agentId, serverIp, chunkMinutes = 10) {
     if (!this.stream) return false;
     if (this.mediaRecorder && this.mediaRecorder.state === 'recording') return true;
 
     try {
       this.isRecording = true;
+      this.recordingChunkMinutes = chunkMinutes || 10;
       const now = new Date();
       const year = now.getFullYear();
       const month = String(now.getMonth() + 1).padStart(2, '0');
@@ -258,6 +259,7 @@ class AudioProcessor {
       this.agentName = agentName;
       this.serverIp = serverIp;
       this.partNumber = 1;
+      this.sessionStartTime = Date.now();
       
       this._startMediaRecorderChunk();
       
@@ -285,7 +287,8 @@ class AudioProcessor {
 
     this.mediaRecorder.start(1000);
 
-    // Split every 10 minutes (600,000 ms)
+    // Split every X minutes (default 10 menit)
+    const chunkMs = Math.max(1, (this.recordingChunkMinutes || 10)) * 60 * 1000;
     this.chunkTimer = setTimeout(() => {
       if (this.mediaRecorder && this.mediaRecorder.state === 'recording') {
         const oldRecorder = this.mediaRecorder;
@@ -308,7 +311,7 @@ class AudioProcessor {
           console.warn('Error stopping mediaRecorder during rollover:', sErr);
         }
       }
-    }, 10 * 60 * 1000);
+    }, chunkMs);
   }
 
   stopRecording() {

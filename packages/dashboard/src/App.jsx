@@ -2938,6 +2938,7 @@ function App() {
           const transcriptCoveragePct = totalSessionCount > 0 ? Math.round((totalTranscribedSessions / totalSessionCount) * 100) : 0;
 
           const pcNames = Object.keys(pcGrouped);
+          const activeRecordingAgents = Object.values(agents).filter(a => a && a.isRecording);
 
           return (
             <div className="settings-layout" style={{ maxWidth: '1050px' }}>
@@ -3294,6 +3295,101 @@ function App() {
                   </div>
                 </div>
               </div>
+
+              {/* Live Ongoing Recordings Banner */}
+              {activeRecordingAgents.length > 0 && (
+                <div className="active-recording-banner" style={{
+                  background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.15) 0%, rgba(220, 38, 38, 0.08) 100%)',
+                  border: '1px solid rgba(239, 68, 68, 0.4)',
+                  borderRadius: '8px',
+                  padding: '14px 18px',
+                  marginBottom: '16px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '10px'
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <span style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        background: '#ef4444',
+                        color: '#fff',
+                        padding: '3px 10px',
+                        borderRadius: '20px',
+                        fontSize: '0.75rem',
+                        fontWeight: 700,
+                        letterSpacing: '0.5px'
+                      }}>
+                        <span className="live-pulse-dot" style={{ width: '8px', height: '8px', background: '#fff' }}></span>
+                        MEREKAM LIVE
+                      </span>
+                      <span style={{ fontWeight: 600, fontSize: '0.95rem', color: '#fca5a5' }}>
+                        {activeRecordingAgents.length} Sesi Perekaman Sedang Berlangsung di PC Host
+                      </span>
+                    </div>
+                    <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                      <i className="fa-solid fa-circle-info" style={{ marginRight: '4px' }}></i>
+                      File audio lokal otomatis diunggah ke server tiap potongan part (default {activeRecordingAgents[0]?.recordingChunkMinutes || 10} mnt) atau saat siaran live berhenti
+                    </span>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '10px' }}>
+                    {activeRecordingAgents.map(recAgent => (
+                      <div key={recAgent.uuid} style={{
+                        background: 'rgba(0, 0, 0, 0.3)',
+                        border: '1px solid rgba(239, 68, 68, 0.3)',
+                        borderRadius: '6px',
+                        padding: '10px 14px',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        gap: '12px'
+                      }}>
+                        <div>
+                          <div style={{ fontWeight: 700, color: '#fff', fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <i className="fa-solid fa-desktop" style={{ color: 'var(--accent)' }}></i>
+                            <span>{recAgent.name || 'PC Host'}</span>
+                          </div>
+                          <div style={{ fontSize: '0.78rem', color: '#e2e8f0', marginTop: '3px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ color: '#f87171', fontWeight: 600 }}>
+                              <i className="fa-solid fa-circle-dot fa-fade" style={{ marginRight: '4px' }}></i>
+                              Part {recAgent.recordingPartNumber || 1} (Sedang Merekam)
+                            </span>
+                            {recAgent.streamTimecode && (
+                              <span style={{ color: 'var(--text-muted)' }}>
+                                &bull; Live {recAgent.streamTimecode}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        <button
+                          className="btn-filter"
+                          style={{
+                            background: 'rgba(239, 68, 68, 0.2)',
+                            color: '#f87171',
+                            borderColor: 'rgba(239, 68, 68, 0.5)',
+                            padding: '4px 10px',
+                            fontSize: '0.75rem',
+                            whiteSpace: 'nowrap',
+                            fontWeight: 600
+                          }}
+                          onClick={() => {
+                            if (client.current && client.current.socket) {
+                              client.current.socket.emit('agent-record', { uuid: recAgent.uuid, record: false });
+                            }
+                          }}
+                          title="Hentikan perekaman dan unggah part audio ke server sekarang"
+                        >
+                          <i className="fa-solid fa-stop"></i> Stop REC
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
               
               {/* Unified Continuous Timeline Audio Player */}
               {playingSession && playingSession.parts && playingSession.parts[currentPartIndex] && (
@@ -3434,16 +3530,36 @@ function App() {
 
               {/* 6. PC Grouped Session Cards */}
               {pcNames.length === 0 ? (
-                <div className="settings-card">
-                  <div className="settings-card-content" style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '32px' }}>
-                    <i className="fa-solid fa-folder-open" style={{ fontSize: '2rem', marginBottom: '10px', opacity: 0.5 }}></i>
-                    <div>
-                      {recordPcFilter 
-                        ? `Tidak ada file rekaman untuk PC "${recordPcFilter}".` 
-                        : 'Belum ada file rekaman yang tersimpan di server.'}
+                activeRecordingAgents.length > 0 ? (
+                  <div className="settings-card" style={{ borderColor: 'rgba(239, 68, 68, 0.35)', background: 'rgba(239, 68, 68, 0.03)' }}>
+                    <div className="settings-card-content" style={{ textAlign: 'center', padding: '36px 20px' }}>
+                      <div style={{ fontSize: '2.5rem', color: '#f87171', marginBottom: '12px' }}>
+                        <i className="fa-solid fa-microphone-lines fa-fade"></i>
+                      </div>
+                      <h3 style={{ color: '#fff', margin: '0 0 8px 0', fontSize: '1.1rem' }}>Sesi Perekaman Sedang Berlangsung di PC Host</h3>
+                      <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', maxWidth: '560px', margin: '0 auto 16px auto', lineHeight: '1.5' }}>
+                        Audio siaran sedang aktif direkam pada <strong>{activeRecordingAgents.map(a => a.name).join(', ')}</strong>. File rekaman dan transkrip AI akan otomatis muncul di server setelah potongan part pertama ({activeRecordingAgents[0]?.recordingChunkMinutes || 10} menit) selesai atau saat siaran dihentikan.
+                      </p>
+                      <button className="btn-filter primary" onClick={fetchRecords} disabled={loadingRecords}>
+                        <i className={`fa-solid fa-rotate ${loadingRecords ? 'fa-spin' : ''}`}></i> Periksa Pembaruan Server
+                      </button>
                     </div>
                   </div>
-                </div>
+                ) : (
+                  <div className="settings-card">
+                    <div className="settings-card-content" style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '36px 20px' }}>
+                      <i className="fa-solid fa-folder-open" style={{ fontSize: '2.2rem', marginBottom: '12px', opacity: 0.5 }}></i>
+                      <div style={{ fontWeight: 600, color: '#e2e8f0', marginBottom: '4px', fontSize: '0.95rem' }}>
+                        {recordPcFilter 
+                          ? `Tidak ada file rekaman untuk PC "${recordPcFilter}".` 
+                          : 'Belum ada file rekaman yang tersimpan di server.'}
+                      </div>
+                      <p style={{ fontSize: '0.8rem', maxWidth: '480px', margin: '0 auto', color: 'var(--text-muted)', lineHeight: '1.4' }}>
+                        Perekaman akan otomatis dimulai saat OBS mulai siaran (Live) jika opsi <em>Auto-Record on OBS Live</em> aktif, atau dengan menekan tombol <em>Manual REC</em> pada PC Agent.
+                      </p>
+                    </div>
+                  </div>
+                )
               ) : (
                 pcNames.map(pc => {
                   const pcData = pcGrouped[pc];
@@ -3555,6 +3671,35 @@ function App() {
                         <>
                           {/* Session Cards List */}
                           <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: recordViewLayout === 'compact' ? '8px' : '14px' }}>
+                            {/* Live Virtual Session Row for this specific PC if recording */}
+                            {(() => {
+                              const pcAgent = Object.values(agents).find(a => a && (a.name === pc || a.uuid === pc) && a.isRecording);
+                              if (!pcAgent) return null;
+                              return (
+                                <div className="record-session-card" style={{
+                                  borderColor: 'rgba(239, 68, 68, 0.45)',
+                                  background: 'rgba(239, 68, 68, 0.05)',
+                                  marginBottom: recordViewLayout === 'compact' ? '4px' : '8px'
+                                }}>
+                                  <div className="settings-card-content" style={{ padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                      <span className="live-recording-badge" style={{ fontSize: '0.75rem', padding: '2px 8px' }}>
+                                        <span className="live-pulse-dot"></span> LIVE RECORDING
+                                      </span>
+                                      <strong style={{ color: '#fff', fontSize: '0.9rem' }}>Sesi Siaran Sedang Berjalan</strong>
+                                      <span className="session-time-badge" style={{ background: 'rgba(239, 68, 68, 0.2)', color: '#fca5a5', fontSize: '0.75rem' }}>
+                                        Part {pcAgent.recordingPartNumber || 1} &bull; Live {pcAgent.streamTimecode || '00:00:00'}
+                                      </span>
+                                    </div>
+                                    <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                                      <i className="fa-solid fa-circle-notch fa-spin" style={{ color: '#ef4444', marginRight: '5px' }}></i>
+                                      Audio sedang ditulis di PC Host &bull; Otomatis diunggah per {pcAgent.recordingChunkMinutes || 10} mnt / saat live berhenti
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })()}
+
                             {pagedSessions.map((session, sIdx) => {
                               const isSessionActive = playingSession?.folderName === session.folderName;
                               const sessionDurationSec = calculateSessionDuration(session);

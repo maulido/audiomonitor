@@ -254,6 +254,16 @@ function App() {
     localStorage.setItem('windowsNotifCooldownSec', windowsNotifCooldownSec.toString());
   }, [windowsNotifCooldownSec]);
 
+  const [recordingChunkMinutes, setRecordingChunkMinutes] = useState(() => {
+    const saved = localStorage.getItem('recordingChunkMinutes');
+    return saved !== null ? parseInt(saved, 10) : 10;
+  });
+  const recordingChunkMinutesRef = useRef(recordingChunkMinutes);
+  useEffect(() => {
+    recordingChunkMinutesRef.current = recordingChunkMinutes;
+    localStorage.setItem('recordingChunkMinutes', recordingChunkMinutes.toString());
+  }, [recordingChunkMinutes]);
+
   const [telegramConfig, setTelegramConfig] = useState(() => {
     try { return JSON.parse(localStorage.getItem('telegramConfig')) || null; } catch (e) { return null; }
   });
@@ -690,7 +700,7 @@ function App() {
           }
           if (obsSyncRecordingRef.current && audioProcessor.current) {
             if (status.outputActive && !isRecordingRef.current) {
-              if (audioProcessor.current.startRecording(agentNameRef.current, recordDirRef.current, uuidRef.current, serverIpRef.current)) setIsRecording(true);
+              if (audioProcessor.current.startRecording(agentNameRef.current, recordDirRef.current, uuidRef.current, serverIpRef.current, recordingChunkMinutesRef.current)) setIsRecording(true);
             } else if (!status.outputActive && isRecordingRef.current) {
               audioProcessor.current.stopRecording();
               setIsRecording(false);
@@ -744,7 +754,7 @@ function App() {
         }
         if (obsSyncRecordingRef.current && audioProcessor.current) {
           if (isActive && !isRecordingRef.current) {
-            if (audioProcessor.current.startRecording(agentNameRef.current, recordDirRef.current, uuidRef.current, serverIpRef.current)) setIsRecording(true);
+            if (audioProcessor.current.startRecording(agentNameRef.current, recordDirRef.current, uuidRef.current, serverIpRef.current, recordingChunkMinutesRef.current)) setIsRecording(true);
           } else if (!isActive && isRecordingRef.current) {
             audioProcessor.current.stopRecording();
             setIsRecording(false);
@@ -1033,6 +1043,9 @@ function App() {
       ramUsage: hardwareUsage.ramUsage,
       localIp: hardwareUsage.localIp,
       isRecording,
+      recordingSessionStartTime: (isRecording && audioProcessor.current) ? audioProcessor.current.sessionStartTime : null,
+      recordingPartNumber: (isRecording && audioProcessor.current) ? audioProcessor.current.partNumber : 1,
+      recordingChunkMinutes,
       isMonitoringActive,
       isStreaming,
       streamTimecode,
@@ -1053,7 +1066,7 @@ function App() {
       appVersion,
       audioDevices: audioDevicesRef.current.map(d => d.label || 'Default Microphone')
     };
-  }, [micLevel, rawMicLevel, micDb, micClipping, micLufs, micTruePeak, micNoiseFloor, micHum, micSpectrum, obsSources, noiseGate, obsLevel, obsDb, status, hardwareUsage, uuid, agentName, micDriverName, obsSourceName, isMonitoringActive, isStreaming, streamTimecode, streamBitrate, streamDroppedFrames, streamTotalFrames, currentScene, silenceTimeoutSec, deadMicTimeoutSec, clippingThreshold, clippingDurationSec, speakingThreshold, obsMuteTimeoutSec, autoRecoveryUnmute, obsSyncRecording, obsSyncStreaming, telemetryInterval, obsConnected, isObsMutedBtn, isRecording, appVersion]);
+  }, [micLevel, rawMicLevel, micDb, micClipping, micLufs, micTruePeak, micNoiseFloor, micHum, micSpectrum, obsSources, noiseGate, obsLevel, obsDb, status, hardwareUsage, uuid, agentName, micDriverName, obsSourceName, isMonitoringActive, isStreaming, streamTimecode, streamBitrate, streamDroppedFrames, streamTotalFrames, currentScene, silenceTimeoutSec, deadMicTimeoutSec, clippingThreshold, clippingDurationSec, speakingThreshold, obsMuteTimeoutSec, autoRecoveryUnmute, obsSyncRecording, obsSyncStreaming, telemetryInterval, obsConnected, isObsMutedBtn, isRecording, recordingChunkMinutes, appVersion]);
 
   // Telemetry Sender (Dynamic Interval)
   useEffect(() => {
@@ -1138,7 +1151,7 @@ function App() {
                   audioProcessor.current.stopRecording();
                   setIsRecording(false);
                 } else {
-                  if (audioProcessor.current.startRecording(agentNameRef.current, recordDirRef.current, uuidRef.current, serverIpRef.current)) setIsRecording(true);
+                  if (audioProcessor.current.startRecording(agentNameRef.current, recordDirRef.current, uuidRef.current, serverIpRef.current, recordingChunkMinutesRef.current)) setIsRecording(true);
                 }
               }}
               style={{
@@ -1458,6 +1471,21 @@ function App() {
                   </div>
                   Auto-Record on OBS Live
                 </label>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px', color: '#aaa', paddingLeft: '8px', borderLeft: '2px solid #e74c3c', marginTop: '2px', marginBottom: '4px' }}>
+                  <span>Durasi Potongan (Part):</span>
+                  <select
+                    value={recordingChunkMinutes}
+                    onChange={e => setRecordingChunkMinutes(parseInt(e.target.value, 10))}
+                    style={{ background: '#222', color: '#ccc', border: '1px solid #3c3c3c', borderRadius: '4px', padding: '3px 8px', fontSize: '11px', cursor: 'pointer', width: '58%' }}
+                    title="Durasi per potongan file audio yang disimpan dan diunggah ke server"
+                  >
+                    <option value="5">5 Menit (Cepat Muncul)</option>
+                    <option value="10">10 Menit (Default)</option>
+                    <option value="15">15 Menit</option>
+                    <option value="30">30 Menit (Panjang)</option>
+                  </select>
+                </div>
 
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', color: '#eee', fontSize: '12px', margin: 0 }}>
