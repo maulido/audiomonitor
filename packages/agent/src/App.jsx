@@ -307,6 +307,24 @@ function App() {
     }
   };
 
+  const handleToggleManualRecording = () => {
+    if (isSettingsUnlocked) {
+      if (isRecording) {
+        if (audioProcessor.current) audioProcessor.current.stopRecording();
+        setIsRecording(false);
+      } else {
+        if (audioProcessor.current && audioProcessor.current.startRecording(agentNameRef.current, recordDirRef.current, uuidRef.current, serverIpRef.current, recordingChunkMinutesRef.current)) {
+          setIsRecording(true);
+        }
+      }
+    } else {
+      setPendingPinAction(isRecording ? 'stop_recording' : 'start_recording');
+      setPinInput('');
+      setPinError('');
+      setPinModalOpen(true);
+    }
+  };
+
   const handlePinSubmit = (e) => {
     if (e) e.preventDefault();
     const cleanInput = pinInput.trim();
@@ -326,6 +344,13 @@ function App() {
         if (telemetryClient.current && telemetryClient.current.socket) {
           telemetryClient.current.socket.emit('agent-monitoring', { uuid, active: false });
         }
+      } else if (pendingPinAction === 'start_recording') {
+        if (audioProcessor.current && audioProcessor.current.startRecording(agentNameRef.current, recordDirRef.current, uuidRef.current, serverIpRef.current, recordingChunkMinutesRef.current)) {
+          setIsRecording(true);
+        }
+      } else if (pendingPinAction === 'stop_recording') {
+        if (audioProcessor.current) audioProcessor.current.stopRecording();
+        setIsRecording(false);
       }
       setPendingPinAction(null);
     } else {
@@ -1275,14 +1300,7 @@ function App() {
         <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '5px' }}>
           <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
             <button
-              onClick={() => {
-                if (isRecording) {
-                  audioProcessor.current.stopRecording();
-                  setIsRecording(false);
-                } else {
-                  if (audioProcessor.current.startRecording(agentNameRef.current, recordDirRef.current, uuidRef.current, serverIpRef.current, recordingChunkMinutesRef.current)) setIsRecording(true);
-                }
-              }}
+              onClick={handleToggleManualRecording}
               style={{
                 background: isRecording ? '#c0392b' : '#2c2c2c',
                 color: '#fff',
@@ -1864,6 +1882,10 @@ function App() {
             <p style={{ margin: '0 0 14px 0', color: '#999', fontSize: '11px', lineHeight: '1.4' }}>
               {pendingPinAction === 'disable_monitoring'
                 ? 'Masukkan PIN Server untuk mematikan sistem pemantauan audio Agent ini.'
+                : pendingPinAction === 'stop_recording'
+                ? 'Masukkan PIN Server untuk menghentikan perekaman audio (Stop REC).'
+                : pendingPinAction === 'start_recording'
+                ? 'Masukkan PIN Server untuk memulai perekaman audio manual (Manual REC).'
                 : 'Masukkan PIN Server untuk membuka dan mengubah Pengaturan Agent.'}
             </p>
 
