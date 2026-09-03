@@ -4549,35 +4549,50 @@ function App() {
             <div className="settings-card" id="sec-smart-storage">
               <div className="settings-card-accent orange"></div>
               <div className="settings-card-content">
-                <h2 className="settings-card-title">
-                  <i className="fa-solid fa-hard-drive" style={{ color: '#f59e0b' }}></i>
-                  Otomasi Penyimpanan & Cloud / NAS Sync (Smart Storage)
+                <h2 className="settings-card-title" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <i className="fa-solid fa-hard-drive" style={{ color: '#f59e0b', fontSize: '1.25rem' }}></i>
+                  <span>Otomasi Penyimpanan & Cloud / NAS Sync (Smart Storage)</span>
                 </h2>
-                <p className="settings-card-subtitle">
+                <p className="settings-card-subtitle" style={{ marginBottom: '20px' }}>
                   Kelola otomatisasi pengarsipan file rekaman lawas, pencadangan ke folder jaringan (NAS), dan webhook cloud sync.
                 </p>
 
                 {/* Storage Metric Grid */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '12px', marginBottom: '20px' }}>
-                  <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '8px', padding: '14px 12px', textAlign: 'center' }}>
-                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Total Ukuran</div>
-                    <div style={{ fontSize: '1.25rem', fontWeight: 700, color: '#f59e0b', marginTop: '4px' }}>{storageStatus?.totalMb || 0} MB</div>
-                    <div style={{ fontSize: '0.7rem', color: '#888', marginTop: '2px' }}>({storageStatus?.totalGb || 0} GB)</div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '12px', marginBottom: '24px' }}>
+                  <div style={{ background: 'rgba(245, 158, 11, 0.04)', border: '1px solid rgba(245, 158, 11, 0.18)', borderRadius: '10px', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Total Ukuran</span>
+                      <i className="fa-solid fa-database" style={{ color: '#f59e0b', fontSize: '0.85rem', opacity: 0.85 }}></i>
+                    </div>
+                    <div style={{ fontSize: '1.35rem', fontWeight: 700, color: '#f59e0b', marginTop: '2px' }}>{storageStatus?.totalMb || 0} MB</div>
+                    <div style={{ fontSize: '0.72rem', color: '#94a3b8' }}>({storageStatus?.totalGb || 0} GB)</div>
                   </div>
-                  <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '8px', padding: '14px 12px', textAlign: 'center' }}>
-                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Total Sesi</div>
-                    <div style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--text-main)', marginTop: '4px' }}>{storageStatus?.totalSessions || 0}</div>
-                    <div style={{ fontSize: '0.7rem', color: '#888', marginTop: '2px' }}>{storageStatus?.totalFiles || 0} files</div>
+
+                  <div style={{ background: 'rgba(56, 189, 248, 0.04)', border: '1px solid rgba(56, 189, 248, 0.18)', borderRadius: '10px', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Total Sesi</span>
+                      <i className="fa-solid fa-folder-open" style={{ color: '#38bdf8', fontSize: '0.85rem', opacity: 0.85 }}></i>
+                    </div>
+                    <div style={{ fontSize: '1.35rem', fontWeight: 700, color: 'var(--text-main)', marginTop: '2px' }}>{storageStatus?.totalSessions || 0} Sesi</div>
+                    <div style={{ fontSize: '0.72rem', color: '#94a3b8' }}>{storageStatus?.totalFiles || 0} berkas audio</div>
                   </div>
-                  <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '8px', padding: '14px 12px', textAlign: 'center' }}>
-                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Terarsip</div>
-                    <div style={{ fontSize: '1.25rem', fontWeight: 700, color: '#10b981', marginTop: '4px' }}>{storageStatus?.archivedSessions || 0}</div>
-                    <div style={{ fontSize: '0.7rem', color: '#888', marginTop: '2px' }}>Sesi Lama</div>
+
+                  <div style={{ background: 'rgba(16, 185, 129, 0.04)', border: '1px solid rgba(16, 185, 129, 0.18)', borderRadius: '10px', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Terarsip</span>
+                      <i className="fa-solid fa-box-archive" style={{ color: '#10b981', fontSize: '0.85rem', opacity: 0.85 }}></i>
+                    </div>
+                    <div style={{ fontSize: '1.35rem', fontWeight: 700, color: '#10b981', marginTop: '2px' }}>{storageStatus?.archivedSessions || 0} Sesi</div>
+                    <div style={{ fontSize: '0.72rem', color: '#94a3b8' }}>Telah diarsipkan</div>
                   </div>
-                  <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '8px', padding: '14px 12px', textAlign: 'center' }}>
-                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Tersinkron NAS</div>
-                    <div style={{ fontSize: '1.25rem', fontWeight: 700, color: '#38bdf8', marginTop: '4px' }}>{storageStatus?.syncedSessions || 0}</div>
-                    <div style={{ fontSize: '0.7rem', color: '#888', marginTop: '2px' }}>Tercadangkan</div>
+
+                  <div style={{ background: 'rgba(129, 140, 248, 0.04)', border: '1px solid rgba(129, 140, 248, 0.18)', borderRadius: '10px', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Tersinkron NAS</span>
+                      <i className="fa-solid fa-network-wired" style={{ color: '#818cf8', fontSize: '0.85rem', opacity: 0.85 }}></i>
+                    </div>
+                    <div style={{ fontSize: '1.35rem', fontWeight: 700, color: '#818cf8', marginTop: '2px' }}>{storageStatus?.syncedSessions || 0} Sesi</div>
+                    <div style={{ fontSize: '0.72rem', color: '#94a3b8' }}>Tercadangkan</div>
                   </div>
                 </div>
 
@@ -4585,7 +4600,7 @@ function App() {
                   <div style={{
                     padding: '10px 14px',
                     borderRadius: '8px',
-                    marginBottom: '16px',
+                    marginBottom: '18px',
                     fontSize: '0.85rem',
                     background: syncStatusMsg.type === 'success' ? 'rgba(34, 197, 94, 0.12)' : 'rgba(239, 68, 68, 0.12)',
                     border: `1px solid ${syncStatusMsg.type === 'success' ? 'rgba(34, 197, 94, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
@@ -4599,49 +4614,87 @@ function App() {
                   </div>
                 )}
 
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '16px', marginBottom: '16px' }}>
-                  <div className="form-group" style={{ margin: 0 }}>
-                    <label className="form-label">Direktori Cadangan Sekunder (NAS / External Drive)</label>
-                    <input 
-                      type="text" 
-                      className="form-input" 
-                      placeholder="Contoh: D:\BackupRekaman atau \\NAS\Audio" 
-                      value={storageConfig.backupDirectory || ''} 
-                      onChange={(e) => setStorageConfig(prev => ({ ...prev, backupDirectory: e.target.value }))}
-                    />
-                    <span className="form-help">Jika diisi, server akan mencadangkan file rekaman ke folder ini.</span>
+                {/* Form Input Parameters */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px', marginBottom: '16px' }}>
+                  <div className="form-group" style={{ margin: 0, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                    <div>
+                      <label className="form-label" style={{ marginBottom: '6px' }}>
+                        <i className="fa-solid fa-folder-tree" style={{ marginRight: '6px', color: '#f59e0b' }}></i>
+                        Direktori Cadangan Sekunder (NAS / External Drive)
+                      </label>
+                      <input 
+                        type="text" 
+                        className="form-input" 
+                        placeholder="Contoh: D:\BackupRekaman atau \\NAS\Audio" 
+                        value={storageConfig.backupDirectory || ''} 
+                        onChange={(e) => setStorageConfig(prev => ({ ...prev, backupDirectory: e.target.value }))}
+                      />
+                    </div>
+                    <span className="form-help" style={{ marginTop: '6px' }}>
+                      Server akan otomatis mencadangkan salinan rekaman ke folder ini.
+                    </span>
                   </div>
 
-                  <div className="form-group" style={{ margin: 0 }}>
-                    <label className="form-label">Otomatis Bersihkan Audio Server (&gt; X Hari)</label>
-                    <input 
-                      type="number" 
-                      min="0" 
-                      max="365" 
-                      className="form-input" 
-                      value={storageConfig.autoPurgeAudioDays || 0} 
-                      onChange={(e) => setStorageConfig(prev => ({ ...prev, autoPurgeAudioDays: parseInt(e.target.value, 10) || 0 }))}
-                    />
-                    <span className="form-help">Hapus raw audio server setelah X hari untuk hemat storage. <strong>Transkrip teks tetap tersimpan</strong> (0 = Nonaktif).</span>
-                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                    <div className="form-group" style={{ margin: 0, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                      <div>
+                        <label className="form-label" style={{ marginBottom: '6px' }}>
+                          <i className="fa-solid fa-broom" style={{ marginRight: '6px', color: '#38bdf8' }}></i>
+                          Bersihkan Audio (&gt; X Hari)
+                        </label>
+                        <input 
+                          type="number" 
+                          min="0" 
+                          max="365" 
+                          className="form-input" 
+                          value={storageConfig.autoPurgeAudioDays || 0} 
+                          onChange={(e) => setStorageConfig(prev => ({ ...prev, autoPurgeAudioDays: parseInt(e.target.value, 10) || 0 }))}
+                        />
+                      </div>
+                      <span className="form-help" style={{ marginTop: '6px' }}>
+                        Hapus audio lawas, <strong>transkrip tetap aman</strong> (0 = Off).
+                      </span>
+                    </div>
 
-                  <div className="form-group" style={{ margin: 0 }}>
-                    <label className="form-label">Otomatis Arsipkan Rekaman Lama (Hari)</label>
-                    <input 
-                      type="number" 
-                      min="1" 
-                      max="365" 
-                      className="form-input" 
-                      value={storageConfig.autoArchiveDays || 14} 
-                      onChange={(e) => setStorageConfig(prev => ({ ...prev, autoArchiveDays: parseInt(e.target.value, 10) || 14 }))}
-                    />
-                    <span className="form-help">Rekaman yang lebih lama dari hari ini akan ditandai arsip dan dioptimalkan.</span>
+                    <div className="form-group" style={{ margin: 0, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                      <div>
+                        <label className="form-label" style={{ marginBottom: '6px' }}>
+                          <i className="fa-solid fa-box-archive" style={{ marginRight: '6px', color: '#10b981' }}></i>
+                          Arsipkan Sesi (&gt; X Hari)
+                        </label>
+                        <input 
+                          type="number" 
+                          min="1" 
+                          max="365" 
+                          className="form-input" 
+                          value={storageConfig.autoArchiveDays || 14} 
+                          onChange={(e) => setStorageConfig(prev => ({ ...prev, autoArchiveDays: parseInt(e.target.value, 10) || 14 }))}
+                        />
+                      </div>
+                      <span className="form-help" style={{ marginTop: '6px' }}>
+                        Tandai sesi lama sebagai arsip terkelola.
+                      </span>
+                    </div>
                   </div>
                 </div>
 
-                <div className="form-group" style={{ marginBottom: '20px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                    <label className="form-label" style={{ margin: 0 }}>Cloud Webhook Sync</label>
+                {/* Cloud Webhook Sync Box */}
+                <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '8px', padding: '14px 16px', marginBottom: '20px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <i className="fa-solid fa-cloud-arrow-up" style={{ color: storageConfig.cloudSyncEnabled ? 'var(--accent)' : 'var(--text-muted)' }}></i>
+                      <span className="form-label" style={{ margin: 0, fontWeight: 600 }}>Cloud Webhook Sync</span>
+                      <span style={{
+                        fontSize: '0.7rem',
+                        padding: '1px 6px',
+                        borderRadius: '4px',
+                        background: storageConfig.cloudSyncEnabled ? 'rgba(59, 130, 246, 0.15)' : 'rgba(255, 255, 255, 0.06)',
+                        color: storageConfig.cloudSyncEnabled ? '#60a5fa' : 'var(--text-muted)',
+                        fontWeight: 600
+                      }}>
+                        {storageConfig.cloudSyncEnabled ? 'AKTIF' : 'NONAKTIF'}
+                      </span>
+                    </div>
                     <label className="toggle-switch">
                       <input 
                         type="checkbox" 
@@ -4658,38 +4711,42 @@ function App() {
                     value={storageConfig.cloudSyncUrl || ''} 
                     onChange={(e) => setStorageConfig(prev => ({ ...prev, cloudSyncUrl: e.target.value }))}
                     disabled={!storageConfig.cloudSyncEnabled}
+                    style={{ opacity: storageConfig.cloudSyncEnabled ? 1 : 0.45 }}
                   />
-                  <span className="form-help">Mengirim sinyal webhook dan metadata rekaman ke endpoint cloud saat sesi selesai.</span>
+                  <span className="form-help" style={{ marginTop: '4px', display: 'block' }}>
+                    Mengirim sinyal webhook dan metadata rekaman ke endpoint cloud saat sesi rekaman selesai.
+                  </span>
                 </div>
 
-                <div className="button-group" style={{ marginTop: '0', marginBottom: '16px' }}>
+                <div className="button-group" style={{ marginTop: '0', marginBottom: '20px' }}>
                   <button className={`btn btn-primary ${isSavingStorageConfig ? 'is-loading' : ''}`} onClick={saveStorageAutomationConfig} disabled={isSavingStorageConfig}>
                     <i className={`fa-solid ${isSavingStorageConfig ? 'fa-spinner fa-spin' : 'fa-floppy-disk'}`}></i>
-                    {isSavingStorageConfig ? 'Menyimpan...' : 'Simpan Konfigurasi Storage'}
+                    <span>{isSavingStorageConfig ? 'Menyimpan...' : 'Simpan Konfigurasi Storage'}</span>
                   </button>
                 </div>
 
                 {/* Sub-section: Tindakan Pemeliharaan & Sinkronisasi Manual */}
                 <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-                  <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '10px' }}>
-                    Tindakan Pemeliharaan & Operasi Manual:
+                  <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <i className="fa-solid fa-screwdriver-wrench"></i>
+                    <span>Tindakan Pemeliharaan & Operasi Manual:</span>
                   </div>
-                  <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-                    <button className="btn-filter secondary" onClick={triggerManualBackupSync} disabled={isTriggeringSync} style={{ padding: '8px 14px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '10px' }}>
+                    <button className="btn-filter secondary" onClick={triggerManualBackupSync} disabled={isTriggeringSync} style={{ padding: '10px 14px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', color: '#38bdf8', borderColor: 'rgba(56, 189, 248, 0.25)' }}>
                       <i className={`fa-solid ${isTriggeringSync ? 'fa-spinner fa-spin' : 'fa-arrows-rotate'}`}></i>
-                      <span>{isTriggeringSync ? 'Menyinkronkan...' : 'Sinkronkan Cadangan ke NAS'}</span>
+                      <span>{isTriggeringSync ? 'Menyinkronkan...' : 'Sinkronkan ke NAS'}</span>
                     </button>
-                    <button className="btn-filter secondary" onClick={triggerManualAutoPurgeAudio} disabled={isPurgingOldAudio} style={{ padding: '8px 14px', color: '#38bdf8', borderColor: 'rgba(56, 189, 248, 0.35)' }}>
+                    <button className="btn-filter secondary" onClick={triggerManualAutoPurgeAudio} disabled={isPurgingOldAudio} style={{ padding: '10px 14px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', color: '#34d399', borderColor: 'rgba(52, 211, 153, 0.25)' }}>
                       <i className={`fa-solid ${isPurgingOldAudio ? 'fa-spinner fa-spin' : 'fa-broom'}`}></i>
-                      <span>{isPurgingOldAudio ? 'Membersihkan Audio...' : 'Bersihkan Audio Server Lawas'}</span>
+                      <span>{isPurgingOldAudio ? 'Membersihkan...' : 'Bersihkan Audio Server'}</span>
                     </button>
-                    <button className="btn-filter secondary" onClick={triggerManualArchive} disabled={isTriggeringArchive} style={{ padding: '8px 14px', color: '#fbbf24', borderColor: 'rgba(251, 191, 36, 0.35)' }}>
+                    <button className="btn-filter secondary" onClick={triggerManualArchive} disabled={isTriggeringArchive} style={{ padding: '10px 14px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', color: '#fbbf24', borderColor: 'rgba(251, 191, 36, 0.25)' }}>
                       <i className={`fa-solid ${isTriggeringArchive ? 'fa-spinner fa-spin' : 'fa-box-archive'}`}></i>
-                      <span>{isTriggeringArchive ? 'Mengarsipkan...' : 'Arsipkan Berkas Lawas'}</span>
+                      <span>{isTriggeringArchive ? 'Mengarsipkan...' : 'Arsipkan Sesi Lawas'}</span>
                     </button>
-                    <button className="btn-filter secondary" onClick={() => handleCleanHostStorage('all')} style={{ padding: '8px 14px', color: '#f87171', borderColor: 'rgba(248, 113, 113, 0.35)' }}>
+                    <button className="btn-filter secondary" onClick={() => handleCleanHostStorage('all')} style={{ padding: '10px 14px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', color: '#f87171', borderColor: 'rgba(248, 113, 113, 0.25)' }}>
                       <i className="fa-solid fa-trash-can"></i>
-                      <span>Hapus Audio Terupload di Semua PC Host</span>
+                      <span>Bersihkan Audio PC Host</span>
                     </button>
                   </div>
                 </div>
