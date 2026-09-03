@@ -333,6 +333,48 @@ function App() {
     }
   };
 
+  // Auto-Lock Sesi Pengaturan setelah 90 detik tanpa aktivitas pengguna
+  const INACTIVITY_TIMEOUT_MS = 90000;
+  const inactivityTimerRef = useRef(null);
+
+  useEffect(() => {
+    if (!isSettingsUnlocked) {
+      if (inactivityTimerRef.current) {
+        clearTimeout(inactivityTimerRef.current);
+        inactivityTimerRef.current = null;
+      }
+      return;
+    }
+
+    const resetInactivityTimer = () => {
+      if (inactivityTimerRef.current) {
+        clearTimeout(inactivityTimerRef.current);
+      }
+      inactivityTimerRef.current = setTimeout(() => {
+        setIsSettingsUnlocked(false);
+        setActiveTab('monitoring');
+        setPinModalOpen(false);
+        setPendingPinAction(null);
+        setPinInput('');
+        setPinError('');
+      }, INACTIVITY_TIMEOUT_MS);
+    };
+
+    // Inisialisasi timer awal saat kunci terbuka
+    resetInactivityTimer();
+
+    const activityEvents = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll', 'input'];
+    activityEvents.forEach(evt => window.addEventListener(evt, resetInactivityTimer, { passive: true }));
+
+    return () => {
+      if (inactivityTimerRef.current) {
+        clearTimeout(inactivityTimerRef.current);
+        inactivityTimerRef.current = null;
+      }
+      activityEvents.forEach(evt => window.removeEventListener(evt, resetInactivityTimer));
+    };
+  }, [isSettingsUnlocked]);
+
   const [localStorageInfo, setLocalStorageInfo] = useState({ exists: false, totalMb: '0.0', totalGb: '0.00', folderCount: 0, fileCount: 0, sessions: [] });
   const [isCleaningStorage, setIsCleaningStorage] = useState(false);
   const [cleanupFeedback, setCleanupFeedback] = useState('');
