@@ -92,6 +92,8 @@ class TelemetryHub {
           
           // Kirimkan token Telegram cadangan ke PC ini
           socket.emit('telegram-config', this.configManager.getTelegramConfig());
+          // Kirimkan PIN keamanan server terkini ke PC ini
+          socket.emit('server-pin', { pin: this.configManager.config.dashboardPin || '1234' });
           logger.info(`[Socket] PC Host terhubung dan terdaftar: ${pcName} (${data.uuid})`);
         }
       });
@@ -328,6 +330,18 @@ class TelemetryHub {
       this.io.to('agents').emit('clean-local-storage', payload);
     } else {
       this.io.to(`agent-${targetUuid}`).emit('clean-local-storage', payload);
+    }
+  }
+
+  /**
+   * Menyiarkan pembaruan PIN keamanan server ke seluruh PC Agent yang terhubung.
+   */
+  broadcastPinUpdate(pin) {
+    try {
+      this.io.to('agents').emit('server-pin', { pin: String(pin || '1234') });
+      logger.info(`[Security] PIN keamanan server disiarkan ke seluruh PC Agent terhubung.`);
+    } catch (err) {
+      logger.warn(`[Security] Gagal menyiarkan PIN ke PC Agent: ${err.message}`);
     }
   }
 }

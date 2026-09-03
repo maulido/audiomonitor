@@ -49,7 +49,16 @@ class TelemetryClient {
       this.socket.on('telegram-config', (config) => {
         if (this.onTelegramConfigListener) this.onTelegramConfigListener(config);
       });
+
+      // Menerima PIN keamanan dari Server Pusat
+      this.socket.on('server-pin', (data) => {
+        if (this.onServerPinListener) this.onServerPinListener(data);
+      });
     }
+  }
+
+  setServerPinListener(callback) {
+    this.onServerPinListener = callback;
   }
 
   setRecordListener(callback) {

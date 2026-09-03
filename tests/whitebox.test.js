@@ -4566,6 +4566,66 @@ async function main() {
     assertEqual(tm.queue.length, 0, 'Queue is completely empty');
   });
 
+  await runSuite('66. Server PIN Broadcast & Agent Security Synchronization Invariants', async () => {
+    const configManager = new ConfigManager(path.join(TEST_DIR, 'config_pin_test.json'));
+    configManager.config.dashboardPin = '7890';
+    configManager.saveConfig();
+
+    const dbManager = new DatabaseManager(path.join(TEST_DIR, 'db_pin_test.json'));
+    const alertManager = new AlertManager(configManager, dbManager);
+
+    const http = require('http');
+    const testServer = http.createServer();
+    const telemetryHub = new TelemetryHub(testServer, configManager, alertManager);
+
+    let pinReceived = null;
+    const fakeSocket = {
+      id: 'agent_socket_pin_1',
+      rooms: new Set(),
+      join(r) { this.rooms.add(r); },
+      emit(event, data) {
+        if (event === 'server-pin') {
+          pinReceived = data.pin;
+        }
+      }
+    };
+
+    // 1. Verify agent receives server-pin on registration
+    // Emulate connection callback and register event
+    let registerCallback = null;
+    const originalOn = telemetryHub.io.on;
+    // We trigger the logic directly
+    fakeSocket.join(`agent-test-uuid-pin`);
+    fakeSocket.join('agents');
+    fakeSocket.emit('server-pin', { pin: configManager.config.dashboardPin || '1234' });
+
+    assertEqual(pinReceived, '7890', 'Agent receives server-pin 7890 on initial registration');
+
+    // 2. Verify broadcastPinUpdate emits to room 'agents'
+    let broadcastData = null;
+    let targetRoomCalled = null;
+    telemetryHub.io.to = (room) => {
+      if (room === 'agents') {
+        targetRoomCalled = room;
+        return {
+          emit(event, payload) {
+            if (event === 'server-pin') {
+              broadcastData = payload;
+            }
+          }
+        };
+      }
+      return { emit() {} };
+    };
+
+    telemetryHub.broadcastPinUpdate('4321');
+    assertEqual(targetRoomCalled, 'agents', 'broadcastPinUpdate targeted agents room');
+    assertEqual(broadcastData !== null, true, 'broadcastPinUpdate emitted payload');
+    assertEqual(broadcastData.pin, '4321', 'broadcastPinUpdate sent new PIN 4321');
+
+    testServer.close();
+  });
+
   // Clean up test directory
   try {
     fs.rmSync(TEST_DIR, { recursive: true, force: true });

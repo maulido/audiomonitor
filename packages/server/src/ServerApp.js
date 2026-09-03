@@ -1275,6 +1275,9 @@ class ServerApp {
       if (!cleanPin || cleanPin.length < 4) return res.status(400).json({ error: 'PIN minimal 4 karakter' });
       this.configManager.config.dashboardPin = cleanPin;
       this.configManager.saveConfig();
+      if (this.telemetryHub) {
+        this.telemetryHub.broadcastPinUpdate(cleanPin);
+      }
       logger.audit('[Security] PIN Dashboard administrator berhasil diperbarui');
       res.send({ success: true });
     });

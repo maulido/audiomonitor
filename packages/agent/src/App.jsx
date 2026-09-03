@@ -268,6 +268,71 @@ function App() {
     try { return JSON.parse(localStorage.getItem('telegramConfig')) || null; } catch (e) { return null; }
   });
 
+  // PIN Keamanan Sesi Agent (Sinkronisasi dari PIN Server)
+  const [serverPin, setServerPin] = useState(() => {
+    return localStorage.getItem('cachedServerPin') || '1234';
+  });
+  const [isSettingsUnlocked, setIsSettingsUnlocked] = useState(false);
+  const [pinModalOpen, setPinModalOpen] = useState(false);
+  const [pinInput, setPinInput] = useState('');
+  const [pinError, setPinError] = useState('');
+  const [pendingPinAction, setPendingPinAction] = useState(null); // 'open_settings' | 'disable_monitoring'
+
+  const handleOpenSettingsTab = () => {
+    if (isSettingsUnlocked) {
+      setActiveTab('settings');
+      fetchLocalStorageInfo();
+    } else {
+      setPendingPinAction('open_settings');
+      setPinInput('');
+      setPinError('');
+      setPinModalOpen(true);
+    }
+  };
+
+  const handleToggleMonitoring = () => {
+    const nextState = !pcMonitoring;
+    if (!nextState) {
+      // Mencoba mematikan / pause monitoring -> Wajib masukkan PIN!
+      setPendingPinAction('disable_monitoring');
+      setPinInput('');
+      setPinError('');
+      setPinModalOpen(true);
+    } else {
+      // Mengaktifkan kembali monitoring -> Izinkan seketika tanpa PIN
+      setPcMonitoring(true);
+      if (telemetryClient.current && telemetryClient.current.socket) {
+        telemetryClient.current.socket.emit('agent-monitoring', { uuid, active: true });
+      }
+    }
+  };
+
+  const handlePinSubmit = (e) => {
+    if (e) e.preventDefault();
+    const cleanInput = pinInput.trim();
+    const correctPin = String(serverPin || localStorage.getItem('cachedServerPin') || '1234').trim();
+
+    if (cleanInput === correctPin) {
+      setPinModalOpen(false);
+      setPinInput('');
+      setPinError('');
+
+      if (pendingPinAction === 'open_settings') {
+        setIsSettingsUnlocked(true);
+        setActiveTab('settings');
+        fetchLocalStorageInfo();
+      } else if (pendingPinAction === 'disable_monitoring') {
+        setPcMonitoring(false);
+        if (telemetryClient.current && telemetryClient.current.socket) {
+          telemetryClient.current.socket.emit('agent-monitoring', { uuid, active: false });
+        }
+      }
+      setPendingPinAction(null);
+    } else {
+      setPinError('PIN salah! Akses ditolak.');
+    }
+  };
+
   const [localStorageInfo, setLocalStorageInfo] = useState({ exists: false, totalMb: '0.0', totalGb: '0.00', folderCount: 0, fileCount: 0, sessions: [] });
   const [isCleaningStorage, setIsCleaningStorage] = useState(false);
   const [cleanupFeedback, setCleanupFeedback] = useState('');
@@ -530,6 +595,13 @@ function App() {
         if (config) {
           setTelegramConfig(config);
           localStorage.setItem('telegramConfig', JSON.stringify(config));
+        }
+      });
+
+      telemetryClient.current.setServerPinListener((data) => {
+        if (data && data.pin) {
+          setServerPin(String(data.pin));
+          localStorage.setItem('cachedServerPin', String(data.pin));
         }
       });
 
@@ -1211,9 +1283,41 @@ function App() {
         </div>
       </div>
 
-      <div className="tabs">
-        <div className={`tab ${activeTab === 'monitoring' ? 'active' : ''}`} onClick={() => setActiveTab('monitoring')}>Monitoring</div>
-        <div className={`tab ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => { setActiveTab('settings'); fetchLocalStorageInfo(); }}>Settings</div>
+      <div className="tabs" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ display: 'flex', flex: 1 }}>
+          <div className={`tab ${activeTab === 'monitoring' ? 'active' : ''}`} onClick={() => setActiveTab('monitoring')}>
+            <i className="fa-solid fa-chart-simple" style={{ marginRight: '6px', fontSize: '11px' }}></i>
+            Monitoring
+          </div>
+          <div className={`tab ${activeTab === 'settings' ? 'active' : ''}`} onClick={handleOpenSettingsTab}>
+            <i className={`fa-solid fa-${isSettingsUnlocked ? 'lock-open' : 'lock'}`} style={{ marginRight: '6px', fontSize: '11px', color: isSettingsUnlocked ? '#4caf50' : 'inherit' }}></i>
+            Settings
+          </div>
+        </div>
+        {isSettingsUnlocked && activeTab === 'settings' && (
+          <button
+            onClick={() => {
+              setIsSettingsUnlocked(false);
+              setActiveTab('monitoring');
+            }}
+            style={{
+              background: 'transparent',
+              border: '1px solid #444',
+              borderRadius: '4px',
+              color: '#f87171',
+              padding: '2px 8px',
+              fontSize: '10px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              marginRight: '8px'
+            }}
+            title="Kunci kembali menu Pengaturan"
+          >
+            <i className="fa-solid fa-lock"></i> Kunci
+          </button>
+        )}
       </div>
 
       <div className="tab-content" style={{ padding: '12px' }}>
@@ -1264,13 +1368,7 @@ function App() {
 
             <button
               className="toggle-btn"
-              onClick={() => {
-                const newState = !pcMonitoring;
-                setPcMonitoring(newState);
-                if (telemetryClient.current && telemetryClient.current.socket) {
-                  telemetryClient.current.socket.emit('agent-monitoring', { uuid, active: newState });
-                }
-              }}
+              onClick={handleToggleMonitoring}
               style={{
                 background: isMonitoringActive ? 'rgba(76, 175, 80, 0.15)' : 'rgba(244, 67, 54, 0.12)',
                 color: isMonitoringActive ? '#4caf50' : '#f44336',
@@ -1676,6 +1774,135 @@ function App() {
           </div>
         )}
       </div>
+
+      {/* PIN Verification Security Modal */}
+      {pinModalOpen && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.78)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 9999,
+          backdropFilter: 'blur(3px)'
+        }}>
+          <div style={{
+            background: '#1c1c1c',
+            border: '1px solid #383838',
+            borderRadius: '8px',
+            padding: '20px 18px',
+            width: '88%',
+            maxWidth: '310px',
+            boxShadow: '0 10px 30px rgba(0,0,0,0.8)',
+            textAlign: 'center'
+          }}>
+            <div style={{
+              width: '40px',
+              height: '40px',
+              borderRadius: '50%',
+              background: 'rgba(33, 150, 243, 0.12)',
+              border: '1px solid rgba(33, 150, 243, 0.3)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              margin: '0 auto 10px auto',
+              color: '#2196f3',
+              fontSize: '17px'
+            }}>
+              <i className="fa-solid fa-shield-halved"></i>
+            </div>
+
+            <h4 style={{ margin: '0 0 6px 0', color: '#fff', fontSize: '13px', fontWeight: 'bold' }}>
+              Verifikasi PIN Keamanan
+            </h4>
+            <p style={{ margin: '0 0 14px 0', color: '#999', fontSize: '11px', lineHeight: '1.4' }}>
+              {pendingPinAction === 'disable_monitoring'
+                ? 'Masukkan PIN Server untuk mematikan sistem pemantauan audio Agent ini.'
+                : 'Masukkan PIN Server untuk membuka dan mengubah Pengaturan Agent.'}
+            </p>
+
+            <form onSubmit={handlePinSubmit}>
+              <input
+                type="password"
+                autoFocus
+                maxLength="16"
+                value={pinInput}
+                onChange={e => {
+                  setPinInput(e.target.value);
+                  if (pinError) setPinError('');
+                }}
+                placeholder="PIN Server..."
+                style={{
+                  width: '100%',
+                  boxSizing: 'border-box',
+                  background: '#111',
+                  border: pinError ? '1px solid #ef4444' : '1px solid #444',
+                  borderRadius: '4px',
+                  color: '#fff',
+                  padding: '7px 10px',
+                  fontSize: '14px',
+                  textAlign: 'center',
+                  letterSpacing: '3px',
+                  marginBottom: pinError ? '6px' : '12px',
+                  outline: 'none'
+                }}
+              />
+
+              {pinError && (
+                <div style={{ color: '#ef4444', fontSize: '11px', marginBottom: '10px', fontWeight: 'bold' }}>
+                  <i className="fa-solid fa-circle-exclamation" style={{ marginRight: '4px' }}></i>
+                  {pinError}
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPinModalOpen(false);
+                    setPinInput('');
+                    setPinError('');
+                    setPendingPinAction(null);
+                  }}
+                  style={{
+                    flex: 1,
+                    background: '#282828',
+                    border: '1px solid #444',
+                    borderRadius: '4px',
+                    color: '#ccc',
+                    padding: '6px 10px',
+                    fontSize: '11px',
+                    cursor: 'pointer',
+                    fontWeight: 600
+                  }}
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  style={{
+                    flex: 1,
+                    background: '#2196f3',
+                    border: 'none',
+                    borderRadius: '4px',
+                    color: '#fff',
+                    padding: '6px 10px',
+                    fontSize: '11px',
+                    cursor: 'pointer',
+                    fontWeight: 600
+                  }}
+                >
+                  Buka Kunci
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
     </div>
   );
