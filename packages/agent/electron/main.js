@@ -940,8 +940,17 @@ if (!gotTheLock) {
   });
 
   // Menampilkan Pop-Up Notifikasi Windows Host
+  let activeToastNotification = null;
+
   ipcMain.on('show-notification', (event, { title, body, sound = true, urgency = 'normal' }) => {
     try {
+      if (activeToastNotification) {
+        try {
+          activeToastNotification.close();
+        } catch (cErr) {}
+        activeToastNotification = null;
+      }
+
       let iconPath = path.join(__dirname, '../public/icon.ico');
       if (!isDev) iconPath = path.join(__dirname, '../dist/icon.ico');
       if (!fs.existsSync(iconPath)) {
@@ -963,6 +972,7 @@ if (!gotTheLock) {
       }
 
       const notif = new Notification(notifOptions);
+      activeToastNotification = notif;
 
       // Saat pengguna mengklik notifikasi popup di layar Windows, buka dan fokuskan jendela Agent
       notif.on('click', () => {
@@ -973,10 +983,25 @@ if (!gotTheLock) {
         }
       });
 
+      notif.on('close', () => {
+        if (activeToastNotification === notif) {
+          activeToastNotification = null;
+        }
+      });
+
       notif.show();
       writeAgentLog('INFO', `[Notifikasi Windows] Ditampilkan: "${title}" - "${body}"`);
     } catch (err) {
       writeAgentLog('ERROR', `[Notifikasi Windows] Gagal menampilkan notifikasi: ${err.message}`);
+    }
+  });
+
+  ipcMain.on('close-notification', () => {
+    if (activeToastNotification) {
+      try {
+        activeToastNotification.close();
+      } catch (cErr) {}
+      activeToastNotification = null;
     }
   });
 

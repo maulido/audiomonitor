@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   
   // Menampilkan notifikasi popup native Windows
   showNotification: (title, body) => ipcRenderer.send('show-notification', { title, body }),
+  closeNotification: () => ipcRenderer.send('close-notification'),
   
   // Membaca load % CPU dan RAM
   getHardwareTelemetry: () => ipcRenderer.invoke('get-hardware-telemetry'),

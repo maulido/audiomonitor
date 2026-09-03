@@ -457,7 +457,7 @@ function App() {
   const audioProcessor = useRef(null);
   const obsClient = useRef(null);
   const telemetryClient = useRef(null);
-  const lastDesktopNotifState = useRef({ status: '', time: 0 });
+  const lastDesktopNotifState = useRef({ category: '', time: 0 });
 
   const triggerNotification = (title, body) => {
     // 1. Electron IPC Native Windows Toast (Prioritas Utama untuk Aplikasi Desktop)
@@ -850,7 +850,10 @@ function App() {
       dangerScore.current = 0;
       clippingScore.current = 0;
       silenceScore.current = 0;
-      lastDesktopNotifState.current = { status: '', time: 0 };
+      lastDesktopNotifState.current = { category: '', time: 0 };
+      if (window.electronAPI && window.electronAPI.closeNotification) {
+        window.electronAPI.closeNotification();
+      }
       return;
     }
 
@@ -860,20 +863,16 @@ function App() {
     const isActuallyMuted = obsConnected && Boolean(isObsMutedBtn);
     if (!obsConnected) {
       dangerScore.current = 0;
-    } else if (isTalking && isActuallyMuted) {
-      dangerScore.current += 100;
     } else if (isActuallyMuted) {
-      // Masih mute tapi jeda bicara: kurangi perlahan (50ms per 100ms tick) agar jeda napas/kata tidak menghapus akumulasi skor
-      if (dangerScore.current > 0) {
+      if (isTalking) {
+        dangerScore.current += 100;
+      } else if (dangerScore.current > 0) {
+        // Masih mute tapi jeda bicara: kurangi perlahan (50ms per 100ms tick) agar jeda napas/kata tidak menghapus akumulasi skor
         dangerScore.current = Math.max(0, dangerScore.current - 50);
       }
     } else {
-      // Sudah unmute: reset atau kurangi cepat
-      if (dangerScore.current > 0) {
-        dangerScore.current = Math.max(0, dangerScore.current - 500);
-      } else {
-        dangerScore.current = 0;
-      }
+      // OBS SUDAH UNMUTE: Reset instan skor bahaya mute ke 0!
+      dangerScore.current = 0;
     }
 
     // Clipping Logic (build score if rawMicLevel exceeds threshold)
@@ -898,8 +897,11 @@ function App() {
       }
     } else if (clippingScore.current >= clippingDurationSec * 1000) {
       nextStatus = 'BAHAYA_AUDIO_PECAH';
-    } else if (dangerScore.current <= 0 && clippingScore.current <= 0 && (status === 'BAHAYA_OBS_MUTE' || status === 'BAHAYA_AUDIO_PECAH' || status === 'WASPADA_BICARA_MUTE' || status === 'STANDBY_MUTE')) {
-      nextStatus = 'AMAN';
+    } else if (!isActuallyMuted && dangerScore.current <= 0 && clippingScore.current <= 0) {
+      // Jika tidak mute dan tidak clipping: default kembali ke AMAN kecuali dideteksi mic mati di bawah
+      if (status === 'BAHAYA_OBS_MUTE' || status === 'BAHAYA_AUDIO_PECAH' || status === 'WASPADA_BICARA_MUTE' || status === 'STANDBY_MUTE') {
+        nextStatus = 'AMAN';
+      }
     }
 
     // Silence & Dead Mic Logic via tick score (hanya dievaluasi jika OBS tidak sedang di-mute)
@@ -947,44 +949,57 @@ function App() {
       setStatus(nextStatus);
     }
 
-    // Desktop Notification Logic: Hanya jika Monitoring AKTIF dan Windows Notif diaktifkan
-    const isDangerOrWarning = nextStatus === 'BAHAYA_OBS_MUTE' || nextStatus === 'WASPADA_BICARA_MUTE' || nextStatus === 'BAHAYA_AUDIO_PECAH' || nextStatus === 'BAHAYA_MIC_MATI';
+    // Incident Categorization for Windows Notification Throttle
+    // Categorize into distinct incident families so oscillation between WASPADA and BAHAYA does NOT re-trigger!
+    let incidentCategory = '';
+    if (nextStatus === 'BAHAYA_OBS_MUTE' || nextStatus === 'WASPADA_BICARA_MUTE') {
+      incidentCategory = 'OBS_MUTE';
+    } else if (nextStatus === 'BAHAYA_AUDIO_PECAH') {
+      incidentCategory = 'CLIPPING';
+    } else if (nextStatus === 'BAHAYA_MIC_MATI') {
+      incidentCategory = 'DEAD_MIC';
+    }
 
-    if (isDangerOrWarning && isMonitoringActive && enableWindowsNotifRef.current) {
+    if (incidentCategory && isMonitoringActive && enableWindowsNotifRef.current) {
       const now = Date.now();
-      const isNewIncident = lastDesktopNotifState.current.status !== nextStatus;
-      const cooldownMs = (windowsNotifCooldownSecRef.current || 60) * 1000; // Cooldown sesuai pengaturan pengguna
-      const canNotify = isNewIncident || (now - lastDesktopNotifState.current.time > cooldownMs);
+      const isNewCategory = lastDesktopNotifState.current.category !== incidentCategory;
+      const cooldownMs = (windowsNotifCooldownSecRef.current || 60) * 1000;
+      const canNotify = isNewCategory || (now - lastDesktopNotifState.current.time > cooldownMs);
 
       if (canNotify) {
-        lastDesktopNotifState.current = { status: nextStatus, time: now };
+        lastDesktopNotifState.current = { category: incidentCategory, time: now };
 
-        if (nextStatus === 'BAHAYA_OBS_MUTE') {
-          triggerNotification(
-            'Bahaya Audio: OBS Sedang di-MUTE!',
-            'Suara mikrofon terdeteksi aktif, namun input OBS dalam keadaan MUTE. Segera buka mute di OBS!'
-          );
-        } else if (nextStatus === 'WASPADA_BICARA_MUTE') {
-          triggerNotification(
-            'Peringatan: OBS Sedang di-MUTE!',
-            'Suara mikrofon terdeteksi aktif saat input OBS di-mute.'
-          );
-        } else if (nextStatus === 'BAHAYA_AUDIO_PECAH') {
+        if (incidentCategory === 'OBS_MUTE') {
+          if (nextStatus === 'BAHAYA_OBS_MUTE') {
+            triggerNotification(
+              'Bahaya Audio: OBS Sedang di-MUTE!',
+              'Suara mikrofon terdeteksi aktif, namun input OBS dalam keadaan MUTE. Segera buka mute di OBS!'
+            );
+          } else {
+            triggerNotification(
+              'Peringatan: OBS Sedang di-MUTE!',
+              'Suara mikrofon terdeteksi aktif saat input OBS di-mute.'
+            );
+          }
+        } else if (incidentCategory === 'CLIPPING') {
           triggerNotification(
             'Audio Clipping / Suara Pecah!',
             'Volume mikrofon melebihi batas toleransi aman dan berisiko distorsi di siaran.'
           );
-        } else if (nextStatus === 'BAHAYA_MIC_MATI') {
+        } else if (incidentCategory === 'DEAD_MIC') {
           triggerNotification(
             'Hardware Mic Tidak Merespons!',
             'Tidak ada sinyal suara fisik dari mikrofon selama batas waktu yang ditentukan. Periksa kabel atau mute fisik!'
           );
         }
       }
-    } else if (!isDangerOrWarning) {
-      // Kondisi sudah normal / aman / standby -> Reset status notifikasi agar insiden berhenti dan siap untuk insiden berikutnya
-      if (lastDesktopNotifState.current.status !== '') {
-        lastDesktopNotifState.current = { status: '', time: 0 };
+    } else if (!incidentCategory) {
+      // Kondisi sudah normal / aman / standby -> Reset status notifikasi agar insiden berhenti seketika
+      if (lastDesktopNotifState.current.category !== '') {
+        lastDesktopNotifState.current = { category: '', time: 0 };
+        if (window.electronAPI && window.electronAPI.closeNotification) {
+          window.electronAPI.closeNotification();
+        }
       }
     }
   }, [obsConnected, status, silenceTimeoutSec, deadMicTimeoutSec, isMonitoringActive, tick, clippingThreshold, clippingDurationSec, isObsMutedBtn, speakingThreshold, obsMuteTimeoutSec, autoRecoveryUnmute, windowsNotifCooldownSec]);
