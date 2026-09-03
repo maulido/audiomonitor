@@ -244,6 +244,16 @@ function App() {
   const enableWindowsNotifRef = useRef(enableWindowsNotif);
   useEffect(() => { enableWindowsNotifRef.current = enableWindowsNotif; localStorage.setItem('enableWindowsNotif', enableWindowsNotif); }, [enableWindowsNotif]);
 
+  const [windowsNotifCooldownSec, setWindowsNotifCooldownSec] = useState(() => {
+    const saved = localStorage.getItem('windowsNotifCooldownSec');
+    return saved !== null ? parseInt(saved, 10) : 60;
+  });
+  const windowsNotifCooldownSecRef = useRef(windowsNotifCooldownSec);
+  useEffect(() => {
+    windowsNotifCooldownSecRef.current = windowsNotifCooldownSec;
+    localStorage.setItem('windowsNotifCooldownSec', windowsNotifCooldownSec.toString());
+  }, [windowsNotifCooldownSec]);
+
   const [telegramConfig, setTelegramConfig] = useState(() => {
     try { return JSON.parse(localStorage.getItem('telegramConfig')) || null; } catch (e) { return null; }
   });
@@ -933,7 +943,7 @@ function App() {
     if (isDangerOrWarning && isMonitoringActive && enableWindowsNotifRef.current) {
       const now = Date.now();
       const isNewIncident = lastDesktopNotifState.current.status !== nextStatus;
-      const cooldownMs = 60000; // Cooldown 60 detik agar tidak spam terus-menerus
+      const cooldownMs = (windowsNotifCooldownSecRef.current || 60) * 1000; // Cooldown sesuai pengaturan pengguna
       const canNotify = isNewIncident || (now - lastDesktopNotifState.current.time > cooldownMs);
 
       if (canNotify) {
@@ -967,7 +977,7 @@ function App() {
         lastDesktopNotifState.current = { status: '', time: 0 };
       }
     }
-  }, [obsConnected, status, silenceTimeoutSec, deadMicTimeoutSec, isMonitoringActive, tick, clippingThreshold, clippingDurationSec, isObsMutedBtn, speakingThreshold, obsMuteTimeoutSec, autoRecoveryUnmute]);
+  }, [obsConnected, status, silenceTimeoutSec, deadMicTimeoutSec, isMonitoringActive, tick, clippingThreshold, clippingDurationSec, isObsMutedBtn, speakingThreshold, obsMuteTimeoutSec, autoRecoveryUnmute, windowsNotifCooldownSec]);
 
   // Refs to hold latest values for telemetry throttling
 
@@ -1486,6 +1496,24 @@ function App() {
                     </button>
                   )}
                 </div>
+
+                {enableWindowsNotif && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px', color: '#aaa', paddingLeft: '8px', borderLeft: '2px solid #00adb5', marginTop: '2px' }}>
+                    <span>Jeda Notifikasi Ulang:</span>
+                    <select
+                      value={windowsNotifCooldownSec}
+                      onChange={e => setWindowsNotifCooldownSec(parseInt(e.target.value, 10))}
+                      style={{ background: '#222', color: '#ccc', border: '1px solid #3c3c3c', borderRadius: '4px', padding: '3px 8px', fontSize: '11px', cursor: 'pointer', width: '58%' }}
+                      title="Jeda waktu minimal sebelum notifikasi insiden yang sama diulang kembali"
+                    >
+                      <option value="10">10 Detik (Cepat)</option>
+                      <option value="30">30 Detik (Singkat)</option>
+                      <option value="60">60 Detik (Default)</option>
+                      <option value="120">2 Menit (Sedang)</option>
+                      <option value="300">5 Menit (Lama)</option>
+                    </select>
+                  </div>
+                )}
 
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px', color: '#aaa', borderTop: '1px solid #252525', paddingTop: '8px', marginTop: '2px' }}>
                   <span>Data Polling Rate:</span>
