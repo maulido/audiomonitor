@@ -308,20 +308,22 @@ function App() {
   };
 
   const handleToggleManualRecording = () => {
-    if (isSettingsUnlocked) {
-      if (isRecording) {
+    if (!isRecording) {
+      // Memulai rekaman manual -> Langsung aktif seketika tanpa perlu PIN
+      if (audioProcessor.current && audioProcessor.current.startRecording(agentNameRef.current, recordDirRef.current, uuidRef.current, serverIpRef.current, recordingChunkMinutesRef.current)) {
+        setIsRecording(true);
+      }
+    } else {
+      // Menghentikan rekaman (Stop REC) -> Wajib verifikasi PIN demi keamanan
+      if (isSettingsUnlocked) {
         if (audioProcessor.current) audioProcessor.current.stopRecording();
         setIsRecording(false);
       } else {
-        if (audioProcessor.current && audioProcessor.current.startRecording(agentNameRef.current, recordDirRef.current, uuidRef.current, serverIpRef.current, recordingChunkMinutesRef.current)) {
-          setIsRecording(true);
-        }
+        setPendingPinAction('stop_recording');
+        setPinInput('');
+        setPinError('');
+        setPinModalOpen(true);
       }
-    } else {
-      setPendingPinAction(isRecording ? 'stop_recording' : 'start_recording');
-      setPinInput('');
-      setPinError('');
-      setPinModalOpen(true);
     }
   };
 
@@ -343,10 +345,6 @@ function App() {
         setPcMonitoring(false);
         if (telemetryClient.current && telemetryClient.current.socket) {
           telemetryClient.current.socket.emit('agent-monitoring', { uuid, active: false });
-        }
-      } else if (pendingPinAction === 'start_recording') {
-        if (audioProcessor.current && audioProcessor.current.startRecording(agentNameRef.current, recordDirRef.current, uuidRef.current, serverIpRef.current, recordingChunkMinutesRef.current)) {
-          setIsRecording(true);
         }
       } else if (pendingPinAction === 'stop_recording') {
         if (audioProcessor.current) audioProcessor.current.stopRecording();
@@ -1884,8 +1882,6 @@ function App() {
                 ? 'Masukkan PIN Server untuk mematikan sistem pemantauan audio Agent ini.'
                 : pendingPinAction === 'stop_recording'
                 ? 'Masukkan PIN Server untuk menghentikan perekaman audio (Stop REC).'
-                : pendingPinAction === 'start_recording'
-                ? 'Masukkan PIN Server untuk memulai perekaman audio manual (Manual REC).'
                 : 'Masukkan PIN Server untuk membuka dan mengubah Pengaturan Agent.'}
             </p>
 
