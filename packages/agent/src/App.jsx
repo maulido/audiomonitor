@@ -291,16 +291,25 @@ function App() {
   };
 
   const handleToggleMonitoring = () => {
-    const nextState = !pcMonitoring;
-    if (!nextState) {
-      // Mencoba mematikan / pause monitoring -> Wajib masukkan PIN!
-      setPendingPinAction('disable_monitoring');
-      setPinInput('');
-      setPinError('');
-      setPinModalOpen(true);
+    if (isMonitoringActive) {
+      // Saat ini monitoring sedang AKTIF (ON) -> Pengguna ingin MEMATIKAN (STOP/PAUSE)
+      // Tindakan mematikan monitoring WAJIB verifikasi PIN demi keamanan!
+      if (isSettingsUnlocked) {
+        setPcMonitoring(false);
+        if (telemetryClient.current && telemetryClient.current.socket) {
+          telemetryClient.current.socket.emit('agent-monitoring', { uuid, active: false });
+        }
+      } else {
+        setPendingPinAction('disable_monitoring');
+        setPinInput('');
+        setPinError('');
+        setPinModalOpen(true);
+      }
     } else {
-      // Mengaktifkan kembali monitoring -> Izinkan seketika tanpa PIN
+      // Saat ini monitoring sedang NONAKTIF (OFF/PAUSED) -> Pengguna ingin MENGAKTIFKAN (START/RESUME)
+      // Mengaktifkan monitoring LANGSUNG BERJALAN INSTAN TANPA PERLU PIN!
       setPcMonitoring(true);
+      setGlobalMonitoring(true);
       if (telemetryClient.current && telemetryClient.current.socket) {
         telemetryClient.current.socket.emit('agent-monitoring', { uuid, active: true });
       }
