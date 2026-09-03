@@ -31,7 +31,7 @@ function App() {
   const uuidRef = useRef(uuid);
   useEffect(() => { uuidRef.current = uuid; }, [uuid]);
 
-  const [appVersion, setAppVersion] = useState('1.0.2');
+  const [appVersion, setAppVersion] = useState('1.0.3');
   useEffect(() => {
     if (window.electronAPI && window.electronAPI.getAppVersion) {
       window.electronAPI.getAppVersion().then(v => {

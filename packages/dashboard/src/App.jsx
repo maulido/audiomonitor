@@ -2310,7 +2310,7 @@ function App() {
                             <>
                               <div className="pc-name-wrapper">
                                 <span className="pc-name-title" title={agent.pcName || agent.name || agent.uuid}>{agent.pcName || agent.name || agent.uuid}</span>
-                                <span className="badge-agent-version">v{agent.appVersion || '1.0.2'}</span>
+                                <span className="badge-agent-version">v{agent.appVersion || '1.0.3'}</span>
                               </div>
                               <div className="card-actions">
                                 <button 
@@ -4198,7 +4198,7 @@ function App() {
                 <div className="server-info-grid">
                   <div className="server-info-item">
                     <span className="server-info-label">Versi Sistem</span>
-                    <span className="server-info-value blue">v1.0.2</span>
+                    <span className="server-info-value blue">v1.0.3</span>
                   </div>
                   <div className="server-info-item">
                     <span className="server-info-label">Koneksi Server</span>
@@ -4741,7 +4741,7 @@ function App() {
                         Pembaruan Aplikasi Server (Pusat)
                       </div>
                       <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                        Versi Server yang sedang aktif: <strong style={{ color: '#fff' }}>v1.0.2</strong>
+                        Versi Server yang sedang aktif: <strong style={{ color: '#fff' }}>v1.0.3</strong>
                       </div>
                     </div>
                     {githubReleaseInfo?.serverAsset && (
@@ -5371,7 +5371,7 @@ function App() {
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.03)', padding: '12px', borderRadius: '6px' }}>
                       <div>
                         <div style={{ fontSize: '13px', fontWeight: 'bold' }}>Versi Agent Saat Ini:</div>
-                        <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'monospace' }}>v{configModalAgent.appVersion || '1.0.2'}</div>
+                        <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'monospace' }}>v{configModalAgent.appVersion || '1.0.3'}</div>
                       </div>
                       {(() => {
                         const semverCompare = (v1, v2) => {
@@ -5383,7 +5383,7 @@ function App() {
                           }
                           return 0;
                         };
-                        const hasNewer = serverUpdateInfo?.hasUpdate && semverCompare(serverUpdateInfo.version, configModalAgent.appVersion || '1.0.2') > 0;
+                        const hasNewer = serverUpdateInfo?.hasUpdate && semverCompare(serverUpdateInfo.version, configModalAgent.appVersion || '1.0.3') > 0;
                         if (!hasNewer) {
                           return (
                             <span style={{ fontSize: '12px', color: 'var(--success)', fontWeight: 600 }}>

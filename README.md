@@ -125,14 +125,14 @@ Salin folder `dist` ke `packages/server/dashboard-dist` agar disajikan langsung 
 npm run build --workspace=packages/server
 ```
 File installer akan dibuat di folder:
-`packages/server/out/AudioMonitor_Server_Installer_v1.0.2.exe`
+`packages/server/out/AudioMonitor_Server_Installer_v1.0.3.exe`
 
 ### 3. Build Agent Installer Windows (`.exe`)
 ```bash
 npm run build --workspace=packages/agent
 ```
 File installer akan dibuat di folder:
-`packages/agent/out/AudioMonitor_Agent_Installer_v1.0.2.exe`
+`packages/agent/out/AudioMonitor_Agent_Installer_v1.0.3.exe`
 
 ---
 

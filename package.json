@@ -1,6 +1,6 @@
 {
-  "name": "multi-pc-audio-monitor",
-  "version": "1.0.2",
+  "name": "audiomonitor",
+  "version": "1.0.3",
   "private": true,
   "workspaces": [
     "packages/*"
