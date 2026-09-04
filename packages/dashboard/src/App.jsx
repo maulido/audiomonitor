@@ -300,6 +300,8 @@ function App() {
   const [activeTranscriptModal, setActiveTranscriptModal] = useState(null);
   const [transcriptSearchQuery, setTranscriptSearchQuery] = useState('');
   const [transcriptSearchResults, setTranscriptSearchResults] = useState([]);
+  const [transcriptSearchDangerOnly, setTranscriptSearchDangerOnly] = useState(false);
+  const [modalSearchFilter, setModalSearchFilter] = useState('');
   const [isSearchingTranscript, setIsSearchingTranscript] = useState(false);
   const [transcribingFiles, setTranscribingFiles] = useState({});
   const [whisperQueueStatus, setWhisperQueueStatus] = useState({ isProcessing: false, currentTask: null, queue: [], queueLength: 0 });
@@ -696,6 +698,7 @@ function App() {
   };
 
   const openTranscriptModal = async (folderName, fileName = null, pcName = '') => {
+    setModalSearchFilter('');
     setActiveTranscriptModal({
       isOpen: true,
       folderName,
@@ -746,6 +749,107 @@ function App() {
     }
   };
 
+  const renderHighlightedText = (text, searchQuery = '', alertKeywords = []) => {
+    if (!text || typeof text !== 'string') return text || '';
+
+    const searchTokens = (searchQuery || '')
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean)
+      .map(t => t.toLowerCase());
+
+    const alertKw = (alertKeywords || [])
+      .map(k => String(k).trim().toLowerCase())
+      .filter(Boolean);
+
+    const allPatterns = [...new Set([...searchTokens, ...alertKw])].filter(p => p.length > 0);
+    if (allPatterns.length === 0) return text;
+
+    const escaped = allPatterns
+      .sort((a, b) => b.length - a.length)
+      .map(p => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+
+    try {
+      const regex = new RegExp(`(${escaped.join('|')})`, 'gi');
+      const parts = text.split(regex);
+
+      return parts.map((part, i) => {
+        const lower = (part || '').toLowerCase();
+        const isAlert = alertKw.some(ak => ak === lower || (ak.length > 2 && lower.includes(ak)));
+        const isSearch = searchTokens.some(st => st === lower || (st.length > 2 && lower.includes(st)));
+
+        if (isAlert) {
+          return (
+            <mark
+              key={i}
+              style={{
+                background: 'rgba(239, 68, 68, 0.35)',
+                color: '#fca5a5',
+                padding: '1px 4px',
+                borderRadius: '3px',
+                fontWeight: 'bold',
+                border: '1px solid rgba(239, 68, 68, 0.5)'
+              }}
+            >
+              {part}
+            </mark>
+          );
+        }
+
+        if (isSearch) {
+          return (
+            <mark
+              key={i}
+              style={{
+                background: 'rgba(234, 179, 8, 0.35)',
+                color: '#fef08a',
+                padding: '1px 4px',
+                borderRadius: '3px',
+                fontWeight: 'bold',
+                border: '1px solid rgba(234, 179, 8, 0.5)'
+              }}
+            >
+              {part}
+            </mark>
+          );
+        }
+
+        return part;
+      });
+    } catch (e) {
+      return text;
+    }
+  };
+
+  const seekAndPlaySearchResult = (folderName, fileName, targetSec = 0) => {
+    const baseKey = folderName ? folderName.replace(/_to_\d{2}-\d{2}-\d{2}$/i, '') : '';
+    const matchingRecords = records.filter(r => r.folderName === folderName || r.baseSessionKey === baseKey)
+      .sort((a, b) => (a.fileName || '').localeCompare(b.fileName || ''));
+
+    if (matchingRecords.length > 0) {
+      let targetPartIdx = 0;
+      if (fileName) {
+        const foundIdx = matchingRecords.findIndex(p => p.fileName === fileName);
+        if (foundIdx >= 0) targetPartIdx = foundIdx;
+      }
+
+      const first = matchingRecords[0];
+      const newSession = {
+        folderName: first.folderName,
+        pcName: first.pcName,
+        isParsed: first.isParsed,
+        dateStr: first.dateStr,
+        timeStr: first.timeStr,
+        createdAt: first.createdAt,
+        parts: matchingRecords
+      };
+      setPlayingSession(newSession);
+      pendingSeekOffsetRef.current = Math.max(0, targetSec);
+      setCurrentPartIndex(targetPartIdx);
+      setIsPlaying(true);
+    }
+  };
+
   const handleSearchTranscripts = (query, customFilters = null) => {
     setTranscriptSearchQuery(query);
     const reqId = ++searchReqIdRef.current;
@@ -764,6 +868,7 @@ function App() {
     const sDate = customFilters?.startDate !== undefined ? customFilters.startDate : recordStartDate;
     const eDate = customFilters?.endDate !== undefined ? customFilters.endDate : recordEndDate;
     const pc = customFilters?.pcFilter !== undefined ? customFilters.pcFilter : recordPcFilter;
+    const isDanger = customFilters?.dangerOnly !== undefined ? customFilters.dangerOnly : transcriptSearchDangerOnly;
 
     setIsSearchingTranscript(true);
     searchDebounceRef.current = setTimeout(async () => {
@@ -774,6 +879,7 @@ function App() {
         if (sDate) params.append('startDate', sDate);
         if (eDate) params.append('endDate', eDate);
         if (pc) params.append('pcFilter', pc);
+        if (isDanger) params.append('dangerOnly', 'true');
 
         const res = await apiFetch(`/api/records/search-transcript?${params.toString()}`);
         if (res.ok) {
@@ -796,7 +902,7 @@ function App() {
     if (transcriptSearchQuery && transcriptSearchQuery.trim()) {
       handleSearchTranscripts(transcriptSearchQuery);
     }
-  }, [recordStartDate, recordEndDate, recordPcFilter]);
+  }, [recordStartDate, recordEndDate, recordPcFilter, transcriptSearchDangerOnly]);
 
   const downloadTranscriptFile = (transcript, format = 'txt') => {
     if (!transcript) return;
@@ -3014,86 +3120,189 @@ function App() {
               </div>
 
               {/* 2. Search Transcripts Bar */}
-              <div className="transcript-search-wrapper" style={{ margin: '0' }}>
-                <i className="fa-solid fa-magnifying-glass transcript-search-icon"></i>
-                <input
-                  type="text"
-                  className="transcript-search-input"
-                  placeholder="Cari kata kunci dalam transkrip percakapan rekaman..."
-                  value={transcriptSearchQuery}
-                  onChange={e => handleSearchTranscripts(e.target.value)}
-                />
-                {isSearchingTranscript && (
-                  <div style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--accent)', fontSize: '0.85rem' }}>
-                    <i className="fa-solid fa-spinner fa-spin"></i> Mencari...
-                  </div>
-                )}
-
-                {transcriptSearchQuery.trim() && !isSearchingTranscript && transcriptSearchResults.length === 0 && (
-                  <div className="transcript-search-results-box" style={{ padding: '12px 16px', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-                    <i className="fa-solid fa-circle-info" style={{ marginRight: '6px' }}></i> Tidak ada transkrip yang cocok dengan "{transcriptSearchQuery}" pada filter yang dipilih.
-                  </div>
-                )}
-
-                {transcriptSearchResults.length > 0 && (
-                  <div className="transcript-search-results-box">
-                    <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '6px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '6px' }}>
-                      <div>
-                        Ditemukan {transcriptSearchResults.length} file rekaman yang mengandung "{transcriptSearchQuery}"
-                        {(recordStartDate || recordEndDate || recordPcFilter) && (
-                          <span style={{ color: 'var(--accent)', marginLeft: '6px', fontWeight: 'normal' }}>
-                            (Filter: {[
-                              recordPcFilter ? `PC: ${recordPcFilter}` : '',
-                              recordStartDate ? `Mulai: ${recordStartDate}` : '',
-                              recordEndDate ? `Akhir: ${recordEndDate}` : ''
-                            ].filter(Boolean).join(' | ')})
-                          </span>
-                        )}:
-                      </div>
-                      <button 
-                        className="btn-filter secondary" 
-                        style={{ padding: '2px 8px', fontSize: '0.7rem' }}
-                        onClick={() => {
-                          setTranscriptSearchQuery('');
-                          setTranscriptSearchResults([]);
-                        }}
-                      >
-                        <i className="fa-solid fa-xmark"></i> Tutup
-                      </button>
+              <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap', margin: 0 }}>
+                <div className="transcript-search-wrapper" style={{ margin: 0, flex: 1, minWidth: '280px', position: 'relative' }}>
+                  <i className="fa-solid fa-magnifying-glass transcript-search-icon"></i>
+                  <input
+                    type="text"
+                    className="transcript-search-input"
+                    placeholder="Cari kata kunci / percakapan dalam transkrip rekaman..."
+                    value={transcriptSearchQuery}
+                    onChange={e => handleSearchTranscripts(e.target.value)}
+                    style={{ paddingRight: transcriptSearchQuery ? '60px' : '36px' }}
+                  />
+                  {transcriptSearchQuery && (
+                    <button
+                      onClick={() => {
+                        setTranscriptSearchQuery('');
+                        setTranscriptSearchResults([]);
+                      }}
+                      title="Hapus pencarian"
+                      style={{
+                        position: 'absolute',
+                        right: isSearchingTranscript ? '32px' : '10px',
+                        top: '50%',
+                        transform: 'translateY(-50%)',
+                        background: 'transparent',
+                        border: 'none',
+                        color: 'var(--text-muted)',
+                        cursor: 'pointer',
+                        fontSize: '0.85rem',
+                        padding: '4px 6px'
+                      }}
+                    >
+                      <i className="fa-solid fa-circle-xmark"></i>
+                    </button>
+                  )}
+                  {isSearchingTranscript && (
+                    <div style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--accent)', fontSize: '0.85rem' }}>
+                      <i className="fa-solid fa-spinner fa-spin"></i>
                     </div>
-                    {transcriptSearchResults.map((res, rIdx) => (
-                      <div key={`${res.folderName}-${res.fileName}-${rIdx}`} className="transcript-search-result-item">
-                        <div>
-                          <div style={{ fontSize: '0.85rem', fontWeight: 'bold', color: 'var(--accent)' }}>
-                            <i className="fa-solid fa-desktop" style={{ marginRight: '6px' }}></i> {res.pcName} &bull; <span style={{ color: '#fff' }}>{res.fileName}</span>
-                            {res.dateStr && <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginLeft: '8px', fontWeight: 'normal' }}>({res.dateStr})</span>}
-                          </div>
-                          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                            {res.segments && res.segments.map((seg, sIdx) => {
-                              const validSec = typeof seg.start === 'number' ? Math.max(0, seg.start) : 0;
-                              const m = Math.floor(validSec / 60);
-                              const s = Math.floor(validSec % 60);
-                              const timeStr = `[${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}]`;
-                              return (
-                                <span key={`${seg.start || 0}-${sIdx}`} style={{ marginRight: '10px' }}>
-                                  <strong style={{ color: '#60a5fa' }}>{timeStr}</strong> {seg.text}
-                                </span>
-                              );
-                            })}
-                          </div>
+                  )}
+                </div>
+
+                {/* Danger Only Filter Toggle */}
+                <button
+                  type="button"
+                  onClick={() => setTranscriptSearchDangerOnly(prev => !prev)}
+                  className={`btn-filter ${transcriptSearchDangerOnly ? 'danger active' : 'secondary'}`}
+                  style={{
+                    padding: '8px 14px',
+                    fontSize: '0.82rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    borderColor: transcriptSearchDangerOnly ? 'rgba(239, 68, 68, 0.5)' : undefined,
+                    background: transcriptSearchDangerOnly ? 'rgba(239, 68, 68, 0.18)' : undefined,
+                    color: transcriptSearchDangerOnly ? '#fca5a5' : undefined
+                  }}
+                  title="Saring hanya rekaman yang terdeteksi kata bahaya"
+                >
+                  <i className="fa-solid fa-triangle-exclamation" style={{ color: transcriptSearchDangerOnly ? '#ef4444' : 'var(--text-muted)' }}></i>
+                  <span>Hanya Kata Bahaya</span>
+                </button>
+              </div>
+
+              {transcriptSearchQuery.trim() && !isSearchingTranscript && transcriptSearchResults.length === 0 && (
+                <div className="transcript-search-results-box" style={{ padding: '14px 18px', color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '-6px' }}>
+                  <i className="fa-solid fa-circle-info" style={{ marginRight: '6px', color: 'var(--accent)' }}></i>
+                  Tidak ada transkrip yang cocok dengan "<strong>{transcriptSearchQuery}</strong>"
+                  {transcriptSearchDangerOnly ? ' pada filter Kata Bahaya.' : ' pada filter yang dipilih.'}
+                </div>
+              )}
+
+              {transcriptSearchResults.length > 0 && (
+                <div className="transcript-search-results-box" style={{ marginTop: '-6px' }}>
+                  <div style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                      <span>Ditemukan <strong>{transcriptSearchResults.length}</strong> berkas transkrip relevan untuk "<strong>{transcriptSearchQuery}</strong>"</span>
+                      {transcriptSearchDangerOnly && (
+                        <span style={{ fontSize: '0.7rem', padding: '1px 6px', borderRadius: '4px', background: 'rgba(239, 68, 68, 0.2)', color: '#fca5a5', fontWeight: 'bold' }}>
+                          Filter: Kata Bahaya Saja
+                        </span>
+                      )}
+                      {(recordStartDate || recordEndDate || recordPcFilter) && (
+                        <span style={{ color: 'var(--accent)', fontSize: '0.75rem', fontWeight: 'normal' }}>
+                          ({[
+                            recordPcFilter ? `PC: ${recordPcFilter}` : '',
+                            recordStartDate ? `Mulai: ${recordStartDate}` : '',
+                            recordEndDate ? `Akhir: ${recordEndDate}` : ''
+                          ].filter(Boolean).join(' | ')})
+                        </span>
+                      )}
+                    </div>
+                    <button 
+                      className="btn-filter secondary" 
+                      style={{ padding: '2px 8px', fontSize: '0.7rem' }}
+                      onClick={() => {
+                        setTranscriptSearchQuery('');
+                        setTranscriptSearchResults([]);
+                      }}
+                    >
+                      <i className="fa-solid fa-xmark"></i> Tutup
+                    </button>
+                  </div>
+
+                  {transcriptSearchResults.map((res, rIdx) => (
+                    <div key={`${res.folderName}-${res.fileName}-${rIdx}`} className="transcript-search-result-item" style={{ padding: '12px 14px' }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: '0.88rem', fontWeight: 'bold', color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                          <span><i className="fa-solid fa-desktop" style={{ marginRight: '4px' }}></i> {res.pcName}</span>
+                          <span style={{ color: '#888' }}>&bull;</span>
+                          <span style={{ color: '#fff' }}>{res.fileName}</span>
+                          {res.dateStr && <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 'normal' }}>({res.dateStr})</span>}
+                          {res.keywordsFound && res.keywordsFound.length > 0 && (
+                            <span style={{ fontSize: '0.68rem', padding: '1px 6px', borderRadius: '4px', background: 'rgba(239, 68, 68, 0.2)', color: '#f87171', fontWeight: 600, border: '1px solid rgba(239, 68, 68, 0.35)' }}>
+                              <i className="fa-solid fa-triangle-exclamation" style={{ marginRight: '3px' }}></i>
+                              {res.keywordsFound.join(', ')}
+                            </span>
+                          )}
                         </div>
+
+                        {/* Matched Segments List with Highlight & Direct Click-to-Seek */}
+                        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '6px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          {res.segments && res.segments.map((seg, sIdx) => {
+                            const validSec = typeof seg.start === 'number' ? Math.max(0, seg.start) : 0;
+                            const m = Math.floor(validSec / 60);
+                            const s = Math.floor(validSec % 60);
+                            const timeStr = `[${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}]`;
+
+                            return (
+                              <div key={`${seg.start || 0}-${sIdx}`} style={{ display: 'flex', alignItems: 'baseline', gap: '6px', lineHeight: 1.45 }}>
+                                <button
+                                  type="button"
+                                  onClick={() => seekAndPlaySearchResult(res.folderName, res.fileName, validSec)}
+                                  title={`Klik untuk putar audio langsung pada menit ${timeStr}`}
+                                  style={{
+                                    background: 'rgba(59, 130, 246, 0.12)',
+                                    border: '1px solid rgba(59, 130, 246, 0.3)',
+                                    borderRadius: '4px',
+                                    color: '#60a5fa',
+                                    fontSize: '0.72rem',
+                                    fontFamily: 'monospace',
+                                    padding: '1px 5px',
+                                    cursor: 'pointer',
+                                    flexShrink: 0,
+                                    fontWeight: 'bold',
+                                    transition: 'all 0.15s ease'
+                                  }}
+                                  onMouseEnter={e => { e.currentTarget.style.background = 'rgba(59, 130, 246, 0.3)'; }}
+                                  onMouseLeave={e => { e.currentTarget.style.background = 'rgba(59, 130, 246, 0.12)'; }}
+                                >
+                                  <i className="fa-solid fa-play" style={{ fontSize: '0.6rem', marginRight: '3px' }}></i>
+                                  {timeStr}
+                                </button>
+                                <span style={{ color: 'var(--text-main)' }}>
+                                  {renderHighlightedText(seg.text, transcriptSearchQuery, res.keywordsFound || [])}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', gap: '6px', flexShrink: 0, alignItems: 'center' }}>
+                        <button 
+                          className="btn-filter secondary" 
+                          style={{ padding: '6px 10px', fontSize: '0.75rem', whiteSpace: 'nowrap', color: '#38bdf8', borderColor: 'rgba(56, 189, 248, 0.3)' }}
+                          onClick={() => seekAndPlaySearchResult(res.folderName, res.fileName, (res.segments && res.segments[0] ? res.segments[0].start : 0))}
+                          title="Putar audio rekaman ini"
+                        >
+                          <i className="fa-solid fa-play"></i> Putar
+                        </button>
                         <button 
                           className="btn-filter primary" 
-                          style={{ padding: '4px 10px', fontSize: '0.75rem', whiteSpace: 'nowrap' }}
+                          style={{ padding: '6px 12px', fontSize: '0.75rem', whiteSpace: 'nowrap' }}
                           onClick={() => openTranscriptModal(res.folderName, res.fileName, res.pcName)}
+                          title="Buka transkrip percakapan lengkap"
                         >
-                          <i className="fa-solid fa-file-lines"></i> Buka Transkrip
+                          <i className="fa-solid fa-file-lines"></i> Transkrip
                         </button>
                       </div>
-                    ))}
-                  </div>
-                )}
-              </div>
+                    </div>
+                  ))}
+                </div>
+              )}
 
               {/* 3. Quick Date Range Presets */}
               <div style={{ display: 'flex', gap: '8px', marginBottom: '-16px', flexWrap: 'wrap' }}>
@@ -5704,74 +5913,125 @@ function App() {
                     </div>
                   </div>
 
+                  {/* Quick in-modal search / filter bar */}
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center', margin: '12px 0 8px 0', position: 'relative' }}>
+                    <i className="fa-solid fa-filter" style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', fontSize: '0.78rem' }}></i>
+                    <input
+                      type="text"
+                      className="form-input"
+                      placeholder="Saring atau cari kata di dalam transkrip percakapan ini..."
+                      value={modalSearchFilter}
+                      onChange={e => setModalSearchFilter(e.target.value)}
+                      style={{ paddingLeft: '28px', paddingRight: modalSearchFilter ? '30px' : '10px', height: '34px', fontSize: '0.82rem', flex: 1 }}
+                    />
+                    {modalSearchFilter && (
+                      <button
+                        onClick={() => setModalSearchFilter('')}
+                        title="Bersihkan filter"
+                        style={{
+                          position: 'absolute',
+                          right: '8px',
+                          top: '50%',
+                          transform: 'translateY(-50%)',
+                          background: 'transparent',
+                          border: 'none',
+                          color: 'var(--text-muted)',
+                          cursor: 'pointer',
+                          fontSize: '0.85rem'
+                        }}
+                      >
+                        <i className="fa-solid fa-circle-xmark"></i>
+                      </button>
+                    )}
+                  </div>
+
                   {/* Segments List with Click-to-Seek */}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '6px' }}>
-                    {Array.isArray(activeTranscriptModal.transcript.segments) && activeTranscriptModal.transcript.segments.length > 0 ? (
-                      activeTranscriptModal.transcript.segments.map((seg, sIdx) => {
-                        const validSec = typeof seg.start === 'number' ? Math.max(0, seg.start) : 0;
-                        const m = Math.floor(validSec / 60);
-                        const s = Math.floor(validSec % 60);
-                        const timeStr = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+                    {(() => {
+                      const allSegs = Array.isArray(activeTranscriptModal.transcript.segments) ? activeTranscriptModal.transcript.segments : [];
+                      const filterLower = (modalSearchFilter || '').trim().toLowerCase();
+                      const filteredSegs = filterLower 
+                        ? allSegs.filter(s => (s.text || '').toLowerCase().includes(filterLower))
+                        : allSegs;
 
+                      if (filteredSegs.length === 0 && allSegs.length > 0) {
                         return (
-                          <div 
-                            key={seg.id !== undefined ? seg.id : sIdx} 
-                            className="transcript-segment-row"
-                            onClick={() => {
-                              const targetFolder = activeTranscriptModal.folderName;
-                              const baseKey = targetFolder ? targetFolder.replace(/_to_\d{2}-\d{2}-\d{2}$/i, '') : '';
-                              const matchingRecords = records.filter(r => r.folderName === targetFolder || r.baseSessionKey === baseKey)
-                                .sort((a, b) => (a.fileName || '').localeCompare(b.fileName || ''));
-
-                              if (matchingRecords.length > 0) {
-                                let targetPartIdx = 0;
-                                let targetOffset = validSec;
-
-                                if (activeTranscriptModal.fileName) {
-                                  const foundIdx = matchingRecords.findIndex(p => p.fileName === activeTranscriptModal.fileName);
-                                  if (foundIdx >= 0) targetPartIdx = foundIdx;
-                                }
-
-                                if (!playingSession || playingSession.folderName !== targetFolder) {
-                                  const first = matchingRecords[0];
-                                  const newSession = {
-                                    folderName: first.folderName,
-                                    pcName: first.pcName,
-                                    isParsed: first.isParsed,
-                                    dateStr: first.dateStr,
-                                    timeStr: first.timeStr,
-                                    createdAt: first.createdAt,
-                                    parts: matchingRecords
-                                  };
-                                  setPlayingSession(newSession);
-                                }
-
-                                pendingSeekOffsetRef.current = targetOffset;
-                                setCurrentPartIndex(targetPartIdx);
-                                if (audioRef.current && playingSession?.folderName === targetFolder && currentPartIndex === targetPartIdx) {
-                                  audioRef.current.currentTime = targetOffset;
-                                }
-                                setLocalCurrentTime(targetOffset);
-                                setIsPlaying(true);
-                              }
-                            }}
-                            title="Klik untuk mendengarkan bagian ini pada pemutar audio"
-                          >
-                            <span className="transcript-time-pill">
-                              <i className="fa-solid fa-play" style={{ fontSize: '0.65rem' }}></i>
-                              {timeStr}
-                            </span>
-                            <div className="transcript-segment-text">
-                              {renderHighlightedTranscriptText(seg.text, activeTranscriptModal.transcript.keywordsFound)}
-                            </div>
+                          <div style={{ padding: '16px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem', background: 'rgba(255,255,255,0.02)', borderRadius: '6px' }}>
+                            <i className="fa-solid fa-circle-info" style={{ marginRight: '6px', color: 'var(--accent)' }}></i>
+                            Tidak ada segmen percakapan yang memuat kata "<strong>{modalSearchFilter}</strong>".
                           </div>
                         );
-                      })
-                    ) : (
-                      <div style={{ padding: '12px', background: 'rgba(255,255,255,0.02)', borderRadius: '6px', fontSize: '0.9rem', lineHeight: '1.6' }}>
-                        {renderHighlightedTranscriptText(activeTranscriptModal.transcript.text, activeTranscriptModal.transcript.keywordsFound) || 'Tidak ada teks yang dapat ditranskripsi.'}
-                      </div>
-                    )}
+                      }
+
+                      if (filteredSegs.length > 0) {
+                        return filteredSegs.map((seg, sIdx) => {
+                          const validSec = typeof seg.start === 'number' ? Math.max(0, seg.start) : 0;
+                          const m = Math.floor(validSec / 60);
+                          const s = Math.floor(validSec % 60);
+                          const timeStr = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+
+                          return (
+                            <div 
+                              key={seg.id !== undefined ? seg.id : sIdx} 
+                              className="transcript-segment-row"
+                              onClick={() => {
+                                const targetFolder = activeTranscriptModal.folderName;
+                                const baseKey = targetFolder ? targetFolder.replace(/_to_\d{2}-\d{2}-\d{2}$/i, '') : '';
+                                const matchingRecords = records.filter(r => r.folderName === targetFolder || r.baseSessionKey === baseKey)
+                                  .sort((a, b) => (a.fileName || '').localeCompare(b.fileName || ''));
+
+                                if (matchingRecords.length > 0) {
+                                  let targetPartIdx = 0;
+                                  let targetOffset = validSec;
+
+                                  if (activeTranscriptModal.fileName) {
+                                    const foundIdx = matchingRecords.findIndex(p => p.fileName === activeTranscriptModal.fileName);
+                                    if (foundIdx >= 0) targetPartIdx = foundIdx;
+                                  }
+
+                                  if (!playingSession || playingSession.folderName !== targetFolder) {
+                                    const first = matchingRecords[0];
+                                    const newSession = {
+                                      folderName: first.folderName,
+                                      pcName: first.pcName,
+                                      isParsed: first.isParsed,
+                                      dateStr: first.dateStr,
+                                      timeStr: first.timeStr,
+                                      createdAt: first.createdAt,
+                                      parts: matchingRecords
+                                    };
+                                    setPlayingSession(newSession);
+                                  }
+
+                                  pendingSeekOffsetRef.current = targetOffset;
+                                  setCurrentPartIndex(targetPartIdx);
+                                  if (audioRef.current && playingSession?.folderName === targetFolder && currentPartIndex === targetPartIdx) {
+                                    audioRef.current.currentTime = targetOffset;
+                                  }
+                                  setLocalCurrentTime(targetOffset);
+                                  setIsPlaying(true);
+                                }
+                              }}
+                              title="Klik untuk mendengarkan bagian ini pada pemutar audio"
+                            >
+                              <span className="transcript-time-pill">
+                                <i className="fa-solid fa-play" style={{ fontSize: '0.65rem' }}></i>
+                                {timeStr}
+                              </span>
+                              <div className="transcript-segment-text">
+                                {renderHighlightedText(seg.text, modalSearchFilter || transcriptSearchQuery, activeTranscriptModal.transcript.keywordsFound || [])}
+                              </div>
+                            </div>
+                          );
+                        });
+                      }
+
+                      return (
+                        <div style={{ padding: '12px', background: 'rgba(255,255,255,0.02)', borderRadius: '6px', fontSize: '0.9rem', lineHeight: '1.6' }}>
+                          {renderHighlightedText(activeTranscriptModal.transcript.text, modalSearchFilter || transcriptSearchQuery, activeTranscriptModal.transcript.keywordsFound || []) || 'Tidak ada teks yang dapat ditranskripsi.'}
+                        </div>
+                      );
+                    })()}
                   </div>
                 </>
               );

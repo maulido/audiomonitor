@@ -1130,9 +1130,9 @@ class ServerApp {
       }
     });
 
-    // API: Cari kata kunci di transkrip rekaman dengan filter tanggal dan PC
+    // API: Cari kata kunci di transkrip rekaman dengan filter tanggal, PC, dan kata bahaya
     this.app.get('/api/records/search-transcript', (req, res) => {
-      const { q, startDate, endDate, pcFilter } = req.query || {};
+      const { q, startDate, endDate, pcFilter, dangerOnly } = req.query || {};
       if (!q || typeof q !== 'string') return res.json({ success: true, results: [] });
 
       const cleanQuery = q.trim().substring(0, 200);
@@ -1142,7 +1142,8 @@ class ServerApp {
       const results = this.transcriptionManager.searchTranscripts(cleanQuery, baseDir, {
         startDate: typeof startDate === 'string' ? startDate : '',
         endDate: typeof endDate === 'string' ? endDate : '',
-        pcFilter: typeof pcFilter === 'string' ? pcFilter : ''
+        pcFilter: typeof pcFilter === 'string' ? pcFilter : '',
+        dangerOnly: dangerOnly === 'true' || dangerOnly === true
       });
       res.json({ success: true, results });
     });

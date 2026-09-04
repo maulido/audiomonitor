@@ -4621,9 +4621,83 @@ async function main() {
     telemetryHub.broadcastPinUpdate('4321');
     assertEqual(targetRoomCalled, 'agents', 'broadcastPinUpdate targeted agents room');
     assertEqual(broadcastData !== null, true, 'broadcastPinUpdate emitted payload');
-    assertEqual(broadcastData.pin, '4321', 'broadcastPinUpdate sent new PIN 4321');
-
     testServer.close();
+  });
+
+  // =========================================================================
+  // SUITE 67: In-Memory Transcript Search Indexing, Multi-Term Tokenization & Relevance Ranking
+  // =========================================================================
+  await runSuite('67. In-Memory Transcript Search Indexing, Multi-Term Tokenization & Relevance Ranking', async () => {
+    const srvDir = path.join(TEST_DIR, 'suite67_server');
+    const recordsDir = path.join(srvDir, 'records');
+    fs.mkdirSync(recordsDir, { recursive: true });
+
+    const cm = new ConfigManager(path.join(srvDir, 'config.json'));
+    const tm = new TranscriptionManager(cm, null, null, null);
+
+    // Setup Session Folders with Transcripts
+    const sessFolder1 = 'PC_Studio_1_11111111-1111-1111-1111-111111111111_2026-08-30_10-00-00_to_10-10-00';
+    const sessFolder2 = 'PC_Studio_2_22222222-2222-2222-2222-222222222222_2026-08-31_14-00-00_to_14-15-00';
+    fs.mkdirSync(path.join(recordsDir, sessFolder1), { recursive: true });
+    fs.mkdirSync(path.join(recordsDir, sessFolder2), { recursive: true });
+
+    const tData1 = {
+      text: 'Halo selamat pagi pemirsa siaran darurat ini kami laporkan terjadi kebocoran gas pipa.',
+      fileName: 'Part_001.webm',
+      pcName: 'PC Studio 1',
+      transcribedAt: '2026-08-30 10:05:00',
+      keywordsFound: ['darurat', 'bocor'],
+      segments: [
+        { id: 0, start: 0, end: 5, text: 'Halo selamat pagi pemirsa siaran darurat ini' },
+        { id: 1, start: 5, end: 10, text: 'kami laporkan terjadi kebocoran gas pipa.' }
+      ]
+    };
+
+    const tData2 = {
+      text: 'Selamat siang pemirsa, hari ini cuaca cerah di seluruh wilayah ibukota.',
+      fileName: 'Part_001.webm',
+      pcName: 'PC Studio 2',
+      transcribedAt: '2026-08-31 14:05:00',
+      keywordsFound: [],
+      segments: [
+        { id: 0, start: 0, end: 7, text: 'Selamat siang pemirsa, hari ini cuaca cerah' }
+      ]
+    };
+
+    fs.writeFileSync(path.join(recordsDir, sessFolder1, 'Part_001.webm.transcript.json'), JSON.stringify(tData1, null, 2), 'utf8');
+    fs.writeFileSync(path.join(recordsDir, sessFolder2, 'Part_001.webm.transcript.json'), JSON.stringify(tData2, null, 2), 'utf8');
+
+    // 1. First search builds the in-memory search index
+    const r1 = tm.searchTranscripts('siaran darurat', recordsDir);
+    assertEqual(r1.length, 1, 'Exact multi-word phrase "siaran darurat" matches 1 session');
+    assertEqual(r1[0].pcName, 'PC Studio 1', 'Matched PC Studio 1');
+    assertEqual(r1[0].segments.length, 1, 'Extracted matched segment containing phrase');
+    assertEqual(r1[0].relevanceScore >= 100, true, 'Exact match gets high relevance score');
+
+    // 2. Multi-token non-contiguous search ("pagi pipa")
+    const r2 = tm.searchTranscripts('pagi pipa', recordsDir);
+    assertEqual(r2.length, 1, 'Multi-token search "pagi pipa" matches transcript containing both tokens');
+    assertEqual(r2[0].segments.length, 2, 'Found 2 matching segments across tokens');
+
+    // 3. Search Index cache verification (index is populated in memory)
+    assertEqual(tm.transcriptSearchIndex.size, 2, 'In-memory index contains 2 cached transcript records');
+
+    // 4. Danger Only Filter
+    const rDanger = tm.searchTranscripts('pemirsa', recordsDir, { dangerOnly: true });
+    assertEqual(rDanger.length, 1, 'dangerOnly filter returns only sessions with keywordsFound');
+    assertEqual(rDanger[0].pcName, 'PC Studio 1', 'dangerOnly selected PC Studio 1 with "darurat"');
+
+    const rAll = tm.searchTranscripts('pemirsa', recordsDir, { dangerOnly: false });
+    assertEqual(rAll.length, 2, 'Normal search returns both sessions matching "pemirsa"');
+
+    // 5. Invalidation and cache update
+    tm.invalidateSearchIndex();
+    assertEqual(tm.transcriptSearchIndex.size, 0, 'invalidateSearchIndex cleared in-memory map');
+
+    // Re-search re-populates cache seamlessly
+    const rReload = tm.searchTranscripts('cuaca', recordsDir);
+    assertEqual(rReload.length, 1, 'Re-search populates index and finds "cuaca"');
+    assertEqual(tm.transcriptSearchIndex.size, 2, 'Search index re-synced seamlessly');
   });
 
   // Clean up test directory

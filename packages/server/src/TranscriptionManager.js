@@ -22,6 +22,8 @@ class TranscriptionManager {
     this.currentTask = null;
     this.activeTasks = new Map();
     this.onTranscriptionComplete = null;
+    this.transcriptSearchIndex = new Map();
+    this.searchIndexVersion = 0;
   }
 
   /**
@@ -215,6 +217,7 @@ class TranscriptionManager {
 
     const transcriptPath = `${filePath}.transcript.json`;
     this.atomicWriteJsonSync(transcriptPath, normalized);
+    this.updateSearchIndexForFile(transcriptPath, normalized, sessionFolder, pcName, (normalized.transcribedAt ? normalized.transcribedAt.substring(0, 10) : ''));
     logger.info(`[Whisper] Transkrip berhasil disimpan: ${transcriptPath}`);
 
     if (keywordsFound.length > 0) {
@@ -524,94 +527,212 @@ class TranscriptionManager {
     return { scannedFolders, scannedFiles, updatedFiles, keywordsFoundCount };
   }
 
-  searchTranscripts(query, recordDir, filters = {}) {
-    if (!query || !recordDir || !fs.existsSync(recordDir)) return [];
+  /**
+   * Menghapus cache indeks pencarian (seluruhnya atau berkas tertentu)
+   */
+  invalidateSearchIndex(targetPath = null) {
+    if (targetPath) {
+      this.transcriptSearchIndex.delete(targetPath);
+    } else {
+      this.transcriptSearchIndex.clear();
+    }
+    this.searchIndexVersion++;
+  }
 
-    const lowerQuery = String(query).trim().substring(0, 200).toLowerCase();
-    if (!lowerQuery) return [];
+  /**
+   * Mengupdate / menginjeksi entri transkrip ke dalam in-memory search index
+   */
+  updateSearchIndexForFile(tPath, data, folder, itemPc, itemDate, mtimeMs = Date.now()) {
+    try {
+      const fullText = (data.text || '').trim();
+      const segments = Array.isArray(data.segments) ? data.segments.map(s => ({
+        id: s.id,
+        start: typeof s.start === 'number' ? s.start : 0,
+        end: typeof s.end === 'number' ? s.end : 0,
+        text: String(s.text || '').trim(),
+        lowerText: String(s.text || '').trim().toLowerCase()
+      })) : [];
 
-    const { startDate, endDate, pcFilter } = filters;
-    const targetPc = pcFilter ? String(pcFilter).trim().toLowerCase() : '';
-    const cleanStartDate = startDate ? String(startDate).trim() : '';
-    const cleanEndDate = endDate ? String(endDate).trim() : '';
+      const keywordsFound = Array.isArray(data.keywordsFound) ? data.keywordsFound : [];
 
-    const results = [];
+      this.transcriptSearchIndex.set(tPath, {
+        mtimeMs,
+        folderName: folder,
+        fileName: data.fileName || path.basename(tPath).replace('.transcript.json', ''),
+        pcName: data.pcName || itemPc,
+        dateStr: itemDate,
+        transcribedAt: data.transcribedAt || '',
+        text: fullText,
+        lowerText: fullText.toLowerCase(),
+        segments,
+        keywordsFound,
+        audioUrl: `/media/${encodeURIComponent(folder)}/${encodeURIComponent(data.fileName || path.basename(tPath).replace('.transcript.json', ''))}`
+      });
+    } catch (e) {
+      logger.error(`Error updating search index for ${tPath}: ${e.message}`);
+    }
+  }
+
+  /**
+   * Sinkronisasi in-memory search index dengan file system secara inkremental (hanya membaca file baru/berubah)
+   */
+  syncSearchIndex(recordDir) {
+    if (!recordDir || !fs.existsSync(recordDir)) return;
 
     try {
       const folders = fs.readdirSync(recordDir);
+      const activePaths = new Set();
+
       for (const folder of folders) {
         try {
           const folderPath = path.join(recordDir, folder);
           if (!fs.statSync(folderPath).isDirectory()) continue;
 
-          // Parse folder date & PC name if available:
-          // Format: PC_Testing_3365df9b-62ec-46ed-8644-83db7d225868_2026-08-29_00-48-53...
           const folderMatch = folder.match(/^(.*)_([a-f0-9\-]{36})_(\d{4}-\d{2}-\d{2})_(\d{2}-\d{2}-\d{2})/i);
-          let folderDate = folderMatch ? folderMatch[3] : '';
-          let folderPc = folderMatch ? folderMatch[1].replace(/_/g, ' ') : '';
-          let folderUuid = folderMatch ? folderMatch[2] : '';
+          const folderDate = folderMatch ? folderMatch[3] : '';
+          const folderPc = folderMatch ? folderMatch[1].replace(/_/g, ' ') : '';
+          const folderUuid = folderMatch ? folderMatch[2] : '';
 
           const files = fs.readdirSync(folderPath);
           const tFiles = files.filter(f => f.endsWith('.transcript.json'));
 
           for (const tf of tFiles) {
-            try {
-              const tPath = path.join(folderPath, tf);
-              const data = JSON.parse(fs.readFileSync(tPath, 'utf8'));
+            const tPath = path.join(folderPath, tf);
+            activePaths.add(tPath);
 
+            try {
+              const stat = fs.statSync(tPath);
+              const cached = this.transcriptSearchIndex.get(tPath);
+
+              // Jika sudah ada di cache dan mtime tidak berubah, lewati pembacaan disk!
+              if (cached && cached.mtimeMs === stat.mtimeMs) {
+                continue;
+              }
+
+              const data = JSON.parse(fs.readFileSync(tPath, 'utf8'));
               const itemPc = String(data.pcName || folderPc || folderUuid || folder).trim();
               const itemDate = folderDate || (data.transcribedAt ? data.transcribedAt.substring(0, 10) : '');
 
-              // Check PC Filter
-              if (targetPc) {
-                const lowerItemPc = itemPc.toLowerCase();
-                const lowerFolderPc = folderPc.toLowerCase();
-                const lowerFolderUuid = folderUuid.toLowerCase();
-                const lowerFolder = folder.toLowerCase();
-
-                const isPcMatch = lowerItemPc.includes(targetPc) ||
-                                  targetPc.includes(lowerItemPc) ||
-                                  lowerFolderPc.includes(targetPc) ||
-                                  lowerFolderUuid.includes(targetPc) ||
-                                  lowerFolder.includes(targetPc);
-                if (!isPcMatch) continue;
-              }
-
-              // Check Date Filters (YYYY-MM-DD comparison)
-              if (cleanStartDate && itemDate && itemDate < cleanStartDate) {
-                continue;
-              }
-              if (cleanEndDate && itemDate && itemDate > cleanEndDate) {
-                continue;
-              }
-
-              const text = (data.text || '').toLowerCase();
-
-              if (text.includes(lowerQuery)) {
-                const matchingSegments = (data.segments || []).filter(s => 
-                  (s.text || '').toLowerCase().includes(lowerQuery)
-                );
-
-                results.push({
-                  folderName: folder,
-                  fileName: data.fileName || tf.replace('.transcript.json', ''),
-                  pcName: data.pcName || itemPc,
-                  dateStr: itemDate,
-                  transcribedAt: data.transcribedAt,
-                  matchedSegmentsCount: matchingSegments.length,
-                  segments: matchingSegments.slice(0, 5),
-                  audioUrl: `/media/${encodeURIComponent(folder)}/${encodeURIComponent(data.fileName || tf.replace('.transcript.json', ''))}`
-                });
-              }
-            } catch (tErr) {}
+              this.updateSearchIndexForFile(tPath, data, folder, itemPc, itemDate, stat.mtimeMs);
+            } catch (readErr) {}
           }
-        } catch (fErr) {
-          // Abaikan jika ada subfolder terkunci/terhapus, lanjutkan scan folder lain
+        } catch (fErr) {}
+      }
+
+      // Hapus file yang sudah terhapus di disk dari index
+      for (const cachedPath of this.transcriptSearchIndex.keys()) {
+        if (!activePaths.has(cachedPath)) {
+          this.transcriptSearchIndex.delete(cachedPath);
         }
       }
     } catch (err) {
-      logger.error(`Error searching transcripts: ${err.message}`);
+      logger.error(`Error syncing transcript search index: ${err.message}`);
     }
+  }
+
+  /**
+   * Pencarian Cepat & Relevansi Tinggi di Seluruh Transkrip Percakapan
+   * Mendukung: In-Memory Caching, Tokenized Multi-Term AND/OR Match, Alert Keyword Boost, dan Segment Highlighting Metadata.
+   */
+  searchTranscripts(query, recordDir, filters = {}) {
+    if (!query || !recordDir || !fs.existsSync(recordDir)) return [];
+
+    const cleanQuery = String(query).trim().substring(0, 200);
+    const lowerQuery = cleanQuery.toLowerCase();
+    if (!lowerQuery) return [];
+
+    // Sinkronkan indeks secara inkremental (hanya membaca file yang berubah)
+    this.syncSearchIndex(recordDir);
+
+    const { startDate, endDate, pcFilter, dangerOnly } = filters;
+    const targetPc = pcFilter ? String(pcFilter).trim().toLowerCase() : '';
+    const cleanStartDate = startDate ? String(startDate).trim() : '';
+    const cleanEndDate = endDate ? String(endDate).trim() : '';
+    const isDangerOnly = dangerOnly === true || dangerOnly === 'true';
+
+    const tokens = lowerQuery.split(/\s+/).filter(t => t.length > 0);
+    const results = [];
+
+    for (const [tPath, entry] of this.transcriptSearchIndex.entries()) {
+      // 1. Filter PC Name
+      if (targetPc) {
+        const lowerItemPc = (entry.pcName || '').toLowerCase();
+        const lowerFolder = (entry.folderName || '').toLowerCase();
+        const isPcMatch = lowerItemPc.includes(targetPc) || targetPc.includes(lowerItemPc) || lowerFolder.includes(targetPc);
+        if (!isPcMatch) continue;
+      }
+
+      // 2. Filter Rentang Tanggal
+      if (cleanStartDate && entry.dateStr && entry.dateStr < cleanStartDate) {
+        continue;
+      }
+      if (cleanEndDate && entry.dateStr && entry.dateStr > cleanEndDate) {
+        continue;
+      }
+
+      // 3. Filter Hanya Kata Bahaya
+      if (isDangerOnly && (!entry.keywordsFound || entry.keywordsFound.length === 0)) {
+        continue;
+      }
+
+      // 4. Token & Substring Matching
+      const isExactMatch = entry.lowerText.includes(lowerQuery);
+      const matchedTokens = tokens.filter(tok => entry.lowerText.includes(tok));
+      const isAllTokensMatched = tokens.length > 0 && matchedTokens.length === tokens.length;
+
+      // Jika bukan exact match dan tidak ada token yang cocok, lewati
+      if (!isExactMatch && !isAllTokensMatched) {
+        if (tokens.length <= 1 || matchedTokens.length === 0) {
+          continue;
+        }
+      }
+
+      // 5. Ekstraksi Segmen yang Relevan
+      const matchingSegments = [];
+      for (const seg of entry.segments) {
+        const segExact = seg.lowerText.includes(lowerQuery);
+        const segTokensMatched = tokens.filter(tok => seg.lowerText.includes(tok));
+        if (segExact || segTokensMatched.length > 0) {
+          matchingSegments.push({
+            id: seg.id,
+            start: seg.start,
+            end: seg.end,
+            text: seg.text,
+            isExact: segExact,
+            matchedTokenCount: segTokensMatched.length
+          });
+        }
+      }
+
+      // 6. Hitung Skor Relevansi
+      let relevanceScore = 0;
+      if (isExactMatch) relevanceScore += 100;
+      if (isAllTokensMatched) relevanceScore += 50;
+      relevanceScore += (matchedTokens.length / tokens.length) * 30;
+      if (entry.keywordsFound && entry.keywordsFound.length > 0) relevanceScore += 20;
+      relevanceScore += Math.min(matchingSegments.length * 5, 25);
+
+      results.push({
+        folderName: entry.folderName,
+        fileName: entry.fileName,
+        pcName: entry.pcName,
+        dateStr: entry.dateStr,
+        transcribedAt: entry.transcribedAt,
+        keywordsFound: entry.keywordsFound || [],
+        relevanceScore,
+        matchedSegmentsCount: matchingSegments.length,
+        segments: matchingSegments.slice(0, 8),
+        audioUrl: entry.audioUrl
+      });
+    }
+
+    // Urutkan hasil: Skor relevansi tertinggi dulu, lalu waktu transkripsi terbaru
+    results.sort((a, b) => {
+      if (b.relevanceScore !== a.relevanceScore) {
+        return b.relevanceScore - a.relevanceScore;
+      }
+      return String(b.transcribedAt || b.dateStr).localeCompare(String(a.transcribedAt || a.dateStr));
+    });
 
     return results;
   }
