@@ -554,6 +554,9 @@ function App() {
     if (config.obsSyncStreaming !== undefined) setObsSyncStreaming(config.obsSyncStreaming);
     if (config.telemetryInterval !== undefined) setTelemetryInterval(config.telemetryInterval);
     if (config.obsSourceName !== undefined) setObsSourceName(config.obsSourceName);
+    if (config.recordingChunkMinutes !== undefined) setRecordingChunkMinutes(config.recordingChunkMinutes);
+    if (config.windowsNotifCooldownSec !== undefined) setWindowsNotifCooldownSec(config.windowsNotifCooldownSec);
+    if (config.enableWindowsNotif !== undefined) setEnableWindowsNotif(config.enableWindowsNotif);
     if (config.micDriverName !== undefined) {
       const devices = audioDevicesRef.current;
       const targetDevice = devices.find(d => d.label === config.micDriverName || (d.label || 'Default Microphone') === config.micDriverName);

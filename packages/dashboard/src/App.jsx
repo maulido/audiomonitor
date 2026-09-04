@@ -2337,7 +2337,9 @@ function App() {
                                     obsSyncRecording: agent.obsSyncRecording ?? false,
                                     obsSyncStreaming: agent.obsSyncStreaming ?? false,
                                     telemetryInterval: agent.telemetryInterval ?? 500,
-                                    obsSourceName: agent.obsSourceName || 'Mic/Aux'
+                                    obsSourceName: agent.obsSourceName || 'Mic/Aux',
+                                    recordingChunkMinutes: agent.recordingChunkMinutes ?? 10,
+                                    windowsNotifCooldownSec: agent.windowsNotifCooldownSec ?? 30
                                   }); 
                                 }}><i className="fa-solid fa-gear"></i></button>
 
@@ -5411,17 +5413,43 @@ function App() {
                     </label>
 
                     <div className="modal-section-title" style={{ color: '#9e9e9e', marginTop: '20px' }}>System Settings</div>
-                    <div className="setting-group" style={{ marginBottom: 0 }}>
-                      <label>Data Polling Rate</label>
-                      <select 
-                        className="form-input" 
-                        value={remoteConfig.telemetryInterval || 500} 
-                        onChange={e => setRemoteConfig({...remoteConfig, telemetryInterval: Number(e.target.value)})}
-                      >
-                        <option value="500">Realtime (0.5s)</option>
-                        <option value="2000">Normal (2s)</option>
-                        <option value="5000">Eco Mode (5s)</option>
-                      </select>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px' }}>
+                      <div className="setting-group" style={{ marginBottom: 0 }}>
+                        <label>Data Polling Rate</label>
+                        <select 
+                          className="form-input" 
+                          value={remoteConfig.telemetryInterval || 500} 
+                          onChange={e => setRemoteConfig({...remoteConfig, telemetryInterval: Number(e.target.value)})}
+                        >
+                          <option value="500">Realtime (0.5s)</option>
+                          <option value="2000">Normal (2s)</option>
+                          <option value="5000">Eco Mode (5s)</option>
+                        </select>
+                      </div>
+
+                      <div className="setting-group" style={{ marginBottom: 0 }}>
+                        <label>Durasi Chunk Rekaman (Menit)</label>
+                        <input 
+                          className="form-input" 
+                          type="number" 
+                          min="1" 
+                          max="120" 
+                          value={remoteConfig.recordingChunkMinutes ?? 10} 
+                          onChange={e => setRemoteConfig({...remoteConfig, recordingChunkMinutes: Math.max(1, parseInt(e.target.value, 10) || 10)})} 
+                        />
+                      </div>
+
+                      <div className="setting-group" style={{ marginBottom: 0 }}>
+                        <label>Cooldown Notif Windows (s)</label>
+                        <input 
+                          className="form-input" 
+                          type="number" 
+                          min="5" 
+                          max="300" 
+                          value={remoteConfig.windowsNotifCooldownSec ?? 30} 
+                          onChange={e => setRemoteConfig({...remoteConfig, windowsNotifCooldownSec: Math.max(5, parseInt(e.target.value, 10) || 30)})} 
+                        />
+                      </div>
                     </div>
 
                     <div className="modal-section-title" style={{ color: '#60a5fa', marginTop: '20px' }}>Versi Aplikasi & Pembaruan</div>
